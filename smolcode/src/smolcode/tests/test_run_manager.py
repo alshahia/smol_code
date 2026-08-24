@@ -318,20 +318,23 @@ class TestTokenAggregation:
         assert run.remaining_s(0.01) < 0
 
     def test_summary_dict_includes_subagent_when_set(self):
-        """Phase 0 (decision 0025 BE-1): summary_dict surfaces the active
-        sub-agent invocation when set on the Run.
+        """Phase 0 (decision 0025 BE-1) + Phase 2 §6.4 fold-in:
+        summary_dict surfaces sub-agent invocations as a history list
+        (``subagent_history``) and a legacy single-entry accessor
+        (``subagent``) for backward compatibility.
         """
         run = Run(id="r1", task="t", tier="restricted")
-        run.subagent_id = "sub-abc"
-        run.subagent_tier = "restricted"
-        run.subagent_started_at = 1.0
-        run.subagent_ended_at = 2.5
+        run.append_subagent("sub-abc", tier="restricted", started_at=1.0)
+        run.close_subagent("sub-abc", ended_at=2.5)
         snap = run.summary_dict()
         assert snap["subagent"] is not None
         assert snap["subagent"]["id"] == "sub-abc"
         assert snap["subagent"]["tier"] == "restricted"
         assert snap["subagent"]["started_at"] == 1.0
         assert snap["subagent"]["ended_at"] == 2.5
+        # The history list is the new authoritative shape.
+        assert len(snap["subagent_history"]) == 1
+        assert snap["subagent_history"][0]["id"] == "sub-abc"
 
 
 # ---- TestSubAgentEvents (Phase 0, decision 0025 T-1 + T-3) ----------
@@ -393,10 +396,13 @@ class TestSubAgentEvents:
         types = [e[0] for e in events_seen]
         assert types[0] == EVT_SUBAGENT_STARTED
         assert types[-1] == EVT_SUBAGENT_ENDED
-        # Outer Run state was set + cleared across the call.
-        assert outer.subagent_id is not None
-        assert outer.subagent_tier == "restricted"
-        assert outer.subagent_ended_at is not None
+        # Outer Run state was set + closed across the call.
+        # Phase 2 (decision 0025 §6.4 fold-in): subagent_history is a
+        # list; the legacy single-subagent accessor returns the latest.
+        assert outer.subagent is not None
+        assert outer.subagent.id is not None
+        assert outer.subagent.tier == "restricted"
+        assert outer.subagent.ended_at is not None
         # Started payload has the expected fields.
         started_payload = events_seen[0][1]
         assert started_payload["parent_run_id"] == "outer"
@@ -449,5 +455,6 @@ class TestSubAgentEvents:
         assert ended_events[0][1]["status"] == "error"
         assert ended_events[0][1]["error_kind"] == "RuntimeError"
         assert "inner boom" in ended_events[0][1]["error"]
-        # Outer subagent_ended_at was set even on error.
-        assert outer.subagent_ended_at is not None
+        # Outer subagent entry was closed even on error.
+        assert outer.subagent is not None
+        assert outer.subagent.ended_at is not None

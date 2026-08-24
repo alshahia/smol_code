@@ -20,6 +20,8 @@ import { ProviderSelector } from './components/ProviderSelector'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
 import { SessionsPane } from './components/SessionsPane'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
+import { QueuePane } from './components/QueuePane'
+import { FilePreview } from './components/FilePreview'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
 import {
@@ -90,6 +92,14 @@ function App() {
       return null
     }
   })
+  // Phase 2 (decision 0025 §6.4): the path of the file currently shown
+  // in the <FilePreview> pane. null when no file is selected. Clicking
+  // a file in the WorkspaceTree sets this; the pane renders inline
+  // below the Inspector.
+  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null)
+  // Phase 2: bump to force the QueuePane to re-fetch after a new run
+  // starts (the auto-enqueue path on POST /api/runs).
+  const [queueRefreshTrigger, setQueueRefreshTrigger] = useState<number>(0)
   const setActiveProject = (p: string | null) => {
     setActiveProjectRaw(p)
     if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
@@ -259,6 +269,10 @@ function App() {
     setActiveRunId(runId)
     setActiveRun(null)
     void refreshRuns()
+    // Phase 2: bump so the QueuePane immediately re-fetches; the new
+    // run may have been auto-queued (when an active run was in
+    // flight) and we want it visible without waiting for the 5s poll.
+    setQueueRefreshTrigger((n) => n + 1)
   }
 
   const onApprovalRequest = (decisionId: string, tool: string, args: unknown, summary: string) => {
@@ -417,6 +431,15 @@ function App() {
             />
           </section>
 
+          <section className="plan-queue">
+            <h3>Active & queue</h3>
+            <QueuePane
+              refreshTrigger={queueRefreshTrigger}
+              activeRunId={activeRunId}
+              onSelectActive={(id) => setActiveRunId(id)}
+            />
+          </section>
+
           <section className="plan-sessions">
             <h3>Sessions</h3>
             <SessionsPane
@@ -473,9 +496,23 @@ function App() {
           style={{ display: isMobile && !inspectorOpen ? 'none' : 'block' }}
         >
           <h3>Inspector</h3>
-          <Inspector activeRun={activeRun} config={config} treeRefreshTrigger={treeRefreshTrigger} project={activeProject} />
+          <Inspector
+            activeRun={activeRun}
+            config={config}
+            treeRefreshTrigger={treeRefreshTrigger}
+            project={activeProject}
+            onFileClick={(p) => setFilePreviewPath(p)}
+          />
         </aside>
       </div>
+
+      {filePreviewPath && (
+        <FilePreview
+          path={filePreviewPath}
+          project={activeProject}
+          onClose={() => setFilePreviewPath(null)}
+        />
+      )}
 
       <ApprovalModal pending={pending} onDecide={onDecide} />
     </div>

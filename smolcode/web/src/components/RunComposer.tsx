@@ -6,8 +6,15 @@
 //   - model: optional model id; falls back to server's default if absent
 //   - keyValue: optional stored key; only attached if apiKeyEnv is set and
 //     keyValue is non-empty
+//
+// Phase 2 (decision 0025 §6.4 A5): the task textarea is now a
+// FileMentionInput -- the user can type ``@`` to autocomplete file
+// paths from the active project tree. Server-side ``_attach_mentions``
+// does the actual file-content inlining once the run starts.
+
 import { useState } from 'react'
 import { startRun } from '../api'
+import { FileMentionInput } from './FileMentionInput'
 
 interface Props {
   tier: string
@@ -22,7 +29,16 @@ interface Props {
   onSubmitted: (runId: string) => void
 }
 
-export function RunComposer({ tier, provider, model, keyValue, apiKeyEnv, sessionId, project, onSubmitted }: Props) {
+export function RunComposer({
+  tier,
+  provider,
+  model,
+  keyValue,
+  apiKeyEnv,
+  sessionId,
+  project,
+  onSubmitted,
+}: Props) {
   const [task, setTask] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,12 +79,11 @@ export function RunComposer({ tier, provider, model, keyValue, apiKeyEnv, sessio
 
   return (
     <div className="run-composer">
-      <textarea
-        className="task-input"
-        placeholder={'Describe the task for the agent...'}
+      <FileMentionInput
         value={task}
-        onChange={(e) => setTask(e.target.value)}
-        rows={4}
+        onChange={setTask}
+        project={project ?? null}
+        disabled={submitting}
       />
       <div className="run-composer-row">
         <button className="btn btn-primary" onClick={handle} disabled={submitting}>

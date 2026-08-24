@@ -246,7 +246,10 @@ class RunStartRequest(BaseModel):
 
 class RunStartResponse(BaseModel):
     run_id: str
-    status: str
+    # Phase 2 (decision 0025 §6.4): "running" when the run started
+    # immediately, "queued" when a run was already active and this
+    # one is in the FIFO queue.
+    status: str = "running"
 
 
 class SubAgentSummary(BaseModel):
@@ -306,6 +309,16 @@ class RunSummary(BaseModel):
     # the SPA renders the empty state.
     session_id: str | None = None
     project: str | None = None
+    # Phase 2 (decision 0025 §6.4): seconds since the most recent
+    # agent-memory snapshot. None when the run has not been snapshot
+    # yet (e.g. a run that was started and immediately stopped).
+    snapshot_at: float | None = None
+    # Phase 2 (decision 0025 §6.4): full sub-agent invocation history
+    # (Phase 0 §14.8 #3 fold-in). Empty for runs that never delegated.
+    subagent_history: list[SubAgentSummary] = Field(default_factory=list)
+    # Phase 2 (decision 0025 §6.4): 1-based FIFO queue position when
+    # the run is in the queue; None for active or terminal runs.
+    queue_position: int | None = None
 
 
 class RunListResponse(BaseModel):
@@ -407,7 +420,52 @@ class ModelListResponse(BaseModel):
     """
 
     provider: str
-    models: list[str]
-    cached: bool
-    fetched_at: float
+    models: list[dict] = Field(default_factory=list)
+    cached: bool = False
+    fetched_at: float = 0.0
     error: str | None = None
+
+
+# ---- Phase 2 (decision 0025 §6.4): pause / resume / queue / file preview ----
+
+
+class QueueEntryOut(BaseModel):
+    """One queued-run record (Phase 2). The SPA's <QueuePane> renders
+    one row per entry; the ``queue_position`` is the 1-based FIFO
+    position (1 = next to run)."""
+
+    id: str
+    task: str
+    tier: str
+    queued_at: float
+    project: str | None = None
+    session_id: str | None = None
+    queue_position: int = 0
+
+
+class QueueListResponse(BaseModel):
+    """Phase 2: list of active + queued runs.
+
+    ``active`` is a list of full ``RunSummary`` dicts (current run +
+    any paused runs). ``queued`` is a list of lightweight
+    ``QueueEntryOut`` dicts (the runs that have not started yet).
+    """
+
+    active: list[RunSummary] = Field(default_factory=list)
+    queued: list[QueueEntryOut] = Field(default_factory=list)
+
+
+class FileReadResponse(BaseModel):
+    """Phase 2 (A4 file preview pane): the content of a file under
+    the active project root. ``truncated`` is True when the file
+    exceeded the request's ``max_bytes`` cap (default 256 KB); the
+    SPA renders a notice + reflows the content. ``encoding`` is
+    ``utf-8`` for text and ``binary`` for files that could not be
+    decoded (rendered with replacement characters)."""
+
+    path: str
+    abs_path: str
+    size: int
+    truncated: bool = False
+    encoding: str = "utf-8"
+    content: str

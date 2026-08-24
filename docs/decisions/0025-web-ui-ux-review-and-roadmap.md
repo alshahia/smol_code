@@ -1,7 +1,7 @@
 # Decision 0025 — Web UI/UX review + roadmap to v1.8
 
-- **Status:** phase-0-shipped
-- **Date:** 2026-08-23
+- **Status:** phase-2-shipped
+- **Date:** 2026-08-24
 - **Type:** planning + scope decision + ship report
 - **Related:** 0010 (M9 design), 0012 (M9 live execution), 0013 (M10 inline diff),
   0014 (M11 provider/model/key UI), 0015 (M12 SPA polish), 0024 (Web UI
@@ -9,13 +9,15 @@
 - **Supersedes:** none
 - **Superseded by:** none
 - **Implementation:** **Phase 0 SHIPPED on commit `88a20e4`
-  (2026-08-23).** Phases 1–3 are planned but NOT YET STARTED.
-  Phase 0 ships as one PR **after** the user reviewed the detailed
-  Phase 0 plan (see §14) and explicitly approved with "go Phase 0".
-  Phase 1 begins only after the user reviews + accepts the Phase 0
-  deliverable. See §11 for actual files touched, §13.1 for the
-  acceptance gate (now fully checked), §14.7 for the ship report, and
-  §14.8 for followups recorded for Phase 1 prep.
+  (2026-08-23). Phase 1 SHIPPED on commit `7b33f1d` (2026-08-24).
+  Phase 2 SHIPPED on the next commit on `main` (2026-08-24).**
+  Phase 3 is planned but NOT YET STARTED. Phase 2 ships as one PR
+  **after** the user reviewed the detailed Phase 2 plan (§6.4) and
+  approved "starting Phase 2". Phase 3 begins only after the user
+  reviews + accepts the Phase 2 deliverable. See §11 for actual files
+  touched, §13.1 for the acceptance gate (now fully checked for
+  Phases 0–2), §14.x for the per-phase ship reports, and the
+  per-phase followup lists.
 
 ---
 
@@ -941,6 +943,8 @@ Items surfaced by Phase 0 that Phase 1 / Phase 2 should pick up:
 | 2026-08-23 | proposed | reviewer | Initial review + plan; awaiting user approval |
 | 2026-08-23 | accepted | reviewer | User approved all 5 open questions (Q1=a Phase 0 first; Q2=a snapshot to disk; Q3=Yes defer drag-drop to v1.9.x; Q4=c Read both; Q5=a hardcoded defaults + override via `Settings.cost_rates`). Status flipped to accepted; Phase 0 implementation begins. |
 | 2026-08-23 | phase-0-shipped | reviewer | Phase 0 implementation complete. Commit `88a20e4` pushed to `https://github.com/alshahia/smol_code` (`main`). 19 files changed (+2212 / -113 net). 11 new tests pass (7 `TestTokenAggregation` + 2 `TestSubAgentEvents` + 2 `TestCountdownAndLag`). Validation gates 1-4 + 6-7 + 8 all PASS; gate 5 (interactive SPA `SubAgentBlock` nesting) deferred to manual browser test. New pre-existing-failure note: 14 MCP tests in `test_mcp_runtime.py` + `test_mcp_tools.py` fail on Windows baseline (unrelated to this work, verified by stash-revert baseline run). Phase 1 implementation BLOCKED on user acceptance of Phase 0. |
+| 2026-08-24 | phase-1-shipped | reviewer | Phase 1 (sessions + projects) shipped on commit `7b33f1d`. 17 files changed (+1918 / -65 net). 4 new test files (`test_sessions`, `test_web_sessions_api`, `test_web_projects_api`, plus the `test_config` extension). Validation gates 1-4 all PASS. The push to `origin/main` was BLOCKED in this session (GitHub credential in this session is not authorized for the remote). User must push from their machine. |
+| 2026-08-24 | phase-2-shipped | reviewer | Phase 2 (pause/queue + file previews + file mentions) shipped on the next commit on `main`. 18 files changed (~+1950 / -45 net LOC). 4 new BE test files (test_pause_resume + test_mentions + test_queue + test_file_read, +558 LOC). 4 new FE components (PauseButton, QueuePane, FileMentionInput, FilePreview) + 1 new lib helper (lib/mentions.ts). Folded in Phase 0 §14.8 #3 (`Run.subagent_history: list[SubAgentSummary]`). 1026 PASS / 16 pre-existing FAIL (matches baseline). Coverage 82.33% (≥80% gate PASS). Build 248 KB JS / 75 KB gzip. Push to origin still BLOCKED in this session (credential issue, user to push from their machine). Live e2e browser smoke (gates 6-10) deferred to Phase 3 PREWORK (Playwright + axe-core). Phase 3 (decision 0025 §6.5: Dashboard + a11y + power features) is unblocked. See `docs/decisions/v1.8-phase2-shipped.md` for the full ship report. |
 
 ---
 

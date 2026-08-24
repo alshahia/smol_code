@@ -149,6 +149,8 @@ export interface RunSummary {
     | 'pending'
     | 'running'
     | 'awaiting_approval'
+    | 'paused'
+    | 'queued'
     | 'done'
     | 'error'
     | 'stopped'
@@ -171,6 +173,14 @@ export interface RunSummary {
   remaining_s?: number | null
   // Latest sub-agent invocation. null when the run has not delegated.
   subagent?: SubAgentSummary | null
+  // Phase 2 (decision 0025 §6.4): full sub-agent invocation history
+  // (Phase 0 §14.8 #3 fold-in). Empty when the run never delegated.
+  subagent_history?: SubAgentSummary[]
+  // Phase 2: epoch seconds of the most recent agent-memory snapshot.
+  // null when no snapshot has been taken yet.
+  snapshot_at?: number | null
+  // Phase 2: 1-based FIFO queue position; null for active / terminal.
+  queue_position?: number | null
   // Phase 1 (decision 0025 §6.3): chat session id + project name the
   // run is attached to. Both additive; older servers omit them.
   session_id?: string | null
@@ -361,6 +371,73 @@ export async function postStop(runId: string): Promise<{ stopped: boolean }> {
     await fetch("/api/runs/" + encodeURIComponent(runId) + "/stop", { method: 'POST' }),
   )
 }
+
+// --- Phase 2 (decision 0025 §6.4): pause / resume / queue / file preview ----
+
+export interface QueueEntry {
+  id: string
+  task: string
+  tier: string
+  queued_at: number
+  project: string | null
+  session_id: string | null
+  queue_position: number
+}
+
+export interface QueueListResponse {
+  active: RunSummary[]
+  queued: QueueEntry[]
+}
+
+export async function pauseRun(
+  runId: string,
+): Promise<{ run_id: string; paused: boolean }> {
+  return jsonOrThrow(
+    await fetch("/api/runs/" + encodeURIComponent(runId) + "/pause", { method: 'POST' }),
+  )
+}
+
+export async function resumeRun(
+  runId: string,
+): Promise<{ run_id: string; resumed: boolean }> {
+  return jsonOrThrow(
+    await fetch("/api/runs/" + encodeURIComponent(runId) + "/resume", { method: 'POST' }),
+  )
+}
+
+export async function listQueue(): Promise<QueueListResponse> {
+  return jsonOrThrow(await fetch('/api/queue'))
+}
+
+export async function cancelQueueEntry(
+  runId: string,
+): Promise<{ run_id: string; cancelled: boolean }> {
+  return jsonOrThrow(
+    await fetch('/api/queue/' + encodeURIComponent(runId), { method: 'DELETE' }),
+  )
+}
+
+export interface FileReadResponse {
+  path: string
+  abs_path: string
+  size: number
+  truncated: boolean
+  encoding: 'utf-8' | 'binary'
+  content: string
+}
+
+export async function readFile(opts: {
+  path: string
+  project?: string | null
+  maxBytes?: number
+}): Promise<FileReadResponse> {
+  const q = new URLSearchParams()
+  q.set('path', opts.path)
+  if (opts.project) q.set('project', opts.project)
+  if (opts.maxBytes) q.set('max_bytes', String(opts.maxBytes))
+  return jsonOrThrow(await fetch('/api/files?' + q.toString()))
+}
+
 
 // --- M10: diff proposal + workspace tree ---------------------------------
 

@@ -23,6 +23,15 @@ Live-execution endpoints (M9):
     GET  /api/runs/{id}/events     -> SSE event stream
     POST /api/runs/{id}/approval   -> resolve a pending approval gate
     POST /api/runs/{id}/stop       -> request stop at next step boundary
+    POST /api/runs/{id}/pause      -> request pause at next step boundary
+    POST /api/runs/{id}/resume     -> rebuild agent from snapshot + continue
+
+Queue endpoints (Phase 2, decision 0025 §6.4):
+    GET    /api/queue              -> list queued + active runs
+    DELETE /api/queue/{run_id}     -> cancel a queued run
+
+File preview endpoints (Phase 2, decision 0025 §6.4):
+    GET    /api/files              -> read a file by relative path (project-scoped)
 
 Provider / model catalog endpoints (M11, decision 0014):
     GET  /api/providers                          -> catalog (key_state + defaults)
@@ -35,6 +44,7 @@ so existing callers stay backwards-compatible.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -72,6 +82,7 @@ from .schemas import (
     AuditListResponse,
     CleanRequest,
     ConfigResponse,
+    FileReadResponse,
     HealthResponse,
     ModelListResponse,
     ProjectCreateRequest,
@@ -79,6 +90,7 @@ from .schemas import (
     ProjectOut,
     ProviderListResponse,
     ProviderOut,
+    QueueListResponse,
     RunListResponse,
     RunStartRequest,
     RunStartResponse,
@@ -309,9 +321,7 @@ def get_projects(settings: Settings = Depends(get_settings)) -> dict:
     params before forwarding them to other endpoints.
     """
     return ProjectListResponse(
-        projects=[
-            ProjectOut(name=p.name, root=str(p.root)).model_dump() for p in settings.projects
-        ]
+        projects=[ProjectOut(name=p.name, root=str(p.root)).model_dump() for p in settings.projects]
     ).model_dump()
 
 
@@ -698,7 +708,10 @@ def start_run(
             api_key_value = None
 
     try:
-        run_id = mgr.start_run(
+        # Phase 2 (decision 0025 §6.4): auto-enqueue when a run is
+        # already active. ``start_or_enqueue_run`` returns
+        # ``(run_id, status)`` where status is "running" or "queued".
+        run_id, status = mgr.start_or_enqueue_run(
             task=req.task.strip(),
             tier=req.tier,
             settings=settings,
@@ -711,7 +724,7 @@ def start_run(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return RunStartResponse(run_id=run_id, status="running").model_dump()
+    return RunStartResponse(run_id=run_id, status=status).model_dump()
 
 
 @router.get("/runs", response_model=RunListResponse)
@@ -778,6 +791,199 @@ def post_stop(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
         raise HTTPException(status_code=404, detail="run not found")
     mgr.stop(run_id)
     return StopResponse(stopped=True).model_dump()
+
+
+# ---- Phase 2 (decision 0025 §6.4): pause / resume / queue / file preview ----
+
+
+@router.post("/runs/{run_id}/pause", response_model=dict)
+def post_pause(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
+    """Request a pause at the next step boundary.
+
+    Idempotent: a second call when the run is already paused returns
+    200 with ``paused=True``. A call against a terminal run returns
+    409 (no point pausing a run that already ended).
+    """
+    run = mgr.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run.status == "paused":
+        return {"run_id": run_id, "paused": True}
+    if run.status in ("done", "error", "stopped"):
+        raise HTTPException(status_code=409, detail="cannot pause a terminal run")
+    ok = mgr.pause_run(run_id)
+    return {"run_id": run_id, "paused": bool(ok)}
+
+
+@router.post("/runs/{run_id}/resume", response_model=dict)
+def post_resume(
+    run_id: str,
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    """Resume a paused run.
+
+    Rebuilds the agent from the most recent snapshot + replays the
+    step memory. Returns 409 if the run is not paused.
+    """
+    run = mgr.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run.status != "paused":
+        raise HTTPException(status_code=409, detail="run is not paused")
+    ok, err = mgr.resume_run(run_id, settings)
+    if not ok:
+        raise HTTPException(status_code=409, detail=str(err or "resume failed"))
+    return {"run_id": run_id, "resumed": True}
+
+
+@router.get("/queue", response_model=QueueListResponse)
+def list_queue(mgr: RunManager = Depends(get_run_manager)) -> dict:
+    """List queued + active runs. Active first (sorted by start
+    monotonic), then queued FIFO. The SPA's <QueuePane> renders this
+    list.
+    """
+    active = [r for r in mgr.list() if r.status in ("running", "awaiting_approval", "paused")]
+    queued = mgr.queue()
+    return QueueListResponse(
+        active=[
+            RunSummary(
+                id=r.id,
+                task=r.task,
+                tier=r.tier,
+                status=r.status,
+                started_at=r.started_at,
+                ended_at=r.ended_at,
+                duration_s=None,
+                result=r.result,
+                error=r.error,
+                has_pending_approval=bool(r.pending),
+                tokens=__import__("smolcode.web.schemas", fromlist=["TokenSummary"]).TokenSummary(
+                    input=r.tokens_in,
+                    output=r.tokens_out,
+                    total=r.tokens_in + r.tokens_out,
+                ),
+                step_count=r.step_count,
+                remaining_s=r.remaining_s(
+                    __import__("smolcode.web.agent_runner", fromlist=["_MAX_RUN_WALL_S"]).__dict__.get(
+                        "_MAX_RUN_WALL_S", 0
+                    )
+                ),
+                subagent=(
+                    {
+                        "id": r.subagent.id,
+                        "tier": r.subagent.tier,
+                        "started_at": r.subagent.started_at,
+                        "ended_at": r.subagent.ended_at,
+                    }
+                    if r.subagent is not None
+                    else None
+                ),
+                session_id=r.session_id,
+                project=r.project,
+                queue_position=r.queue_position,
+            ).model_dump()
+            for r in active
+        ],
+        queued=[
+            {
+                "id": e.id,
+                "task": e.task,
+                "tier": e.tier,
+                "queued_at": e.queued_at,
+                "project": e.project,
+                "session_id": e.session_id,
+                "queue_position": i + 1,
+            }
+            for i, e in enumerate(queued)
+        ],
+    ).model_dump()
+
+
+@router.delete("/queue/{run_id}", response_model=dict)
+def cancel_queue(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
+    """Cancel a queued (not yet started) run. Returns 409 if the run
+    is already active -- the SPA should use POST /api/runs/{id}/stop
+    for active runs."""
+    run = mgr.get(run_id)
+    if run is not None and run.status not in ("queued",):
+        raise HTTPException(
+            status_code=409,
+            detail="cannot cancel a run that is not queued; use /stop instead",
+        )
+    ok = mgr.cancel_queue(run_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="queue entry not found")
+    return {"run_id": run_id, "cancelled": True}
+
+
+@router.get("/files", response_model=FileReadResponse)
+def read_file(
+    path: str = Query(..., description="File path relative to the project root, or absolute inside the workspace."),
+    project: str | None = Query(
+        default=None,
+        description="Project name (must be in Settings.projects). Defaults to the active project or legacy workspace.",
+    ),
+    max_bytes: int = Query(
+        default=256 * 1024, ge=1, le=10 * 1024 * 1024, description="Size cap; oversize files return 413."
+    ),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Phase 2 (decision 0025 §6.4 A4): read a file for the <FilePreview>
+    pane. Path is sandboxed to the project root (or workspace for
+    legacy mode). Returns the file content as UTF-8 text + metadata.
+    """
+    from .agent_runner import _MAX_RUN_WALL_S  # noqa: F401  (kept for parity)
+
+    # Resolve the project root.
+    root: Path | None = None
+    if project:
+        for p in getattr(settings, "projects", ()) or ():
+            if getattr(p, "name", None) == project:
+                root = Path(getattr(p, "root", ""))
+                break
+    if root is None:
+        root = Path(getattr(settings, "workspace", "") or "")
+    if not str(root):
+        raise HTTPException(status_code=400, detail="no project root available")
+    root = root.resolve()
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = (root / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+    # Reject if candidate escapes root.
+    try:
+        if Path(os.path.commonpath([str(candidate), str(root)])) != root:
+            raise HTTPException(status_code=403, detail="path is outside project root")
+    except (ValueError, OSError):
+        raise HTTPException(status_code=403, detail="path is outside project root") from None
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    size = candidate.stat().st_size
+    truncated = False
+    if size > max_bytes:
+        truncated = True
+        with candidate.open("rb") as f:
+            data = f.read(max_bytes)
+    else:
+        with candidate.open("rb") as f:
+            data = f.read()
+    try:
+        text = data.decode("utf-8")
+        encoding = "utf-8"
+    except UnicodeDecodeError:
+        text = data.decode("utf-8", errors="replace")
+        encoding = "binary"
+    rel = candidate.relative_to(root).as_posix()
+    return FileReadResponse(
+        path=rel,
+        abs_path=str(candidate),
+        size=size,
+        truncated=truncated,
+        encoding=encoding,
+        content=text,
+    ).model_dump()
 
 
 # ---- M10: workspace tree endpoint ---------------------------------------

@@ -18,6 +18,10 @@ interface Props {
   // Phase 1 (decision 0025 §6.3): scope the tree to the active project.
   // null/undefined = legacy workspace; string = project name.
   project?: string | null
+  // Phase 2 (decision 0025 §6.4 A4): invoked when the user clicks
+  // a file (not a directory) row. The parent uses this to open the
+  // <FilePreview> pane for the clicked path.
+  onFileClick?: (path: string) => void
 }
 
 interface TreeNode {
@@ -60,17 +64,31 @@ function NodeRow({
   node,
   depth,
   touchedSet,
+  onFileClick,
 }: {
   node: TreeNode
   depth: number
   touchedSet: Set<string>
+  onFileClick?: (path: string) => void
 }) {
   const [open, setOpen] = useState(depth < 2)
   const isTouched = touchedSet.has(node.relPath)
   const pad = { paddingLeft: 8 + depth * 16 }
   if (!node.isDir) {
     return (
-      <div className={'tree-row tree-file' + (isTouched ? ' tree-touched' : '')} style={pad}>
+      <div
+        className={'tree-row tree-file' + (isTouched ? ' tree-touched' : '')}
+        style={pad}
+        role="button"
+        tabIndex={0}
+        onClick={() => onFileClick && onFileClick(node.relPath)}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && onFileClick) {
+            e.preventDefault()
+            onFileClick(node.relPath)
+          }
+        }}
+      >
         <span className="tree-icon">·</span>
         <span className="tree-name">{node.name}</span>
         <span className="tree-size muted">{node.size}</span>
@@ -88,12 +106,28 @@ function NodeRow({
         {open ? '▾' : '▸'}
       </span>
       <span className="tree-name">{node.name}/</span>
-      {open && node.children.map((c) => <NodeRow key={c.relPath} node={c} depth={depth + 1} touchedSet={touchedSet} />)}
+      {open && node.children.map((c) => (
+        <NodeRow
+          key={c.relPath}
+          node={c}
+          depth={depth + 1}
+          touchedSet={touchedSet}
+          onFileClick={onFileClick}
+        />
+      ))}
     </div>
   )
 }
 
-export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDepth, refreshTrigger, project }: Props) {
+export function WorkspaceTree({
+  workspaceRoot,
+  touchedPaths,
+  maxEntries,
+  maxDepth,
+  refreshTrigger,
+  project,
+  onFileClick,
+}: Props) {
   const [data, setData] = useState<WorkspaceTreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -153,7 +187,13 @@ export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDept
         </div>
       )}
       {tree.map((node) => (
-        <NodeRow key={node.relPath} node={node} depth={0} touchedSet={touchedSet} />
+        <NodeRow
+          key={node.relPath}
+          node={node}
+          depth={0}
+          touchedSet={touchedSet}
+          onFileClick={onFileClick}
+        />
       ))}
     </div>
   )

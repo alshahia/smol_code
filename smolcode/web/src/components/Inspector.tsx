@@ -31,6 +31,10 @@ interface Props {
   // Phase 1 (decision 0025 §6.3): scope the workspace tree to the
   // active project (null = legacy workspace).
   project?: string | null
+  // Phase 2 (decision 0025 §6.4 A4): invoked when the user clicks
+  // a file in the workspace tree; the parent opens a <FilePreview>
+  // pane for the clicked path.
+  onFileClick?: (path: string) => void
 }
 
 const MAX_RUN_WALL_S_FALLBACK = 900 // SMOLCODE_WEB_RUN_TIMEOUT_S default (decision 0023)
@@ -43,7 +47,13 @@ function formatHMS(totalSeconds: number): string {
   return sign + m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0')
 }
 
-export function Inspector({ activeRun, config, treeRefreshTrigger, project }: Props) {
+export function Inspector({
+  activeRun,
+  config,
+  treeRefreshTrigger,
+  project,
+  onFileClick,
+}: Props) {
   // 1s tick for the countdown. We start at 0 and only flip to active
   // when the run is in flight; this avoids spurious re-renders for
   // terminal runs.
@@ -192,6 +202,7 @@ export function Inspector({ activeRun, config, treeRefreshTrigger, project }: Pr
           touchedPaths={activeRun?.touched_paths}
           refreshTrigger={treeRefreshTrigger}
           project={project}
+          onFileClick={onFileClick}
         />
       </div>
 

@@ -169,14 +169,17 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
                 raise ValueError("task must be a non-empty string")
             started = time.monotonic()
             sub_id = self._uuid.uuid4().hex
-            # Phase 0 (decision 0025): publish subagent.started on the
-            # outer run so the SPA can render a nested <SubAgentBlock>.
+            # Phase 0 (decision 0025) + Phase 2 §6.4 fold-in: publish
+            # subagent.started on the outer run so the SPA can render a
+            # nested <SubAgentBlock>. The history list (``subagent_history``)
+            # accumulates every delegation; ``append_subagent`` handles
+            # the pending_lock + duplicate-id guard.
             if self._outer_run is not None:
-                with self._outer_run.pending_lock:
-                    self._outer_run.subagent_id = sub_id
-                    self._outer_run.subagent_tier = self._tier_name
-                    self._outer_run.subagent_started_at = started
-                    self._outer_run.subagent_ended_at = None
+                self._outer_run.append_subagent(
+                    sub_id,
+                    tier=self._tier_name,
+                    started_at=started,
+                )
                 try:
                     self._outer_run.publish(
                         self._EVT_SUBAGENT_STARTED,
@@ -233,9 +236,7 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
                 # field can reference the active sub-agent id.
                 ended = time.monotonic()
                 if self._outer_run is not None:
-                    with self._outer_run.pending_lock:
-                        if self._outer_run.subagent_id == sub_id:
-                            self._outer_run.subagent_ended_at = ended
+                    self._outer_run.close_subagent(sub_id, ended_at=ended)
                     try:
                         self._outer_run.publish(
                             self._EVT_SUBAGENT_ENDED,
@@ -347,14 +348,16 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
             )
             started = time.monotonic()
             sub_id = self._uuid.uuid4().hex
-            # Phase 0 (decision 0025): publish subagent.started on the
-            # outer run (mirrors _build_delegation_tool.forward).
+            # Phase 0 (decision 0025) + Phase 2 §6.4 fold-in: publish
+            # subagent.started on the outer run (mirrors
+            # _build_delegation_tool.forward).
             if self._outer_run is not None:
-                with self._outer_run.pending_lock:
-                    self._outer_run.subagent_id = sub_id
-                    self._outer_run.subagent_tier = spec.tier
-                    self._outer_run.subagent_started_at = started
-                    self._outer_run.subagent_ended_at = None
+                self._outer_run.append_subagent(
+                    sub_id,
+                    tier=spec.tier,
+                    specialist=spec.name,
+                    started_at=started,
+                )
                 try:
                     self._outer_run.publish(
                         self._EVT_SUBAGENT_STARTED,
@@ -404,9 +407,7 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
                 # Phase 0: ALWAYS publish ended (even on error).
                 ended = time.monotonic()
                 if self._outer_run is not None:
-                    with self._outer_run.pending_lock:
-                        if self._outer_run.subagent_id == sub_id:
-                            self._outer_run.subagent_ended_at = ended
+                    self._outer_run.close_subagent(sub_id, ended_at=ended)
                     try:
                         self._outer_run.publish(
                             self._EVT_SUBAGENT_ENDED,

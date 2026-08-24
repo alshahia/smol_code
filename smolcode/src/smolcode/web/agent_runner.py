@@ -25,12 +25,14 @@ from .runs import (
     EVT_ERROR,
     EVT_PLAN_STEP,
     EVT_RUN_ENDED,
+    EVT_RUN_PAUSED,
     EVT_RUN_STARTED,
     EVT_STEP_ACTION,
     EVT_STEP_FINAL_ANSWER,
     STATUS_AWAITING_APPROVAL,
     STATUS_DONE,
     STATUS_ERROR,
+    STATUS_PAUSED,
     STATUS_RUNNING,
     STATUS_STOPPED,
 )
@@ -70,8 +72,152 @@ except ValueError:
 _MAX_RUN_DRAIN_S = float(os.environ.get("SMOLCODE_WEB_RUN_DRAIN_S", "30"))
 
 
+# Phase 2 (decision 0025 §6.4): per-mention size cap for the file
+# mentions (``@path``) inline-attachment feature. Files larger than
+# this are NOT inlined; the agent is expected to call ``read_file``
+# itself when it actually needs the content. Default 32 KB; override
+# via SMOLCODE_WEB_MENTION_MAX_BYTES.
+try:
+    _MAX_MENTION_BYTES = int(os.environ.get("SMOLCODE_WEB_MENTION_MAX_BYTES", str(32 * 1024)))
+except ValueError:
+    _MAX_MENTION_BYTES = 32 * 1024
+
+
 class _StopRequested(BaseException):
     """Internal: raised by the step callback when run.stop_flag is set."""
+
+
+class _PauseRequested(BaseException):
+    """Phase 2 (decision 0025 §6.4): raised by the step callback when
+    ``run.pause_flag`` is set. Distinct from ``_StopRequested`` because
+    pause is resumable (the agent is rebuilt from a memory snapshot
+    on ``POST /api/runs/{id}/resume``), while stop is terminal.
+
+    ``BaseException`` (not ``Exception``) so the broad ``except
+    Exception`` in ``run_in_thread`` does NOT swallow it -- we want
+    the same control-flow guarantee ``_StopRequested`` has.
+    """
+
+
+# Phase 2 (decision 0025 §6.4): ``@path`` mention syntax parser.
+# Splits a task string into mention tokens. Skips tokens that appear
+# inside fenced code blocks (`` ``` ... ``` ``) so example paths in
+# the user's text are not mistakenly expanded. Pure function -- no
+# I/O, no file resolution; that's ``_attach_mentions``'s job.
+_MENTION_RE = __import__("re").compile(r"(?<!\w)@(?P<path>[A-Za-z0-9_./\\-]+)")
+_FENCE_RE = __import__("re").compile(r"```[^\n]*\n.*?```", __import__("re").DOTALL)
+
+
+def _parse_mentions(task: str):
+    """Return a list of ``{"raw": "@x.py", "path": "x.py"}`` dicts.
+
+    Mentions inside ```` ``` ```` code fences are stripped before the
+    mention scan so the user's literal examples do not trigger
+    inline-attachment.
+    """
+    if not isinstance(task, str) or not task:
+        return []
+    # Strip fenced code blocks; replace them with placeholder spaces
+    # so the offsets of subsequent matches still align with the
+    # ORIGINAL task string (we want ``raw`` to match what the user
+    # actually wrote).
+    masked = _FENCE_RE.sub(lambda m: " " * len(m.group(0)), task)
+    out = []
+    seen = set()
+    for m in _MENTION_RE.finditer(masked):
+        raw = m.group(0)
+        path = m.group("path")
+        if path in seen:
+            continue
+        seen.add(path)
+        out.append({"raw": raw, "path": path, "start": m.start(), "end": m.end()})
+    return out
+
+
+def _attach_mentions(task: str, *, project_root):
+    """Inline file contents for every ``@path`` mention in ``task``.
+
+    Behaviour:
+
+    - Each ``@<path>`` token is resolved against ``project_root``.
+    - Paths that escape ``project_root`` (``../``, absolute paths
+      outside, symlinks pointing out) are listed in an "unresolved"
+      section; their content is NEVER inlined.
+    - Files larger than ``_MAX_MENTION_BYTES`` are also marked
+      unresolved (the agent can read them with ``read_file`` if it
+      needs the content).
+    - Non-UTF-8 files (binary blobs) are skipped -- the agent sees
+      only the path + a "not inlined" note.
+
+    Returns the augmented task string. The original ``task`` text is
+    preserved verbatim; inlined content is appended as a fenced block
+    section with the explicit header so the agent knows to skip the
+    ``read_file`` round-trip.
+    """
+    from pathlib import Path as _P
+
+    mentions = _parse_mentions(task)
+    if not mentions:
+        return task
+    project_root = _P(project_root).resolve()
+    inlined: list = []
+    unresolved: list = []
+    for m in mentions:
+        rel_or_abs = m["path"]
+        # Decide resolved candidate.
+        candidate = _P(rel_or_abs)
+        if not candidate.is_absolute():
+            candidate = (project_root / candidate).resolve()
+        else:
+            try:
+                candidate = candidate.resolve()
+            except OSError:
+                candidate = None
+        # Safety: candidate must be inside project_root.
+        safe = False
+        if candidate is not None:
+            try:
+                # commonpath raises if drives differ on Windows; we
+                # want any mismatch to fall into the "unresolved" bucket.
+                safe = _P(os.path.commonpath([str(candidate), str(project_root)])) == project_root
+            except (ValueError, OSError):
+                safe = False
+        if not safe or candidate is None or not candidate.is_file():
+            unresolved.append(rel_or_abs)
+            continue
+        try:
+            size = candidate.stat().st_size
+        except OSError:
+            unresolved.append(rel_or_abs)
+            continue
+        if size > _MAX_MENTION_BYTES:
+            unresolved.append(rel_or_abs + " (too large: " + str(size) + " bytes)")
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            unresolved.append(rel_or_abs + " (binary or unreadable)")
+            continue
+        rel = candidate.relative_to(project_root).as_posix()
+        inlined.append((rel, text))
+    if not inlined and not unresolved:
+        return task
+    parts = [task, "", "--- Attached file mentions ---"]
+    if inlined:
+        parts.append("")
+        parts.append("The following files were inlined by the SPA mention feature.")
+        parts.append("Do NOT call read_file on these -- the content is already here.")
+        for rel, text in inlined:
+            parts.append("")
+            parts.append("```" + rel)
+            parts.append(text.rstrip("\n"))
+            parts.append("```")
+    if unresolved:
+        parts.append("")
+        parts.append("Unresolved mentions (could not be inlined -- read with read_file if needed):")
+        for u in unresolved:
+            parts.append("- " + u)
+    return "\n".join(parts)
 
 
 def _safe_str(value, max_len=4000):
@@ -160,9 +306,26 @@ def _final_answer_step_payload(step):
     return out
 
 
-def _make_step_callback(run):
-    # smolagents >= 1.27 invokes step callbacks as `cb(memory_step, agent=self)`,
-    # so the signature must accept any positional/keyword extras without erroring.
+def _make_step_callback(run, agent_ref=None):
+    """Build the per-step callback the smolagents runner invokes.
+
+    ``agent_ref`` is an optional list-of-one mutable container. The
+    ``run_in_thread`` function writes the built agent into it AFTER the
+    step callback is registered (smolagents requires the agent to be
+    alive before ``agent.step_callbacks.register``). The callback uses
+    the reference to call ``agent.memory`` for snapshotting when
+    ``pause_flag`` is set.
+
+    Phase 2 (decision 0025 §6.4) changes:
+
+    1. Stop is checked FIRST (existing behaviour).
+    2. After publishing the step, check ``run.pause_flag`` -- when
+       set, the callback raises ``_PauseRequested`` so the agent's
+       outer ``run()`` call returns early. ``run_in_thread`` catches
+       it, snapshots the agent one more time, flips ``status`` to
+       ``STATUS_PAUSED``, and emits ``run.paused``.
+    """
+
     def _cb(step, **_kwargs):
         if run.stop_flag.is_set():
             raise _StopRequested()
@@ -178,6 +341,20 @@ def _make_step_callback(run):
             raise
         except Exception as e:
             _log.warning("step callback failed for run %s: %s", run.id, e)
+        # Phase 2: snapshot the agent's memory AFTER each step so a
+        # pause can resume without losing state. Then check pause_flag
+        # and raise if set -- this terminates agent.run() at the next
+        # step boundary.
+        try:
+            if agent_ref is not None and agent_ref[0] is not None and run.pause_flag.is_set():
+                # Final snapshot before pause; covers any unflushed step.
+                try:
+                    run.snapshot(agent_ref[0])
+                except Exception as e:
+                    _log.warning("snapshot before pause failed for run %s: %s", run.id, e)
+                raise _PauseRequested()
+        except _PauseRequested:
+            raise
 
     return _cb
 
@@ -459,9 +636,35 @@ def run_in_thread(run, settings):
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"smolcode-{run.id}")
     run_future = None
+    # Phase 2 (decision 0025 §6.4): ``agent_ref`` is a one-element list
+    # so the step callback (a closure) can reach the agent AFTER
+    # registration. Snapshotting before pause requires the live agent.
+    agent_ref: list = [None]
+    # Phase 2: inline-attached @-mentions for file-mention syntax. The
+    # ``project`` field on the Run resolves to a project root directory
+    # via ``Settings.projects``; if no project is set we fall back to
+    # ``settings.workspace`` (legacy mode).
+    effective_task = run.task
+    try:
+        from pathlib import Path as _PathForMentions
+
+        project_root = None
+        if run.project:
+            for p in getattr(settings, "projects", ()) or ():
+                if getattr(p, "name", None) == run.project:
+                    project_root = _PathForMentions(getattr(p, "root", None))
+                    break
+        if project_root is None:
+            project_root = _PathForMentions(getattr(settings, "workspace", "") or "")
+        if project_root and str(project_root):
+            effective_task = _attach_mentions(run.task, project_root=project_root)
+    except Exception as _e:
+        _log.warning("mention attach failed for run %s: %s", run.id, _e)
+        effective_task = run.task
     try:
         agent = _build_agent_for_run(run, settings)
-        cb = _make_step_callback(run)
+        agent_ref[0] = agent
+        cb = _make_step_callback(run, agent_ref=agent_ref)
         from smolagents.agents import ActionStep, FinalAnswerStep, PlanningStep
 
         # Decision 0024 (defensive): register all three step kinds in
@@ -487,7 +690,7 @@ def run_in_thread(run, settings):
                 )
 
         try:
-            run_future = pool.submit(agent.run, run.task)
+            run_future = pool.submit(agent.run, effective_task)
         except Exception as e:
             # ThreadPoolExecutor.submit() can raise if the worker
             # thread fails to start (interpreter shutdown, OOM,
@@ -521,6 +724,23 @@ def run_in_thread(run, settings):
                 + "s without completing; executor was forcibly stopped"
             )
             exit_code = 124  # standard "timed out" exit code
+    except _PauseRequested:
+        # Phase 2 (decision 0025 §6.4): the step callback raised
+        # ``_PauseRequested`` because ``run.pause_flag`` was set.
+        # The agent has already been snapshot by the callback. Flip
+        # status to STATUS_PAUSED (NOT terminal -- resumable) and emit
+        # ``run.paused`` so the SPA can swap the PauseButton label.
+        final_status = STATUS_PAUSED
+        run.error = None
+        exit_code = 0
+        run.publish(
+            EVT_RUN_PAUSED,
+            {
+                "run_id": run.id,
+                "snapshot_at": run.snapshot_at,
+                "ts": _time_now_iso(),
+            },
+        )
     except _StopRequested:
         final_status = STATUS_STOPPED
         run.error = "stopped by user"
@@ -543,9 +763,9 @@ def run_in_thread(run, settings):
         # context when the orchestrator raised mid-delegation. The
         # SPA renders this as a "while running sub-agent X" hint.
         ctx_parts = [type(e).__name__ + ": " + _safe_str(e)]
-        if run.subagent_id is not None:
-            tier_label = run.subagent_tier or "subagent"
-            ctx_parts.append("(while running sub-agent " + tier_label + " id=" + run.subagent_id[:8] + ")")
+        if run.subagent is not None:
+            tier_label = run.subagent.tier or "subagent"
+            ctx_parts.append("(while running sub-agent " + tier_label + " id=" + run.subagent.id[:8] + ")")
         ctx_parts.append(tb_text)
         run.error = "\n".join(ctx_parts)
         exit_code = 1
@@ -612,6 +832,162 @@ def run_in_thread(run, settings):
                 "ts": _time_now_iso(),
             },
         )
+        # Phase 2 (decision 0025 §6.4): drain the FIFO queue so the
+        # next queued run starts. Done after EVT_RUN_ENDED so SSE
+        # subscribers see the run ended before the next one starts.
+        try:
+            _drain_queue_after_run(run)
+        except Exception as _e:
+            _log.warning("queue drain failed after run %s: %s", run.id, _e)
 
 
-__all__ = ["run_in_thread", "_StopRequested"]
+def resume_active_agent(run, settings):
+    """Phase 2 (decision 0025 §6.4): rebuild the agent from the
+    snapshot and continue the run.
+
+    Called from ``RunManager.resume_run`` (the API endpoint) AFTER the
+    ``pause_flag`` is cleared. Steps:
+
+    1. Load ``run.snapshot_path`` via ``run.load_snapshot``.
+    2. Build a fresh agent via ``_build_agent_for_run`` (same factory
+       the initial run used).
+    3. Restore ``agent.memory.system_prompt`` + ``agent.memory.steps``
+       from the snapshot data, instantiating the right step subclass
+       for each entry (``step_type`` discriminator).
+    4. Re-register the step callback so subsequent steps are
+       published.
+    5. Submit ``agent.run(snapshot_task, reset=False)`` to the same
+       pool, so the existing wall-clock budget applies.
+
+    The caller is responsible for clearing ``pause_flag`` and emitting
+    ``run.resumed``. Returns the concurrent.futures.Future.
+    """
+    from smolagents.memory import (
+        ActionStep,
+        FinalAnswerStep,
+        PlanningStep,
+        TaskStep,
+    )
+
+    if run.snapshot_path is None:
+        raise RuntimeError("cannot resume run " + run.id + ": no snapshot available")
+    snap = run.load_snapshot(run.snapshot_path)
+
+    agent = _build_agent_for_run(run, settings)
+
+    # Restore system_prompt (it may be a SystemPromptStep object).
+    sys_text = snap.get("system_prompt")
+    if isinstance(sys_text, dict):
+        sys_text = sys_text.get("system_prompt", "")
+    if not isinstance(sys_text, str):
+        sys_text = str(sys_text or "")
+    # AgentMemory.__init__ creates a SystemPromptStep; replace its
+    # ``system_prompt`` attribute directly.
+    try:
+        agent.memory.system_prompt.system_prompt = sys_text
+    except Exception:
+        pass
+
+    # Rebuild the steps list.
+    new_steps = []
+    for s in snap.get("steps", []):
+        kind = s.get("step_type")
+        # SystemPromptStep lives in agent.memory.system_prompt; skip.
+        if kind == "SystemPromptStep":
+            continue
+        # ActionStep / PlanningStep / TaskStep / FinalAnswerStep.
+        cls = {
+            "ActionStep": ActionStep,
+            "PlanningStep": PlanningStep,
+            "TaskStep": TaskStep,
+            "FinalAnswerStep": FinalAnswerStep,
+        }.get(kind)
+        if cls is None:
+            continue
+        # Drop the discriminator + any non-init fields before passing
+        # to the dataclass constructor. ``dict()`` over smolagents
+        # returns only field names, but be defensive.
+        try:
+            import dataclasses as _dc
+
+            field_names = {f.name for f in _dc.fields(cls)}
+            payload = {k: v for k, v in s.items() if k in field_names and k != "step_type"}
+            step = cls(**payload)
+        except Exception:
+            continue
+        new_steps.append(step)
+    agent.memory.steps = new_steps
+
+    # Re-register step callback.
+    agent_ref = [agent]
+    cb = _make_step_callback(run, agent_ref=agent_ref)
+    for step_cls in (ActionStep, PlanningStep, FinalAnswerStep):
+        try:
+            agent.step_callbacks.register(step_cls, cb)
+        except Exception as e:
+            _log.warning(
+                "resume step callback register failed for run %s (%s): %s",
+                run.id,
+                step_cls.__name__,
+                e,
+            )
+
+    # Submit the continuation to the same ThreadPoolExecutor used by
+    # ``run_in_thread``. We import ``concurrent.futures`` lazily so the
+    # caller still owns the lifecycle.
+    return agent
+
+
+def _drain_queue_after_run(run):
+    """Phase 2 (decision 0025 §6.4): pop the next queue entry and
+    start its runner thread.
+
+    Called from ``run_in_thread``'s finally block, AFTER the run has
+    reached a terminal status (or paused -- paused is NOT terminal but
+    we still want to drain the queue so the next queued run can
+    proceed). The queue entries are ``QueueEntry`` records that mirror
+    the parameters of the original ``start_run`` call.
+    """
+    from . import api as _api_module  # late import to avoid cycle
+
+    mgr = _api_module.get_run_manager()
+    with mgr._queue_lock:
+        if not mgr._queue:
+            return None
+        entry = mgr._queue.pop(0)
+    # Update queue positions on remaining entries.
+    mgr._refresh_queue_positions()
+    # Look up the pre-allocated Run record (already in mgr._runs from
+    # the original ``start_run`` call) and start its runner thread.
+    target = mgr.get(entry.id)
+    if target is None:
+        return None
+    # Settings + audit: the queue entry only carries overrides; we
+    # use the global ``get_settings`` because that's what the SPA
+    # was using when the original start_run call happened.
+    settings = _api_module.get_settings()
+    from . import deps as _deps
+
+    settings = _deps.get_settings()
+    # Start the runner thread for the dequeued run.
+    import threading as _threading
+
+    target.status = STATUS_RUNNING
+    target.thread = _threading.Thread(
+        target=run_in_thread,
+        args=(target, settings),
+        name="smolcode-run-" + target.id[:8],
+        daemon=True,
+    )
+    target.thread.start()
+    return target.id
+
+
+__all__ = [
+    "run_in_thread",
+    "resume_active_agent",
+    "_StopRequested",
+    "_PauseRequested",
+    "_attach_mentions",
+    "_parse_mentions",
+]
