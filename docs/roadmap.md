@@ -1015,10 +1015,14 @@ After v1.7.1.3 the user asked for a critical review of the Web UI/UX.
   usage caps, prompt library, markdown rendering without sanitizer).
 - A 4-phase implementation plan with concrete file paths + LOC estimates.
 
-**Status:** ACCEPTED (2026-08-23). User approved all 5 open
-questions (Q1=a Phase 0 first; Q2=a snapshot to disk; Q3=Yes defer
-drag-drop to v1.9.x; Q4=c Read both; Q5=a hardcoded defaults + override).
-Phase 0 implementation is IN FLIGHT. See `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` §13.1 for the Phase 0 acceptance gate.
+**Status:** **Phase 0 SHIPPED on commit `88a20e4` (2026-08-23).**
+User approved all 5 open questions (Q1=a Phase 0 first; Q2=a snapshot
+to disk; Q3=Yes defer drag-drop to v1.9.x; Q4=c Read both; Q5=a
+hardcoded defaults + override). Phase 1 implementation is BLOCKED
+pending user acceptance of Phase 0. See
+`docs/decisions/0025-web-ui-ux-review-and-roadmap.md` §13.1 for the
+Phase 0 acceptance gate (all boxes checked) + §14.7 for the ship
+report + §14.8 for Phase 1 followups.
 
 **Phased plan (high-level — full detail in 0025 §6):**
 

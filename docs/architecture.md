@@ -820,7 +820,10 @@ questions: Q1=(a) Phase 0 first; Q2=(a) snapshot `agent.memory.steps`
 to disk; Q3=Yes defer drag-drop reorder to v1.9.x; Q4=(c) Read both
 (legacy `workspace` becomes "default" project); Q5=(a) hardcoded
 defaults in `model_catalog.PROVIDERS` overridable via
-`Settings.cost_rates`. Phase 0 implementation is IN FLIGHT.
+`Settings.cost_rates`. **Phase 0 SHIPPED** on commit `88a20e4`
+(2026-08-23) -- see `docs/decisions/0025-web-ui-ux-review-and-roadmap.md`
+§11 (files touched) + §13.1 (acceptance gate) + §14.7 (ship report) +
+§14.8 (Phase 1 followups).
 
 **Phase 0 implementation cross-references (v1.8.0):**
 - `Run.summary_dict(max_wall_s)` returns a dict containing `tokens_in`,
