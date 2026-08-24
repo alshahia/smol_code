@@ -1,0 +1,59 @@
+# Compose file for the LiteLLM proxy (M6; decision 0002).
+#
+# Usage:
+#   docker compose -f docker-compose.litellm.yml up -d
+#
+# Then point smolcode at it:
+#   set SMOLCODE_LITELLM_PROXY=http://localhost:4000
+#   smolcode --tier restricted "task"
+#
+# The proxy binds to 127.0.0.1:4000 on the host. This is INTENTIONALLY
+# loopback-only: the proxy is a single-user dev sidecar, not a multi-tenant
+# gateway. Production deployment (TLS, auth, multi-host) is the user's
+# responsibility (see docs/litellm-proxy.md for pointers).
+
+name: smolcode-litellm
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: smolcode-litellm
+    restart: unless-stopped
+    # Bind ONLY to loopback so the proxy is unreachable from other hosts.
+    # Override to "0.0.0.0:4000:4000" only if you are behind a controlled
+    # firewall; do not do this on a multi-tenant host.
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      # Starter config shipped in this repo. Override by mounting your own
+      # file at /app/config.yaml and editing litellm_config.yaml in place.
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    environment:
+      # The proxy reads its config from /app/config.yaml; tell it where.
+      - LITELLM_CONFIG=/app/config.yaml
+      # Disable per-request spend logs for local dev (re-enable for cost
+      # observability; see docs/litellm-proxy.md cost-control section).
+      - DISABLE_SPEND_LOGS=true
+      # Proxy master key for /health + admin endpoints. Leave blank for
+      # localhost-only dev (proxy still works for /v1/* model calls).
+      # For any non-loopback deployment, set LITELLM_MASTER_KEY to a random
+      # 32+ byte secret.
+      - LITELLM_MASTER_KEY=
+      # Pass-through of provider credentials. The proxy itself reads
+      # OPENCODE_GO_APIKEY / MINIMAX_API_KEY etc. via os.environ/<NAME> in
+      # litellm_config.yaml; we only need to forward them into the container.
+      # docker compose automatically forwards env vars that are listed here.
+      - OPENCODE_GO_APIKEY=${OPENCODE_GO_APIKEY:-}
+      - OPENCODE_HOST=${OPENCODE_HOST:-https://opencode.ai/zen/go/v1}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+      - MINIMAX_HOST=${MINIMAX_HOST:-https://api.minimax.io/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CUSTOM_API_KEY=${CUSTOM_API_KEY:-}
+      - CUSTOM_BASE_URL=${CUSTOM_BASE_URL:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4000/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

@@ -1,0 +1,59 @@
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtualenv
+.venv/
+venv/
+
+# Env files (NEVER commit secrets)
+.env
+.env.local
+*.local.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Test / coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Audit / logs
+logs/
+*.jsonl
+*.log
+*.out
+coverage.txt
+
+# Pytest scratch / build logs / M8 scratch files
+.pytest_tmp/
+build.log
+server.log
+lint.log
+m8_*.txt
+m8_*.py
+cell2_sample.py
+user_cell_sample.py
+tmp_body.json
+tmp_body2.json
+tmp_pytest.out
+tmp_pytest2.out
+tmp_server2.log
+tmp_server3.log
+
+# One-off migration scripts with hardcoded absolute paths
+web/src/m15_apply.py

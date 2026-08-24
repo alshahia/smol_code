@@ -1,0 +1,24 @@
+# Coverage configuration for smolcode (M7, decision 0009).
+# Excludes:
+#   * __main__.py         -- CLI shim; no logic to test (covered by test_cli).
+#   * _mcp_demo_server.py -- demo MCP server that lives only to power the docs MCP example;
+#                            its tool list is exercised end-to-end by test_mcp_tools.py.
+#   * pragma: no cover    -- developer escape hatch (used in __main__ / __repr__ / etc.).
+
+[run]
+source = smolcode
+omit =
+    src/smolcode/__main__.py
+    src/smolcode/tools/_mcp_demo_server.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+
+show_missing = true
+skip_covered = false
+precision = 1

@@ -1,0 +1,121 @@
+# LiteLLM proxy configuration (M6; decision 0002).
+#
+# This is a STARTER config that mirrors the five provider presets already
+# wired into smolcode/src/smolcode/models.py (PROVIDER_PRESETS). The
+# direct-provider path (the default) and the proxy path (opt-in via
+# SMOLCODE_LITELLM_PROXY) therefore expose the same model ids.
+#
+# SECRET HYGIENE: there are NO secrets in this file. Every key is read
+# from the environment via the os.environ/<NAME> placeholder syntax.
+# `docker-compose.litellm.yml` forwards the relevant env vars from the
+# host shell into the container; LiteLLM picks them up from there.
+#
+# To add a new provider: copy one of the existing model_list entries,
+# rename it, and add the model + the matching os.environ/ entry for the
+# key. See docs/litellm-proxy.md for the full add-a-provider walkthrough.
+
+model_list:
+  # ----- opencode-go (first-class; OPENCODE_GO_APIKEY + OPENCODE_HOST) -----
+  - model_name: deepseek-v4-flash
+    litellm_params:
+      model: openai/deepseek-v4-flash
+      api_base: os.environ/OPENCODE_HOST
+      api_key: os.environ/OPENCODE_GO_APIKEY
+
+  # ----- MiniMax (first-class; MINIMAX_API_KEY + MINIMAX_HOST) ------------
+  # Provider id is "MiniMax" (capital X) per docs/decisions/0001-initial-setup.md.
+  - model_name: MiniMax-M3
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: os.environ/MINIMAX_HOST
+      api_key: os.environ/MINIMAX_API_KEY
+
+  # ----- OpenAI (secondary; litellm native) --------------------------------
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ----- Anthropic (secondary; litellm native) -----------------------------
+  - model_name: claude-3-5-sonnet-latest
+    litellm_params:
+      model: claude-3-5-sonnet-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-3-5-haiku-latest
+    litellm_params:
+      model: claude-3-5-haiku-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ----- Custom OpenAI-compatible endpoint ----------------------------------
+  # CUSTOM_BASE_URL is required; CUSTOM_API_KEY is optional (self-hosted
+  # endpoints often run keyless).
+  - model_name: custom-model
+    litellm_params:
+      model: openai/custom-model
+      api_base: os.environ/CUSTOM_BASE_URL
+      api_key: os.environ/CUSTOM_API_KEY
+
+
+# ----- Rate limits + per-model guards --------------------------------------
+# `rpm` = requests per minute; `tpm` = tokens per minute. Defaults below are
+# intentionally GENEROUS for a single-user dev setup. Tighten for any
+# shared / multi-tenant deployment. Comments next to each entry cite the
+# provider's published free/paid tier when known.
+
+litellm_settings:
+  # Drop spend log noise during dev; flip to false for cost observability.
+  disable_spend_logs: true
+  # 60-second timeout on streaming responses. Shorter than upstream's
+  # default of 600 s because dev tasks should finish fast.
+  stream_timeout: 60
+  # Reject requests with an unrecognized model rather than routing them to
+  # the wrong provider.
+  set_verbose: false
+  drop_params: true
+
+
+# ----- Per-model rate limits (rpm / tpm) -----------------------------------
+# These are applied by the proxy BEFORE the request reaches the upstream
+# provider. Tighten if a single runaway agent is generating too many calls.
+
+model_group_settings:
+  # opencode-go: deepseek-v4-flash is generous on the free tier; cap at
+  # 60 rpm so a runaway agent cannot blow past the provider's quota.
+  - model_group: deepseek-v4-flash
+    limits:
+      rpm: 60
+      tpm: 200000
+  # MiniMax: first-class partner tier; cap at 60 rpm.
+  - model_group: MiniMax-M3
+    limits:
+      rpm: 60
+      tpm: 200000
+  # OpenAI: tighter defaults so a misconfigured key does not rack up cost.
+  - model_group: gpt-4o-mini
+    limits:
+      rpm: 30
+      tpm: 200000
+  - model_group: gpt-4o
+    limits:
+      rpm: 20
+      tpm: 100000
+  - model_group: claude-3-5-sonnet-latest
+    limits:
+      rpm: 20
+      tpm: 100000
+  - model_group: claude-3-5-haiku-latest
+    limits:
+      rpm: 60
+      tpm: 200000
+
+
+# ----- General settings -----------------------------------------------------
+
+general_settings:
+  # Disable telemetry by default. Set to false if you want to send
+  # LiteLLM's anonymous usage stats upstream.
+  telemetry: false

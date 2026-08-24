@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smolcode"
+version = "0.1.0"
+description = "Local/Docker multi-agent coding assistant built on smolagents."
+requires-python = ">=3.10"
+dependencies = [
+    "smolagents[litellm,docker,mcp]",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.1.0",
+    "pytest-datadir",
+    "pytest-timeout",
+    "pytest-cov>=5.0.0",
+]
+web = [
+    # M8 GUI viewer (decision 0010 D2). Optional install via
+    # `uv pip install -e ".[web]"`. Not required for CLI use.
+    # FastAPI >=0.140 has a route-registration regression (routes are
+    # silently dropped from APIRouter.include_router). Pin to <0.140.
+    "fastapi>=0.115,<0.140",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+smolcode = "smolcode.cli:main"
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.9.0",
+    "pytest>=8.1.0",
+    "pytest-datadir",
+    "pytest-timeout",
+    "pytest-cov>=5.0.0",
+]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.9",
+]
+
+[tool.uv.sources]
+smolagents = { path = "../smolagents", editable = true }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-sv --durations=0 --basetemp=.pytest_tmp --cov=smolcode --cov-report=term --cov-fail-under=80"
+testpaths = ["src/smolcode/tests"]
+# M16: markers for tests that need optional tools.
+# `docker`   -- requires a working Docker daemon (used by contract tests
+#               that build + run the elevated sandbox image)
+# `shellcheck` -- requires `shellcheck` binary on PATH (used to lint
+#               docker/iptables-init.sh)
+markers = [
+    "docker: tests that require a Docker daemon (deselected if Docker unavailable)",
+    "shellcheck: tests that require the shellcheck binary on PATH",
+]
+
+[tool.ruff]
+line-length = 119
+lint.ignore = ["F403", "E501"]
+lint.select = ["E", "F", "I", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/smolcode/tests/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["smolcode"]
+lines-after-imports = 2

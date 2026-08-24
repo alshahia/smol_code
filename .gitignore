@@ -1,0 +1,89 @@
+# Top-level .gitignore (added 2026-08-23, M12.5 hygiene).
+#
+# This file exists so that any future `git init` at the repo root cannot
+# accidentally stage secrets or build artefacts. The actual `.env` file
+# (with the OPENCODE_GO_APIKEY value) lives at the repo root, NOT inside
+# `smolcode/`, so the existing `smolcode/.gitignore` does not cover it
+# when the git root is the parent directory. Mirror the relevant patterns
+# here so both layouts are protected.
+#
+# See `docs/decisions/0015-m12-spa-ux-polish-cli-parity.md` §11 for the
+# key-rotation procedure; the leaked key value is NEVER echoed in any
+# tracked file (verified 2026-08-23 by grepping the tree for the unique
+# token prefix; zero matches).
+
+# ---- Env files (NEVER commit secrets) -----------------------------------
+.env
+.env.local
+.env.*.local
+*.local.env
+*.env.bak
+*.env.old
+
+# ---- Python cache / build -----------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+
+# ---- Virtualenvs --------------------------------------------------------
+.venv/
+venv/
+env/
+
+# ---- Test / coverage ----------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.txt
+
+# ---- Audit / logs -------------------------------------------------------
+logs/
+*.jsonl
+*.log
+
+# ---- IDE / OS -----------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- Editor backups -----------------------------------------------------
+*.swp
+*.swo
+*~
+
+# ---- Sibling projects (each is its own repo with its own .git/) -------
+# When git is initialised at this root, the inner `.git/` directories of
+# these projects become orphan files inside the working tree. Excluding
+# the directories entirely keeps them out of the smol_code commit.
+smolagents/
+smolagents-ui/
+smolagents-hybrid-search/
+smolagents_ui/
+docutranslate-ai/
+agent/
+research_doc/
+
+# ---- Runtime artefacts (workspace/, data/) -------------------------------
+workspace/
+data/
+
+# ---- Build scratch (untracked logs from earlier dev sessions) ------------
+tmp_*.txt
+tmp_*.log
+tmp_*.err
+tmp_*.json
+tmp_*.out
+
+# ---- One-off screenshot dumps (smolcode/web manual QA captures) ---------
+python projectssmol_clone_2smolcodeweb__screenshots/
+
+# ---- Internal agent-tool state (not project content) ----------------------
+.mavis/
