@@ -15,10 +15,9 @@ import { ApprovalModal, type PendingApproval } from './components/ApprovalModal'
 import { StopButton } from './components/StopButton'
 import { RunComposer } from './components/RunComposer'
 import { RunHistory } from './components/RunHistory'
-import { WorkspaceTree } from './components/WorkspaceTree'
+import { Inspector } from './components/Inspector'
 import { ProviderSelector } from './components/ProviderSelector'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
-import { AuditPanel } from './components/AuditPanel'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
 import {
@@ -43,6 +42,10 @@ function App() {
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [pending, setPending] = useState<PendingApproval | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Phase 0 (decision 0025, B11): bumped on every diff.proposed /
+  // diff.resolved event so the Inspector's WorkspaceTree refreshes
+  // immediately instead of waiting for its 10s poll.
+  const [treeRefreshTrigger, setTreeRefreshTrigger] = useState<number>(0)
 
   // M11: provider + model + key state, hoisted to App so RunComposer can read them.
   const [providers, setProviders] = useState<ProviderInfo[]>([])
@@ -100,8 +103,14 @@ function App() {
     try {
       const r = await listRuns()
       setRuns(r.runs)
-      const active = r.runs.find((x) => x.id === activeRunId)
-      if (active) setActiveRun(active)
+      // Phase 0 (decision 0025, B9 fix): the previous implementation
+      // kept stale activeRun state when the active run was removed
+      // server-side (RunManager purged it after the window of history).
+      // We now CLEAR activeRun when the active id is no longer in the
+      // list -- a graceful "run is gone" UX instead of a 404 explosion
+      // in the Inspector.
+      const active = r.runs.find((x) => x.id === activeRunId) ?? null
+      setActiveRun(active)
     } catch {
       /* ignore transient */
     }
@@ -239,6 +248,10 @@ function App() {
       hunks: Array.isArray(hunks) ? (hunks as PendingApproval['hunks']) : undefined,
       stats: (stats && typeof stats === 'object') ? (stats as PendingApproval['stats']) : undefined,
     })
+    // Phase 0 (decision 0025, B11): bump the tree refresh trigger so
+    // the Inspector's WorkspaceTree re-fetches on this event instead
+    // of waiting for its 10s poll.
+    setTreeRefreshTrigger((n) => n + 1)
     void refreshRuns()
   }
 
@@ -399,52 +412,7 @@ function App() {
           style={{ display: isMobile && !inspectorOpen ? 'none' : 'block' }}
         >
           <h3>Inspector</h3>
-          {activeRun && (
-            <div className="inspector-section">
-              <h4>Active run</h4>
-              <div className="kv"><span>id:</span> <code>{activeRun.id.slice(0, 12)}</code></div>
-              <div className="kv"><span>status:</span> <code>{activeRun.status}</code></div>
-              <div className="kv"><span>tier:</span> <code>{activeRun.tier}</code></div>
-              {activeRun.duration_s !== null && (
-                <div className="kv"><span>duration:</span> <code>{activeRun.duration_s.toFixed(1)}s</code></div>
-              )}
-              {activeRun.error && (
-                <div className="error-banner">{activeRun.error}</div>
-              )}
-            </div>
-          )}
-          <div className="inspector-section">
-            <h4>Workspace</h4>
-            <div className="kv"><span>Path:</span> <code>{config.workspace}</code></div>
-            <div className="kv"><span>Executor:</span> <code>{config.executor}</code></div>
-            <div className="kv"><span>Uploads:</span> <code>{config.uploads_dir}</code></div>
-            <div className="kv"><span>Max size:</span>{' '}
-              <code>{(config.upload_max_bytes / 1024 / 1024).toFixed(0)} MB</code>
-            </div>
-            <WorkspaceTree
-              workspaceRoot={config.workspace}
-              touchedPaths={activeRun?.touched_paths}
-            />
-          </div>
-          <div className="inspector-section">
-            <h4>Tiers</h4>
-            {config.tiers.map((t) => (
-              <div key={t.name} className="tier-card">
-                <div className="tier-card-head">
-                  <TierBadge tier={t.name} />
-                  <span className="muted">uploads={t.uploads}</span>
-                </div>
-                <div className="muted small">
-                  cmds: {t.commands.slice(0, 6).join(', ')}
-                  {t.commands.length > 6 ? ', ...' : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="inspector-section">
-            <h4>Recent audit</h4>
-            <AuditPanel limit={25} pollIntervalMs={5000} />
-          </div>
+          <Inspector activeRun={activeRun} config={config} treeRefreshTrigger={treeRefreshTrigger} />
         </aside>
       </div>
 

@@ -69,6 +69,22 @@ export function ApiKeyPanel({ provider, hasStoredKey, onKeyChange }: Props) {
     }
   }
 
+  // Phase 0 (decision 0025, FE-7): when the user clicks "Confirm forget"
+  // once then clicks AWAY (blur), the parent's storedKeyValue state would
+  // stay stale because no actual delete happened. Notify the parent that
+  // the confirm state was cancelled so it can re-read the store.
+  const handleConfirmBlur = () => {
+    if (confirmForget) {
+      cancelForgetConfirm()
+      try {
+        const stored = getKey(provider.id)
+        onKeyChange(provider.id, stored)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   const handleForgetClick = () => {
     if (!confirmForget) {
       setConfirmForget(true)
@@ -104,7 +120,7 @@ export function ApiKeyPanel({ provider, hasStoredKey, onKeyChange }: Props) {
           type="button"
           className={'btn btn-sm ' + (confirmForget ? 'btn-danger' : 'btn-secondary')}
           onClick={handleForgetClick}
-          onBlur={cancelForgetConfirm}
+          onBlur={handleConfirmBlur}
           title={
             confirmForget
               ? 'Click again to confirm removing this key from the browser'

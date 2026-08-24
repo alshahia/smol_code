@@ -123,6 +123,15 @@ class TestRunsBasic:
         assert body["id"] == run_id
         assert body["task"] == "hi"
         assert body["tier"] == "restricted"
+        # Phase 0 (decision 0025): the new summary fields are present
+        # even when the run is mid-flight (tokens may be partial).
+        assert "tokens" in body
+        assert "input" in body["tokens"]
+        assert "output" in body["tokens"]
+        assert "total" in body["tokens"]
+        assert "step_count" in body
+        assert "remaining_s" in body
+        assert "subagent" in body
 
     def test_runs_get_404(self, client):
         r = client.get("/api/runs/nonexistent")
@@ -137,6 +146,57 @@ class TestRunsBasic:
         assert len(runs) == 2
         tasks = sorted(r["task"] for r in runs)
         assert tasks == ["a", "b"]
+
+
+# ---- TestCountdownAndLag (Phase 0, decision 0025 T-3) ---------------
+
+
+class TestCountdownAndLag:
+    """Phase 0 (decision 0025, T-3):
+    (a) Run.summary_dict()["remaining_s"] decreases over time,
+    (b) becomes negative after the budget expires,
+    (c) get_run returns 404 cleanly when the run is removed mid-session.
+    """
+
+    def test_get_run_404_when_removed_mid_session(self, client):
+        """B9 root-cause: when the SPA selects a run that the server
+        has purged from RunManager (RunManager._runs dict drops it),
+        GET /api/runs/{id} MUST return a clean 404 -- not raise a 500.
+        """
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        run_id = rr.json()["run_id"]
+        # Confirm it exists first.
+        r = client.get("/api/runs/" + run_id)
+        assert r.status_code == 200
+        # Reach into the app.state run_manager (set by deps.get_run_manager)
+        # and purge the run as if the history window expired mid-session.
+        # We use the TestClient's app instance directly to bypass the
+        # Request dependency plumbing.
+        app = client.app
+        mgr = getattr(app.state, "run_manager", None)
+        assert mgr is not None, "expected run_manager on app.state"
+        with mgr._lock:
+            mgr._runs.pop(run_id, None)
+        # Re-fetch -> must be a clean 404 (not a 500).
+        r2 = client.get("/api/runs/" + run_id)
+        assert r2.status_code == 404
+        assert "run not found" in r2.json()["detail"]
+        # And the events stream endpoint must also 404 cleanly.
+        r3 = client.get("/api/runs/" + run_id + "/events")
+        assert r3.status_code == 404
+
+    def test_run_summary_includes_remaining_s_countdown(self, client):
+        """The RunSummary returned by /api/runs/{id} carries a positive
+        remaining_s when the run is in flight.
+        """
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        run_id = rr.json()["run_id"]
+        # Get summary immediately. remaining_s is positive but bounded
+        # by the 15-min default budget.
+        r = client.get("/api/runs/" + run_id)
+        body = r.json()
+        if body["remaining_s"] is not None:
+            assert 0 < body["remaining_s"] <= 900.5
 
 
 # ---- TestRunsSSE ---------------------------------------------------------

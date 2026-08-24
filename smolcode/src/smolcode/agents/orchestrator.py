@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 
 from smolagents import CodeAgent, Tool
 
@@ -48,6 +49,10 @@ from .specialists import (
 
 
 _log = logging.getLogger(__name__)
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # System prompt (D9). Kept short so it fits comfortably in the model's
@@ -96,12 +101,20 @@ def _render_specialist_block(specialists):
     return "\n".join(lines) + "\n"
 
 
-def _build_delegation_tool(tier_name, settings, model, audit_sink=None):
+def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_run=None):
     """Build one do_<tier>_task Tool instance with settings + model bound.
 
     Returns a NEW smolagents Tool subclass instance. The forward() method
     instantiates a fresh sub-agent (so each delegation is independent and
     sees the live M4.x session/audit state) and runs the task.
+
+    Phase 0 (decision 0025): when ``outer_run`` is supplied, the tool
+    publishes subagent.started / subagent.ended events on the outer
+    run around its inner agent.run() so the SPA can render a nested
+    <SubAgentBlock> in the event stream and the Inspector can show
+    a "delegated to X tier" hint. The events fire even when the
+    inner agent raises (started always fires; ended fires with
+    status="error" inside the except block).
     """
     tier_obj = settings.tiers[tier_name]
 
@@ -141,24 +154,61 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None):
             self._tier_name = tier_name
             self._tier = tier_obj
             self._audit_sink = audit_sink
+            # Phase 0 (decision 0025): outer Run for sub-agent events.
+            self._outer_run = outer_run
+            from ..web.runs import EVT_SUBAGENT_ENDED, EVT_SUBAGENT_STARTED
+
+            self._EVT_SUBAGENT_STARTED = EVT_SUBAGENT_STARTED
+            self._EVT_SUBAGENT_ENDED = EVT_SUBAGENT_ENDED
+            import uuid as _uuid
+
+            self._uuid = _uuid
 
         def forward(self, task: str) -> str:
             if not isinstance(task, str) or not task.strip():
                 raise ValueError("task must be a non-empty string")
             started = time.monotonic()
+            sub_id = self._uuid.uuid4().hex
+            # Phase 0 (decision 0025): publish subagent.started on the
+            # outer run so the SPA can render a nested <SubAgentBlock>.
+            if self._outer_run is not None:
+                with self._outer_run.pending_lock:
+                    self._outer_run.subagent_id = sub_id
+                    self._outer_run.subagent_tier = self._tier_name
+                    self._outer_run.subagent_started_at = started
+                    self._outer_run.subagent_ended_at = None
+                try:
+                    self._outer_run.publish(
+                        self._EVT_SUBAGENT_STARTED,
+                        {
+                            "parent_run_id": self._outer_run.id,
+                            "subagent_id": sub_id,
+                            "tier": self._tier_name,
+                            "task_preview": task[:200],
+                            "ts": _now_iso(),
+                        },
+                    )
+                except Exception as _e:
+                    _log.warning("subagent.started publish failed: %s", _e)
             _log.info(
                 "orchestrator delegating to %s tier (task=%d chars)",
                 self._tier_name,
                 len(task),
             )
             agent = make_agent(self._tier, self._settings, self._model)
+            status = "ok"
+            err_kind = ""
+            err_msg = ""
             try:
                 answer = agent.run(task)
             except Exception as e:
+                status = "error"
+                err_kind = type(e).__name__
+                err_msg = str(e)
                 _log.error(
                     "subagent %s raised %s: %s",
                     self._tier_name,
-                    type(e).__name__,
+                    err_kind,
                     e,
                 )
                 if self._audit_sink is not None:
@@ -170,13 +220,38 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None):
                             task=task,
                             answer="",
                             status="error",
-                            error=type(e).__name__,
-                            message=str(e),
+                            error=err_kind,
+                            message=err_msg,
                             duration_s=time.monotonic() - started,
                         )
                     except Exception:
                         pass
                 raise
+            finally:
+                # Phase 0: ALWAYS publish ended (even on error) so the
+                # SPA can render a closed SubAgentBlock + the run.error
+                # field can reference the active sub-agent id.
+                ended = time.monotonic()
+                if self._outer_run is not None:
+                    with self._outer_run.pending_lock:
+                        if self._outer_run.subagent_id == sub_id:
+                            self._outer_run.subagent_ended_at = ended
+                    try:
+                        self._outer_run.publish(
+                            self._EVT_SUBAGENT_ENDED,
+                            {
+                                "parent_run_id": self._outer_run.id,
+                                "subagent_id": sub_id,
+                                "tier": self._tier_name,
+                                "status": status,
+                                "duration_s": ended - started,
+                                "error_kind": err_kind,
+                                "error": err_msg,
+                                "ts": _now_iso(),
+                            },
+                        )
+                    except Exception as _e:
+                        _log.warning("subagent.ended publish failed: %s", _e)
             duration = time.monotonic() - started
             if self._audit_sink is not None:
                 try:
@@ -196,12 +271,16 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None):
     return _Delegate()
 
 
-def _build_specialist_tool(settings, model, specialists, audit_sink=None):
+def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_run=None):
     """Build the do_specialist(name, task) tool.
 
     Resolves the specialist by name (bundled + user-installed), then
     instantiates a fresh sub-agent with the specialist's tool set and
     runs the task. Raises a clear error if the name is unknown.
+
+    Phase 0 (decision 0025): when ``outer_run`` is supplied, the tool
+    publishes subagent.started / subagent.ended events around the
+    inner agent.run() (mirroring _build_delegation_tool).
     """
     catalog = {s.name: s for s in specialists}
 
@@ -233,6 +312,15 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None):
             self._settings = settings
             self._model = model
             self._audit_sink = audit_sink
+            # Phase 0 (decision 0025): outer Run for sub-agent events.
+            self._outer_run = outer_run
+            from ..web.runs import EVT_SUBAGENT_ENDED, EVT_SUBAGENT_STARTED
+
+            self._EVT_SUBAGENT_STARTED = EVT_SUBAGENT_STARTED
+            self._EVT_SUBAGENT_ENDED = EVT_SUBAGENT_ENDED
+            import uuid as _uuid
+
+            self._uuid = _uuid
 
         def forward(self, name: str, task: str) -> str:
             if not isinstance(name, str) or not name.strip():
@@ -258,13 +346,42 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None):
                 self._model,
             )
             started = time.monotonic()
+            sub_id = self._uuid.uuid4().hex
+            # Phase 0 (decision 0025): publish subagent.started on the
+            # outer run (mirrors _build_delegation_tool.forward).
+            if self._outer_run is not None:
+                with self._outer_run.pending_lock:
+                    self._outer_run.subagent_id = sub_id
+                    self._outer_run.subagent_tier = spec.tier
+                    self._outer_run.subagent_started_at = started
+                    self._outer_run.subagent_ended_at = None
+                try:
+                    self._outer_run.publish(
+                        self._EVT_SUBAGENT_STARTED,
+                        {
+                            "parent_run_id": self._outer_run.id,
+                            "subagent_id": sub_id,
+                            "tier": spec.tier,
+                            "specialist": spec.name,
+                            "task_preview": task[:200],
+                            "ts": _now_iso(),
+                        },
+                    )
+                except Exception as _e:
+                    _log.warning("subagent.started publish failed: %s", _e)
+            status = "ok"
+            err_kind = ""
+            err_msg = ""
             try:
                 answer = agent.run(task)
             except Exception as e:
+                status = "error"
+                err_kind = type(e).__name__
+                err_msg = str(e)
                 _log.error(
                     "specialist %s raised %s: %s",
                     spec.name,
-                    type(e).__name__,
+                    err_kind,
                     e,
                 )
                 if self._audit_sink is not None:
@@ -276,13 +393,37 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None):
                             task=task,
                             answer="",
                             status="error",
-                            error=type(e).__name__,
-                            message=str(e),
+                            error=err_kind,
+                            message=err_msg,
                             duration_s=time.monotonic() - started,
                         )
                     except Exception:
                         pass
                 raise
+            finally:
+                # Phase 0: ALWAYS publish ended (even on error).
+                ended = time.monotonic()
+                if self._outer_run is not None:
+                    with self._outer_run.pending_lock:
+                        if self._outer_run.subagent_id == sub_id:
+                            self._outer_run.subagent_ended_at = ended
+                    try:
+                        self._outer_run.publish(
+                            self._EVT_SUBAGENT_ENDED,
+                            {
+                                "parent_run_id": self._outer_run.id,
+                                "subagent_id": sub_id,
+                                "tier": spec.tier,
+                                "specialist": spec.name,
+                                "status": status,
+                                "duration_s": ended - started,
+                                "error_kind": err_kind,
+                                "error": err_msg,
+                                "ts": _now_iso(),
+                            },
+                        )
+                    except Exception as _e:
+                        _log.warning("subagent.ended publish failed: %s", _e)
             duration = time.monotonic() - started
             if self._audit_sink is not None:
                 try:
@@ -353,6 +494,7 @@ def build_orchestrator_agent(
     max_steps=None,
     audit_sink=None,
     specialists=None,
+    outer_run=None,
 ):
     """Build the orchestrator CodeAgent.
 
@@ -396,12 +538,12 @@ def build_orchestrator_agent(
                 + ")"
             )
     tools = [
-        _build_delegation_tool("restricted", settings, model, audit_sink=audit_sink),
-        _build_delegation_tool("elevated", settings, model, audit_sink=audit_sink),
-        _build_delegation_tool("full_access", settings, model, audit_sink=audit_sink),
+        _build_delegation_tool("restricted", settings, model, audit_sink=audit_sink, outer_run=outer_run),
+        _build_delegation_tool("elevated", settings, model, audit_sink=audit_sink, outer_run=outer_run),
+        _build_delegation_tool("full_access", settings, model, audit_sink=audit_sink, outer_run=outer_run),
     ]
     if specialists:
-        tools.append(_build_specialist_tool(settings, model, specialists, audit_sink=audit_sink))
+        tools.append(_build_specialist_tool(settings, model, specialists, audit_sink=audit_sink, outer_run=outer_run))
     prompt = ORCHESTRATOR_PROMPT_TEMPLATE.format(
         specialist_count=len(specialists),
         specialist_block=_render_specialist_block(specialists),

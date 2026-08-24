@@ -32,6 +32,12 @@ EVT_APPROVAL_DECIDED = "approval.decided"
 EVT_DIFF_PROPOSED = "diff.proposed"  # M10
 EVT_DIFF_RESOLVED = "diff.resolved"  # M10
 EVT_ERROR = "error"
+# Phase 0 (decision 0025): sub-agent lifecycle events emitted by the
+# orchestrator's ``do_<tier>_task`` / ``do_specialist`` tools around
+# each inner ``agent.run()`` invocation. The SPA renders these as a
+# nested <SubAgentBlock> child of the parent's outer step.action row.
+EVT_SUBAGENT_STARTED = "subagent.started"
+EVT_SUBAGENT_ENDED = "subagent.ended"
 
 
 def _now_iso():
@@ -122,6 +128,24 @@ class Run:
     provider_override: str | None = None
     model_override: str | None = None
     api_key_value: str | None = None
+    # Phase 0 (decision 0025): per-run token + step aggregates. Updated
+    # in-place by ``increment_tokens`` under ``pending_lock`` so the
+    # Inspector's "Token usage" section is consistent under heavy
+    # concurrent step.callback traffic. ``step_count`` is bumped for
+    # EVERY ``step.action`` event (regardless of whether it carries
+    # tokens) so the FE has a true step counter.
+    tokens_in: int = 0
+    tokens_out: int = 0
+    step_count: int = 0
+    # Phase 0 (decision 0025): latest sub-agent invocation. Set by the
+    # orchestrator's ``do_<tier>_task`` / ``do_specialist`` tools
+    # around their inner ``agent.run()`` call (BE-2). Surfaced in the
+    # Inspector as a hint ("sub-agent X started Zs ago"). Cleared by
+    # the agent_runner when the run reaches a terminal status.
+    subagent_id: str | None = None
+    subagent_tier: str | None = None
+    subagent_started_at: float | None = None
+    subagent_ended_at: float | None = None
 
     def record_touch(self, rel_path):
         if not isinstance(rel_path, str) or not rel_path:
@@ -134,11 +158,93 @@ class Run:
             return sorted(self.touched_paths)
 
     def publish(self, event_type, data):
+        # Phase 0 (decision 0025): auto-aggregate token + step counts on
+        # every step.action event BEFORE the frame is enqueued.
+        # Idempotent under the existing pending_lock so concurrent
+        # publishes from the agent runner thread + step callbacks never
+        # lose increments.
+        if event_type == EVT_STEP_ACTION and isinstance(data, dict):
+            tokens = data.get("tokens")
+            with self.pending_lock:
+                self.step_count += 1
+                if isinstance(tokens, dict):
+                    try:
+                        inp = int(tokens.get("input", 0) or 0)
+                        out = int(tokens.get("output", 0) or 0)
+                    except (TypeError, ValueError):
+                        inp = 0
+                        out = 0
+                    self.tokens_in += inp
+                    self.tokens_out += out
         frame = _encode_event(event_type, data, event_id=self._next_event_id())
         try:
             self.events.put_nowait(frame)
         except Exception as e:
             _log.warning("run %s: event put failed: %s", self.id, e)
+
+    def increment_tokens(self, input_delta, output_delta):
+        """Add input_delta + output_delta to the running totals.
+
+        Public entry point for callers that already know the delta and
+        want to avoid the step.action event round-trip. Idempotent
+        under pending_lock.
+        """
+        try:
+            inp = int(input_delta or 0)
+            out = int(output_delta or 0)
+        except (TypeError, ValueError):
+            return
+        with self.pending_lock:
+            self.tokens_in += inp
+            self.tokens_out += out
+
+    def remaining_s(self, max_wall_s):
+        """Seconds remaining until max_wall_s elapses since start.
+
+        Returns a float (may be negative when the run has overrun the
+        wall-clock budget). Returns None when max_wall_s <= 0
+        (timeout disabled) or the run has not started yet. The SPA
+        ticks this down once per second from summary_dict().
+        """
+        try:
+            budget = float(max_wall_s)
+        except (TypeError, ValueError):
+            return None
+        if budget <= 0:
+            return None
+        return budget - (time.monotonic() - self.started_at)
+
+    def summary_dict(self, max_wall_s=None):
+        """Snapshot the fields the FE renders in the Inspector.
+
+        Token / step counts are read under pending_lock so the
+        snapshot is consistent even mid-publish. remaining_s is
+        computed against the supplied max_wall_s budget (passed
+        in by the API layer so this module does not need to import
+        the agent_runner timeout constant).
+        """
+        with self.pending_lock:
+            total = self.tokens_in + self.tokens_out
+            sub = (
+                {
+                    "id": self.subagent_id,
+                    "tier": self.subagent_tier,
+                    "started_at": self.subagent_started_at,
+                    "ended_at": self.subagent_ended_at,
+                }
+                if self.subagent_id is not None
+                else None
+            )
+            snap = {
+                "tokens_in": self.tokens_in,
+                "tokens_out": self.tokens_out,
+                "tokens_total": total,
+                "step_count": self.step_count,
+                "subagent": sub,
+            }
+        if max_wall_s is not None:
+            snap["remaining_s"] = self.remaining_s(max_wall_s)
+        return snap
 
     def _next_event_id(self):
         n = getattr(self, "_evt_seq", 0) + 1
@@ -333,6 +439,8 @@ __all__ = [
     "EVT_DIFF_PROPOSED",
     "EVT_DIFF_RESOLVED",
     "EVT_ERROR",
+    "EVT_SUBAGENT_STARTED",
+    "EVT_SUBAGENT_ENDED",
     "PendingDecision",
     "Run",
     "RunManager",

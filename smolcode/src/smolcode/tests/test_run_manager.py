@@ -9,6 +9,7 @@ endpoints (test_web_runs_api.py) using a stub model.
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -220,3 +221,233 @@ class TestRunManager:
         assert len(frames) == 2
         assert frames[0].startswith(": heartbeat")
         assert "event: end" in frames[1]
+
+
+# ---- TestTokenAggregation (Phase 0, decision 0025 BE-3) ----------
+
+
+class TestTokenAggregation:
+    """Verify that Run.publish auto-aggregates token + step counts on
+    every step.action event and that increment_tokens + summary_dict
+    are consistent under concurrent publishes.
+    """
+
+    def test_single_step_action_aggregates_tokens(self):
+        run = Run(id="r1", task="t", tier="restricted")
+        run.publish(EVT_STEP_ACTION, {"step_number": 1, "tokens": {"input": 10, "output": 5}})
+        snap = run.summary_dict()
+        assert snap["tokens_in"] == 10
+        assert snap["tokens_out"] == 5
+        assert snap["tokens_total"] == 15
+        assert snap["step_count"] == 1
+        assert snap["subagent"] is None
+
+    def test_two_steps_sum(self):
+        run = Run(id="r1", task="t", tier="restricted")
+        run.publish(EVT_STEP_ACTION, {"step_number": 1, "tokens": {"input": 10, "output": 5}})
+        run.publish(EVT_STEP_ACTION, {"step_number": 2, "tokens": {"input": 3, "output": 2}})
+        snap = run.summary_dict()
+        assert snap["tokens_in"] == 13
+        assert snap["tokens_out"] == 7
+        assert snap["tokens_total"] == 20
+        assert snap["step_count"] == 2
+
+    def test_step_action_without_tokens_still_bumps_count(self):
+        run = Run(id="r1", task="t", tier="restricted")
+        # Tokens field is missing -> tokens stay 0 but step_count goes up.
+        run.publish(EVT_STEP_ACTION, {"step_number": 1})
+        snap = run.summary_dict()
+        assert snap["tokens_in"] == 0
+        assert snap["tokens_out"] == 0
+        assert snap["step_count"] == 1
+
+    def test_concurrent_publishes_under_pending_lock(self):
+        """100 concurrent step.action publishes with a per-thread delta
+        must produce totals == 100 * delta (no lost increments).
+        """
+        run = Run(id="r1", task="t", tier="restricted")
+        n_threads = 100
+        delta_in = 7
+        delta_out = 3
+
+        def worker():
+            for _ in range(5):
+                run.publish(EVT_STEP_ACTION, {"tokens": {"input": delta_in, "output": delta_out}})
+
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        snap = run.summary_dict()
+        assert snap["tokens_in"] == n_threads * 5 * delta_in
+        assert snap["tokens_out"] == n_threads * 5 * delta_out
+        assert snap["step_count"] == n_threads * 5
+        assert snap["tokens_total"] == snap["tokens_in"] + snap["tokens_out"]
+
+    def test_increment_tokens_helper(self):
+        """Public increment_tokens() entry point used by callers that
+        already know the delta (bypasses the step.action round-trip).
+        """
+        run = Run(id="r1", task="t", tier="restricted")
+        run.increment_tokens(10, 5)
+        run.increment_tokens(3, 2)
+        snap = run.summary_dict()
+        assert snap["tokens_in"] == 13
+        assert snap["tokens_out"] == 7
+        assert snap["tokens_total"] == 20
+        # Malformed input is silently ignored.
+        run.increment_tokens("not a number", None)  # type: ignore[arg-type]
+        snap2 = run.summary_dict()
+        assert snap2["tokens_total"] == 20
+
+    def test_remaining_s_decreases_then_negative(self):
+        """Phase 0 (decision 0025 BE-5): remaining_s = max_wall_s - elapsed.
+        Returns None when budget is disabled, negative when expired.
+        """
+        import time as _time
+
+        run = Run(id="r1", task="t", tier="restricted")
+        # Disable -> None.
+        assert run.remaining_s(0) is None
+        # Positive budget -> float close to the budget (immediately).
+        v = run.remaining_s(900)
+        assert v is not None and 895 < v <= 900
+        # Tiny budget -> already negative.
+        _time.sleep(0.05)
+        assert run.remaining_s(0.01) < 0
+
+    def test_summary_dict_includes_subagent_when_set(self):
+        """Phase 0 (decision 0025 BE-1): summary_dict surfaces the active
+        sub-agent invocation when set on the Run.
+        """
+        run = Run(id="r1", task="t", tier="restricted")
+        run.subagent_id = "sub-abc"
+        run.subagent_tier = "restricted"
+        run.subagent_started_at = 1.0
+        run.subagent_ended_at = 2.5
+        snap = run.summary_dict()
+        assert snap["subagent"] is not None
+        assert snap["subagent"]["id"] == "sub-abc"
+        assert snap["subagent"]["tier"] == "restricted"
+        assert snap["subagent"]["started_at"] == 1.0
+        assert snap["subagent"]["ended_at"] == 2.5
+
+
+# ---- TestSubAgentEvents (Phase 0, decision 0025 T-1 + T-3) ----------
+
+
+class TestSubAgentEvents:
+    """Verify the sub-agent lifecycle events emitted by the orchestrator
+    wrappers (_build_delegation_tool / _build_specialist_tool).
+
+    These tests exercise the helper directly without spinning up a
+    real CodeAgent -- the forward() method is the unit under test.
+    """
+
+    def test_delegate_emits_started_and_ended(self, tmp_path):
+        """BE-2: started fires before inner agent.run; ended fires after."""
+        from smolcode.agents.orchestrator import _build_delegation_tool
+
+        # Build a minimal Settings object (only needs .tiers).
+        from smolcode.config import Settings, _default_tiers
+        from smolcode.web.runs import (
+            EVT_SUBAGENT_ENDED,
+            EVT_SUBAGENT_STARTED,
+        )
+
+        settings = Settings(
+            workspace=tmp_path,
+            executor="local",
+            provider="opencode-go",
+            model="stub",
+            litellm_proxy=None,
+            log_level="WARNING",
+            tiers=_default_tiers(),
+        )
+        # Use a stub outer_run to capture events.
+        outer = Run(id="outer", task="orchestrator task", tier="orchestrator")
+        events_seen: list = []
+        outer_orig_publish = outer.publish
+
+        def capture(event_type, data):
+            events_seen.append((event_type, data))
+            outer_orig_publish(event_type, data)
+
+        outer.publish = capture  # type: ignore[method-assign]
+        # Build the tool with a no-op inner agent.run by patching make_agent.
+        from smolcode.agents import orchestrator as _orch
+
+        class _StubAgent:
+            def run(self, task):
+                return "stubbed sub-agent answer"
+
+        orig_make = _orch.make_agent
+        _orch.make_agent = lambda tier, settings, model: _StubAgent()
+        try:
+            tool = _build_delegation_tool("restricted", settings, model=None, outer_run=outer)
+            answer = tool.forward("do the thing")
+        finally:
+            _orch.make_agent = orig_make
+        assert answer == "stubbed sub-agent answer"
+        types = [e[0] for e in events_seen]
+        assert types[0] == EVT_SUBAGENT_STARTED
+        assert types[-1] == EVT_SUBAGENT_ENDED
+        # Outer Run state was set + cleared across the call.
+        assert outer.subagent_id is not None
+        assert outer.subagent_tier == "restricted"
+        assert outer.subagent_ended_at is not None
+        # Started payload has the expected fields.
+        started_payload = events_seen[0][1]
+        assert started_payload["parent_run_id"] == "outer"
+        assert started_payload["tier"] == "restricted"
+        # Ended payload carries status=ok + duration.
+        ended_payload = events_seen[-1][1]
+        assert ended_payload["status"] == "ok"
+        assert "duration_s" in ended_payload
+
+    def test_delegate_ended_fires_on_inner_error(self, tmp_path):
+        """BE-2: when the inner agent raises, ended still fires (status=error)."""
+        from smolcode.agents.orchestrator import _build_delegation_tool
+        from smolcode.config import Settings, _default_tiers
+        from smolcode.web.runs import EVT_SUBAGENT_ENDED
+
+        settings = Settings(
+            workspace=tmp_path,
+            executor="local",
+            provider="opencode-go",
+            model="stub",
+            litellm_proxy=None,
+            log_level="WARNING",
+            tiers=_default_tiers(),
+        )
+        outer = Run(id="outer", task="orchestrator task", tier="orchestrator")
+        events_seen: list = []
+        outer_orig_publish = outer.publish
+
+        def capture(event_type, data):
+            events_seen.append((event_type, data))
+            outer_orig_publish(event_type, data)
+
+        outer.publish = capture  # type: ignore[method-assign]
+        from smolcode.agents import orchestrator as _orch
+
+        class _BoomAgent:
+            def run(self, task):
+                raise RuntimeError("inner boom")
+
+        orig_make = _orch.make_agent
+        _orch.make_agent = lambda tier, settings, model: _BoomAgent()
+        try:
+            tool = _build_delegation_tool("restricted", settings, model=None, outer_run=outer)
+            with pytest.raises(RuntimeError, match="inner boom"):
+                tool.forward("task")
+        finally:
+            _orch.make_agent = orig_make
+        ended_events = [e for e in events_seen if e[0] == EVT_SUBAGENT_ENDED]
+        assert len(ended_events) == 1
+        assert ended_events[0][1]["status"] == "error"
+        assert ended_events[0][1]["error_kind"] == "RuntimeError"
+        assert "inner boom" in ended_events[0][1]["error"]
+        # Outer subagent_ended_at was set even on error.
+        assert outer.subagent_ended_at is not None

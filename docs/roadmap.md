@@ -998,7 +998,80 @@ change with its own decision doc + tests.
 | 0023 | Runtime sandbox-boundary guard (Layer A + Layer B) | v1.7.1.2 | Two-layer interception. **Layer A** wraps `agent.python_executor` with `GuardedExecutor` (AST scan + regex for `!pip install smolcode`); raises `SandboxBoundaryViolation` before bad code reaches the kernel. **Layer B** intercepts smolagents' `send_tools` flow (which runs *before* the first model step and bypasses `__call__`): `install_packages` filters host-only packages, `run_code_raise_errors` strips host-only lines, `send_tools` monkey-patches the inner executor with routing lambdas whose default-arg closure captures the ORIGINAL bound methods (so re-entry via `inner.<name>(...)` cannot happen — the v1.7.1 first cut had an `inner.install_packages = lambda pkgs: self.install_packages(pkgs)` that recursed infinitely). Plus a wall-clock timeout (`SMOLCODE_WEB_RUN_TIMEOUT_S`, default 900s) that calls `agent.cleanup()` on timeout to free `127.0.0.1:8888` even when the Jupyter kernel hangs. | +65 in `tests/test_sandbox_guard.py`, +22 layer-B tests in v1.7.1.2, +3 in `tests/test_agent_runner.py::TestRunInThreadWallClockTimeout` | `docs/decisions/0023-runtime-sandbox-boundary-guard.md` |
 | **0024** | **Web UI: traceback capture + UTF-8 stdio + defensive hardening** | **v1.7.1.3** | **Three connected fixes. (1) Full traceback capture in `agent_runner.run_in_thread`'s broad except — appends `traceback.format_exc()` to `run.error` (capped at 8 KB) AND includes it in `EVT_ERROR.traceback` so the SPA can render it. (2) Defensive wrappers: `step_callbacks.register(ActionStep, ...)` (the only register call NOT previously in try/except) + `pool.submit(agent.run, ...)` both now log-and-continue on failure. (3) New `_unicode_env.py::setup_unicode_env()` reconfigures `sys.stdout/stderr/stdin` to UTF-8 with `errors="replace"` and exports `PYTHONUTF8=1` + `PYTHONIOENCODING=utf-8`; called from `smolcode/__init__.py` at package import time, BEFORE any submodule imports smolagents, so by the time smolagents constructs its Rich Console `sys.stdout.encoding` is already UTF-8. Fixes the `UnicodeEncodeError: 'charmap' codec can't encode...` raised by smolagents' `StepLogger.log -> Rich console.print -> legacy_windows_render` path when encoding pip's emoji/box-drawing output through the Windows `cp1252/cp1256` codec.** Live end-to-end validated: Web UI run of "create a simple todo app" with `deepseek-v4-flash` now completes in 114.28s with `status=done`. | **+5 in `tests/test_agent_runner.py::TestRunInThreadErrorTraceback`, +6 in new `tests/test_unicode_env.py`** | **`docs/decisions/0024-web-ui-traceback-and-utf8.md`** |
 
-**Test count progression:** 853 (post-M16) → 968+3 (v1.7.1.2 with layer-B) → **979+3 (v1.7.1.3)**.
+**Test count progression:** 853 (post-M16) → 968+3 (v1.7.1.2 with layer-B) → 979+3 (v1.7.1.3) → **~990+3 (v1.8 Phase 0)** — adds ~10 tests across `TestTokenAggregation` (BE-3 auto-aggregate + concurrent publishes + `increment_tokens` helper + `summary_dict` shape), `TestSubAgentEvents` (BE-2 wrapper sub-agent lifecycle including the inner-error path), and `TestCountdownAndLag` (BE-5 `remaining_s` decreasing/negative + B9 clean 404 when a run is purged mid-session).
+
+### v1.8 — Web UI evolution (decision 0025)
+
+After v1.7.1.3 the user asked for a critical review of the Web UI/UX.
+`docs/decisions/0025-web-ui-ux-review-and-roadmap.md` captures:
+
+- Honest evaluation of 6 user suggestions (steps/sub-agents, pause/queue,
+  sessions, projects, file mentions, token dashboard).
+- 12 additional must-haves the reviewer identified (countdown, shortcuts,
+  search, rerun, export, a11y, retry, auto-approve banner, tree-refresh,
+  inspector lag, model compare, two-runs viewer).
+- 9 things deliberately NOT to build now (full Monaco IDE, drag-drop
+  reorder, multi-user collab, voice input, dark mode, plugin API,
+  usage caps, prompt library, markdown rendering without sanitizer).
+- A 4-phase implementation plan with concrete file paths + LOC estimates.
+
+**Status:** ACCEPTED (2026-08-23). User approved all 5 open
+questions (Q1=a Phase 0 first; Q2=a snapshot to disk; Q3=Yes defer
+drag-drop to v1.9.x; Q4=c Read both; Q5=a hardcoded defaults + override).
+Phase 0 implementation is IN FLIGHT. See `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` §13.1 for the Phase 0 acceptance gate.
+
+**Phased plan (high-level — full detail in 0025 §6):**
+
+| Phase | Theme | Scope | LOC (BE / FE / tests) | Effort |
+|---|---|---|---|---|
+| **Phase 0** | Quick wins + sub-agent events + token totals | A1 sub-agent events; A6 token totals in Inspector; B1 countdown; B9 inspector lag; B11 tree refresh on diff; + 5 cosmetic fixes | 225 / 275 / 100 | 1-2 d |
+| **Phase 1** | Sessions + Projects | A3 sessions (list/create/delete/rename/detail); A4 project switcher + `settings.projects` config; quick win #6 (upload progress) | 310 / 450 / 190 | 3-5 d |
+| **Phase 2** | Pause/queue + file previews + file mentions | A2 pause/resume + auto-queue; A4 file preview pane; A5 @-mentions | 270 / 725 / 270 | 5-7 d |
+| **Phase 3** | Dashboard + a11y + power features | A6 Dashboard + cost; B2 shortcuts; B3 search; B4 rerun; B5 export; B6 a11y; B7 retry; B10 auto-approve banner | 270 / 585 / 320 | 3-5 d |
+| **Total** | | | **1075 / 2035 / 880** | **12-19 d** |
+
+**Scope decisions documented in 0025 §4–§8:**
+
+- **Sub-agent events** (A1 P0) — backend publishes
+  `subagent.started` / `subagent.ended` around each inner `agent.run()`;
+  SPA renders nested `SubAgentBlock`.
+- **Pause/Resume** (A2 P0) — `Run.snapshot` after each step;
+  `POST /api/runs/{id}/pause` + `/resume`.
+- **Auto-queue** (A2 P1) — while a run is active, new "Run" presses
+  enqueue (FIFO). Drag-and-drop reorder DEFERRED to v1.9.x (over-spec
+  for v1.7.x maturity).
+- **Sessions** (A3 P0) — backend `/api/sessions` already exists but
+  SPA does not render it; new `SessionsPane` + project switcher + the
+  model change to add `settings.projects`.
+- **File mentions** (A5 P0) — `@path` autocomplete + auto-attach file
+  content (sandboxed via `resolve_under_workspace`).
+- **Token dashboard** (A6 P0) — per-step tokens aggregated server-side
+  into `RunSummary.tokens`; Inspector shows totals; cost projection
+  ships in Phase 3.
+
+**Critical deferrals (NOT in v1.8):**
+
+- Drag-and-drop queue reorder — auto-queue + cancel covers 95% of use.
+- Full Monaco IDE with file write-back — different product.
+- Multi-user real-time collaboration — out of scope.
+- Voice input — low utility, model-size cost.
+- Dark mode — when CSS variables land.
+- Plugin/extension API — wait for 3rd-party interest.
+- Per-provider usage caps ("stop at $1") — depends on Phase 3 cost
+  projection.
+
+**Acceptance for v1.8 (per-phase):** see 0025 §9. Each phase ends with
+`make quality` + `make test` + `pnpm build` green; live e2e against
+`deepseek-v4-flash`; ≥80% line coverage on new backend code; ≥70% line
+coverage on new FE code (Vitest + Testing Library + axe-core).
+
+**Open questions (must be answered by user):** see 0025 §10 — Q1
+(which phase to start with; recommend (a) Phase 0), Q2 (snapshot
+strategy for pause/resume), Q3 (drag-drop reorder — confirm defer),
+Q4 (projects config migration strategy), Q5 (cost rates source).
+
+**Standing rule applies:** no code lands until the user explicitly
+approves the plan AND the per-phase scope.
 
 ### M8 — GUI viewer + file uploads (the first M of v1.2)
 

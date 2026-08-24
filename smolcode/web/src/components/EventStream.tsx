@@ -3,8 +3,62 @@
 // and renders events chronologically. Calls onApprovalRequest when
 // an approval.requested arrives so the parent can show a modal.
 
-import { useEffect, useRef, useState } from 'react'
+// Phase 0 (decision 0025, FE-3):
+//   - Render subagent.started / subagent.ended events as a nested
+//     <SubAgentBlock> child of the parent's outer step.action row.
+//   - Bump hard truncation from 2000 -> 8000 chars for thought /
+//     code_action / observations with a Show full <details> toggle.
+
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StreamEvent } from '../api'
+
+// Phase 0 (decision 0025, FE-3): one rendered row in the stream list.
+// Either a single stream event OR a SubAgentBlock wrapping the events
+// emitted between subagent.started and subagent.ended.
+type Row =
+  | { kind: 'event'; event: StreamEvent }
+  | { kind: 'subagent'; id: string; tier: string; specialist?: string; events: StreamEvent[]; started: boolean; ended: boolean; status?: string; duration_s?: number; error?: string }
+
+function groupRows(events: StreamEvent[]): Row[] {
+  const rows: Row[] = []
+  let active: Extract<Row, { kind: 'subagent' }> | null = null
+  for (const e of events) {
+    if (e.type === 'subagent.started') {
+      active = {
+        kind: 'subagent',
+        id: String(e.subagent_id || ''),
+        tier: String(e.tier || 'subagent'),
+        specialist: e.specialist,
+        events: [],
+        started: true,
+        ended: false,
+      }
+      rows.push(active)
+      continue
+    }
+    if (e.type === 'subagent.ended') {
+      const subId = String(e.subagent_id || '')
+      if (active && active.id === subId) {
+        active.ended = true
+        active.status = String(e.status || '')
+        active.duration_s = typeof e.duration_s === 'number' ? e.duration_s : undefined
+        active.error = e.error ? String(e.error) : undefined
+        active = null
+      } else {
+        // Orphaned ended event (no matching started). Render as a
+        // plain row so the user can still see what happened.
+        rows.push({ kind: 'event', event: e })
+      }
+      continue
+    }
+    if (active) {
+      active.events.push(e)
+    } else {
+      rows.push({ kind: 'event', event: e })
+    }
+  }
+  return rows
+}
 
 interface Props {
   runId: string
@@ -47,6 +101,10 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
   const [status, setStatus] = useState<string>('connecting')
   const bufRef = useRef<string>('')
   const esRef = useRef<EventSource | null>(null)
+  // Phase 0 (decision 0025, FE-3): the sub-agent group structure is
+  // derived from the events list on every render. Cheap (linear in
+  // event count, which is bounded by the 15-min run).
+  const rows = useMemo<Row[]>(() => groupRows(events), [events])
 
   useEffect(() => {
     setEvents([])
@@ -117,18 +175,65 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
     <div className="event-stream">
       <div className="stream-status">SSE: {status}</div>
       <div className="stream-list">
-        {events.length === 0 && <div className="muted">Waiting for events...</div>}
-        {events.map((e, i) => (
-          <div key={i} className={'stream-row stream-row-' + e.type}>
-            <div className="stream-row-head">
-              <span className="stream-kind">{e.type}</span>
-              {e.ts && <span className="stream-ts muted">{e.ts}</span>}
+        {rows.length === 0 && <div className="muted">Waiting for events...</div>}
+        {rows.map((r, i) => {
+          if (r.kind === 'event') {
+            const e = r.event
+            return (
+              <div key={i} className={'stream-row stream-row-' + e.type}>
+                <div className="stream-row-head">
+                  <span className="stream-kind">{e.type}</span>
+                  {e.ts && <span className="stream-ts muted">{e.ts}</span>}
+                </div>
+                {renderBody(e)}
+              </div>
+            )
+          }
+          return (
+            <div key={i} className="stream-subagent">
+              <div className="stream-subagent-head">
+                <span className="stream-kind">subagent</span>
+                <span className="muted small">
+                  tier=<code>{r.tier}</code>{r.specialist ? <> specialist=<code>{r.specialist}</code></> : null} id=<code>{r.id.slice(0, 8)}</code>
+                  {r.ended ? <> · {r.status || 'done'} · {(r.duration_s ?? 0).toFixed(1)}s</> : <> · in flight</>}
+                  {r.error ? <> · <span className="error-text">{r.error}</span></> : null}
+                </span>
+              </div>
+              <div className="stream-subagent-children">
+                {r.events.length === 0 && !r.ended && <div className="muted small">starting...</div>}
+                {r.events.map((e, j) => (
+                  <div key={j} className={"stream-row stream-row-" + e.type + " stream-row-nested"}>
+                    <div className="stream-row-head">
+                      <span className="stream-kind">{e.type}</span>
+                      {e.ts && <span className="stream-ts muted">{e.ts}</span>}
+                    </div>
+                    {renderBody(e)}
+                  </div>
+                ))}
+              </div>
             </div>
-            {renderBody(e)}
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
+  )
+}
+
+// Phase 0 (decision 0025, FE-3): bump hard truncation 2000 -> 8000 for
+// thought / code_action / observations. The "Show full" <details> toggle
+// renders the FULL content when expanded; otherwise the truncated preview.
+const PREVIEW_CHARS = 8000
+
+function expandPreview(text: string, preview: number = PREVIEW_CHARS): React.ReactElement {
+  const full = text || ''
+  if (full.length <= preview) {
+    return <>{full}</>
+  }
+  return (
+    <details>
+      <summary>Show full ({full.length} chars)</summary>
+      <>{full}</>
+    </details>
   )
 }
 
@@ -136,8 +241,8 @@ function renderBody(e: StreamEvent): React.ReactElement | null {
   if (e.type === 'step.action') {
     return (
       <div>
-        {e.thought && <div className="stream-thought">{(e.thought || '').slice(0, 2000)}</div>}
-        {e.code_action && <pre className="stream-code">{(e.code_action || '').slice(0, 2000)}</pre>}
+        {e.thought && <div className="stream-thought">{expandPreview(e.thought)}</div>}
+        {e.code_action && <pre className="stream-code">{expandPreview(e.code_action)}</pre>}
         {e.tool_calls && e.tool_calls.length > 0 && (
           <div className="stream-tools">
             {e.tool_calls.map((tc, i) => (
@@ -147,7 +252,7 @@ function renderBody(e: StreamEvent): React.ReactElement | null {
             ))}
           </div>
         )}
-        {e.observations && <div className="stream-obs">{(e.observations || '').slice(0, 2000)}</div>}
+        {e.observations && <div className="stream-obs">{expandPreview(e.observations)}</div>}
         {e.tokens && (
           <div className="muted small">
             tokens: {e.tokens.input}/{e.tokens.output}
@@ -158,10 +263,10 @@ function renderBody(e: StreamEvent): React.ReactElement | null {
     )
   }
   if (e.type === 'plan.step') {
-    return <div className="stream-plan">{(e.plan || '').slice(0, 2000)}</div>
+    return <div className="stream-plan">{expandPreview(e.plan || '')}</div>
   }
   if (e.type === 'step.final_answer') {
-    return <div className="stream-final">{(e.answer || '').slice(0, 4000)}</div>
+    return <div className="stream-final">{expandPreview(e.answer || '', 16000)}</div>
   }
   if (e.type === 'approval.requested') {
     return (

@@ -150,6 +150,34 @@ class RunStartResponse(BaseModel):
     status: str
 
 
+class SubAgentSummary(BaseModel):
+    """Phase 0 (decision 0025): latest sub-agent invocation for a run.
+
+    Set by the orchestrator do_<tier>_task / do_specialist tools
+    around their inner agent.run() call. None when the run has not
+    delegated to a sub-agent (e.g. a restricted-tier run that
+    executes directly).
+    """
+
+    id: str
+    tier: str
+    started_at: float
+    ended_at: float | None = None
+
+
+class TokenSummary(BaseModel):
+    """Phase 0 (decision 0025): per-run token aggregates.
+
+    total is the sum of input + output across every step.action
+    event the runner has observed. input / output are broken out
+    separately so the SPA can render two lines.
+    """
+
+    input: int = 0
+    output: int = 0
+    total: int = 0
+
+
 class RunSummary(BaseModel):
     id: str
     task: str
@@ -163,6 +191,17 @@ class RunSummary(BaseModel):
     has_pending_approval: bool = False
     # M10: workspace-relative paths the run has touched.
     touched_paths: list[str] = Field(default_factory=list)
+    # Phase 0 (decision 0025): aggregated tokens + step counter for
+    # the Inspector Token usage section.
+    tokens: TokenSummary = Field(default_factory=TokenSummary)
+    step_count: int = 0
+    # Phase 0 (decision 0025): seconds remaining until the agent_runner
+    # wall-clock budget (_MAX_RUN_WALL_S) expires. Negative when the
+    # run has overrun the budget; None when the budget is disabled.
+    remaining_s: float | None = None
+    # Phase 0 (decision 0025): latest sub-agent invocation. None when
+    # the run has not delegated.
+    subagent: SubAgentSummary | None = None
 
 
 class RunListResponse(BaseModel):

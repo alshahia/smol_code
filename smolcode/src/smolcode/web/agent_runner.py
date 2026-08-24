@@ -386,7 +386,9 @@ def _build_agent_for_run(run, settings):
         api_key_override=run.api_key_value,
     )
     if run.tier == "orchestrator":
-        return build_orchestrator_agent(settings, model, audit_sink=run.audit_sink)
+        # Phase 0 (decision 0025): pass the outer Run so the orchestrator
+        # tools can publish subagent.started / subagent.ended events.
+        return build_orchestrator_agent(settings, model, audit_sink=run.audit_sink, outer_run=run)
     if run.tier == "restricted":
         return build_restricted_agent(settings, model)
     if run.tier == "elevated":
@@ -526,13 +528,21 @@ def run_in_thread(run, settings):
         final_status = STATUS_ERROR
         # Decision 0024: capture the full traceback so the Web UI can
         # surface the actual failing line (the previous behaviour only
-        # stored the exception's repr, which left ``OSError: [Errno 22]
-        # Invalid argument`` completely un-diagnosable). We cap at 8 KB
-        # so a runaway traceback doesn't blow up the SSE queue.
+        # stored the exception repr, which left OSError [Errno 22]
+        # Invalid argument completely un-diagnosable). We cap at 8 KB
+        # so a runaway traceback does not blow up the SSE queue.
         tb_text = traceback.format_exc()
         if len(tb_text) > 8192:
             tb_text = tb_text[: 8192 - 1] + "\u2026"
-        run.error = type(e).__name__ + ": " + _safe_str(e) + "\n" + tb_text
+        # Phase 0 (decision 0025, BE-7): include the active sub-agent
+        # context when the orchestrator raised mid-delegation. The
+        # SPA renders this as a "while running sub-agent X" hint.
+        ctx_parts = [type(e).__name__ + ": " + _safe_str(e)]
+        if run.subagent_id is not None:
+            tier_label = run.subagent_tier or "subagent"
+            ctx_parts.append("(while running sub-agent " + tier_label + " id=" + run.subagent_id[:8] + ")")
+        ctx_parts.append(tb_text)
+        run.error = "\n".join(ctx_parts)
         exit_code = 1
         run.publish(
             EVT_ERROR,

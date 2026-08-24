@@ -787,6 +787,79 @@ documented in §13.2:
   with `deepseek-v4-flash` now completes in 114.28 s with
   `status=done`. See `docs/decisions/0024-web-ui-traceback-and-utf8.md`.
 
+### 13.8 v1.8 evolution: sessions, projects, pause/queue, dashboard (decision 0025)
+
+After v1.7.1.3 the user asked for a critical review of the Web UI/UX.
+Decision **0025** (`docs/decisions/0025-web-ui-ux-review-and-roadmap.md`)
+captures the findings + a 4-phase implementation plan. Headlines:
+
+- **Phase 0 (P0, 1-2 d)**: sub-agent events (`subagent.started` /
+  `subagent.ended`), per-step token totals in `RunSummary`, stuck-run
+  countdown in the stream header, Inspector `activeRun` lag fix,
+  `WorkspaceTree` refresh-on-diff hook, plus 5 cosmetic fixes.
+  Backend: ~225 LOC + ~100 tests; frontend: ~275 LOC.
+- **Phase 1 (P0, 3-5 d)**: sessions (list/new/delete/rename/detail view —
+  backend `/api/sessions` already exists; the SPA simply doesn't render
+  it yet) + project switcher + `Settings.projects` config. Backend:
+  ~310 LOC; frontend: ~450 LOC; ~190 tests.
+- **Phase 2 (P0, 5-7 d)**: pause/resume via `Run.snapshot` after each
+  step, auto-queue (FIFO; drag-and-drop reorder explicitly deferred to
+  v1.9.x), file preview pane, `@path` mentions with backend auto-attach.
+  Backend: ~270 LOC; frontend: ~725 LOC; ~270 tests.
+- **Phase 3 (P1, 3-5 d)**: token dashboard + per-provider cost
+  projection, keyboard shortcuts, run search, rerun / retry endpoints,
+  export run to JSON, `@axe-core/react` accessibility audit, auto-approve
+  banner with mid-run revoke. Backend: ~270 LOC; frontend: ~585 LOC;
+  ~320 tests.
+
+**Net new code across all phases:** ~3990 LOC (~1075 BE / ~2035 FE /
+~880 tests). See decision 0025 §6.6 for the breakdown table.
+
+**Status (2026-08-23):** ACCEPTED. User approved all 5 open
+questions: Q1=(a) Phase 0 first; Q2=(a) snapshot `agent.memory.steps`
+to disk; Q3=Yes defer drag-drop reorder to v1.9.x; Q4=(c) Read both
+(legacy `workspace` becomes "default" project); Q5=(a) hardcoded
+defaults in `model_catalog.PROVIDERS` overridable via
+`Settings.cost_rates`. Phase 0 implementation is IN FLIGHT.
+
+**Phase 0 implementation cross-references (v1.8.0):**
+- `Run.summary_dict(max_wall_s)` returns a dict containing `tokens_in`,
+  `tokens_out`, `tokens_total`, `step_count`, `remaining_s`, and
+  `subagent` — the snapshot consumed by `_run_summary()` in `web/api.py`.
+  `tokens_in` / `tokens_out` are auto-incremented inside `Run.publish`
+  for every `EVT_STEP_ACTION` event under `pending_lock`; `step_count`
+  is bumped for every step.action regardless of whether it carries
+  tokens.
+- `Run.remaining_s(budget)` is a float; negative when the run has
+  overrun the budget; None when the budget is disabled.
+- `Run.subagent_*` fields are set by the orchestrator delegation tools
+  (`_build_delegation_tool.forward()` and `_build_specialist_tool.forward()`
+  in `agents/orchestrator.py`) around each inner `agent.run()` call.
+  The same tools emit `EVT_SUBAGENT_STARTED` / `EVT_SUBAGENT_ENDED`
+  events (new constants in `web/runs.py`) on the outer run, which the
+  SPA's `EventStream.groupRows()` collects into a nested
+  `<SubAgentBlock>` keyed by `subagent_id`.
+- `Run.error` (Phase 0 BE-7) appends a sub-agent context string when the
+  orchestrator raised mid-delegation, so the SPA can surface
+  "while running sub-agent X" in the Inspector.
+- `_run_summary()` and `RunSummary` schema (`web/schemas.py`) carry the
+  new fields: `tokens: TokenSummary`, `step_count: int`,
+  `remaining_s: float or null`, `subagent: SubAgentSummary or null`.
+  All new fields are additive and optional on the wire; older servers
+  omit them and the SPA renders an empty / "no token data yet" state.
+- See decision 0025 §14 for the exact implementation plan (BE-1..BE-8,
+  FE-1..FE-8, T-1..T-3) and validation gates.
+
+**Standing rule:** the per-phase implementation still opens a planning
+PR (sub-decision doc) before code lands. Phase 0's sub-decision is
+now §14 of decision 0025 (the detailed plan + validation gates).
+
+**Out of scope for v1.8** (explicit deferrals): drag-and-drop queue
+reorder, full Monaco IDE, multi-user real-time collaboration, voice
+input, dark mode, plugin/extension API, per-provider usage caps, prompt
+library, model comparison view. See decision 0025 §8 for the full
+list with rationale.
+
 ## 14. Inline diff viewer + workspace tree (M10)
 
 M10 is a **pure UX layer on top of M9**: the diff gate plumbing

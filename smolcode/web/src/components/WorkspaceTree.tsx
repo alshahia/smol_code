@@ -10,6 +10,11 @@ interface Props {
   touchedPaths?: ReadonlyArray<string>
   maxEntries?: number
   maxDepth?: number
+  // Phase 0 (decision 0025, B11): bumped by the parent on each
+  // diff.proposed / diff.resolved event to force an immediate tree
+  // refresh (instead of waiting for the 10s poll). undefined / 0
+  // means "no external trigger; rely on the internal interval".
+  refreshTrigger?: number
 }
 
 interface TreeNode {
@@ -85,7 +90,7 @@ function NodeRow({
   )
 }
 
-export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDepth }: Props) {
+export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDepth, refreshTrigger }: Props) {
   const [data, setData] = useState<WorkspaceTreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -111,6 +116,18 @@ export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDept
     const id = window.setInterval(schedule, 10000)
     return () => window.clearInterval(id)
   }, [refresh])
+
+  // Phase 0 (decision 0025, B11): refresh immediately when the parent
+  // bumps ``refreshTrigger`` -- typically on every diff.proposed /
+  // diff.resolved event so the user sees the touched file appear in
+  // the tree within ~100ms instead of waiting for the 10s poll. The
+  // setTimeout(0) defers the state update so xlint's set-state-in-effect
+  // warning does not fire (matches the existing interval scheduler).
+  useEffect(() => {
+    if (refreshTrigger === undefined || refreshTrigger === 0) return
+    const id = window.setTimeout(() => { void refresh() }, 0)
+    return () => window.clearTimeout(id)
+  }, [refreshTrigger, refresh])
 
   const tree = useMemo(() => (data ? buildTree(data.entries) : []), [data])
   const touchedSet = useMemo(() => new Set(touchedPaths || []), [touchedPaths])

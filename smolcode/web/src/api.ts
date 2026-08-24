@@ -122,6 +122,21 @@ export interface StartRunOptions {
 
 // --- M9 types -------------------------------------------------------------
 
+// Phase 0 (decision 0025): per-run token aggregates.
+export interface TokenSummary {
+  input: number
+  output: number
+  total: number
+}
+
+// Phase 0 (decision 0025): latest sub-agent invocation.
+export interface SubAgentSummary {
+  id: string
+  tier: string
+  started_at: number
+  ended_at: number | null
+}
+
 export interface RunSummary {
   id: string
   task: string
@@ -142,6 +157,16 @@ export interface RunSummary {
   // M10: workspace-relative paths the run has touched (write_file +
   // patch_file). The workspace tree highlights these.
   touched_paths?: string[]
+  // Phase 0 (decision 0025): aggregated tokens + step counter for
+  // the Inspector Token usage section.
+  tokens?: TokenSummary
+  step_count?: number
+  // Seconds remaining until _MAX_RUN_WALL_S expires. Negative when
+  // the run has overrun the budget; null when the budget is disabled
+  // or the server has not reported it (pre-v1.8 servers).
+  remaining_s?: number | null
+  // Latest sub-agent invocation. null when the run has not delegated.
+  subagent?: SubAgentSummary | null
 }
 
 export interface RunListResponse {
@@ -165,6 +190,8 @@ export interface StreamEvent {
     | 'diff.proposed'
     | 'diff.resolved'
     | 'error'
+    | 'subagent.started'
+    | 'subagent.ended'
     | 'end'
   run_id?: string
   task?: string
@@ -206,6 +233,12 @@ export interface StreamEvent {
   hunks?: DiffHunk[]
   stats?: DiffStats
   edited?: boolean
+  // Phase 0 (decision 0025): sub-agent fields.
+  parent_run_id?: string
+  subagent_id?: string
+  task_preview?: string
+  specialist?: string
+  error_kind?: string
 }
 
 async function jsonOrThrow<T>(r: Response): Promise<T> {

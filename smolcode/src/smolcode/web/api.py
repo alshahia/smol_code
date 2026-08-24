@@ -370,9 +370,35 @@ def clean_uploads(req: CleanRequest, store: UploadsStore = Depends(get_uploads_s
 
 
 def _run_summary(run: Run) -> dict:
+    """Return a RunSummary dict for the SPA /api/runs endpoints.
+
+    Phase 0 (decision 0025): folds in token + step aggregates, the
+    remaining wall-clock seconds, and the latest sub-agent
+    invocation. The timeout budget is imported from
+    agent_runner._MAX_RUN_WALL_S lazily so this module does not
+    pay the smolagents import cost on cold-start.
+    """
     duration = None
     if run.ended_at is not None:
         duration = max(0.0, run.ended_at - run.started_at)
+    try:
+        from .agent_runner import _MAX_RUN_WALL_S
+
+        budget = _MAX_RUN_WALL_S
+    except Exception:
+        budget = 0
+    snap = run.summary_dict(max_wall_s=budget)
+    from .schemas import SubAgentSummary, TokenSummary
+
+    sub_summary = None
+    if snap["subagent"] is not None:
+        sub = snap["subagent"]
+        sub_summary = SubAgentSummary(
+            id=str(sub["id"]),
+            tier=str(sub["tier"]),
+            started_at=float(sub["started_at"]),
+            ended_at=sub.get("ended_at"),
+        ).model_dump()
     return RunSummary(
         id=run.id,
         task=run.task,
@@ -385,6 +411,14 @@ def _run_summary(run: Run) -> dict:
         error=run.error,
         has_pending_approval=bool(run.pending),
         touched_paths=run.touched_list(),
+        tokens=TokenSummary(
+            input=int(snap["tokens_in"]),
+            output=int(snap["tokens_out"]),
+            total=int(snap["tokens_total"]),
+        ),
+        step_count=int(snap["step_count"]),
+        remaining_s=snap.get("remaining_s"),
+        subagent=sub_summary,
     ).model_dump()
 
 
