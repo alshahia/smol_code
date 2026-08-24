@@ -35,8 +35,6 @@ so existing callers stay backwards-compatible.
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -45,9 +43,19 @@ from fastapi.responses import Response, StreamingResponse
 from .. import __version__
 from ..audit import AuditSink
 from ..audit_reader import audit_chain_status, read_audit_entries
-from ..config import Settings, as_dict
+from ..config import Project, Settings, as_dict
 from ..model_catalog import fetch_models
 from ..model_catalog import get_providers as _catalog_get_providers
+from ..session import (
+    create_session_file,
+    delete_session_file,
+    list_sessions,
+    read_session_events,
+    rename_session_file,
+    resolve_project_root,
+    safe_id,
+    session_dir_for,
+)
 from ..uploads import UploadsStore
 from .deps import get_audit_sink, get_run_manager, get_settings, get_uploads_store
 from .diffs import walk_tree
@@ -66,14 +74,21 @@ from .schemas import (
     ConfigResponse,
     HealthResponse,
     ModelListResponse,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectOut,
     ProviderListResponse,
     ProviderOut,
     RunListResponse,
     RunStartRequest,
     RunStartResponse,
     RunSummary,
+    SessionCreateRequest,
+    SessionCreateResponse,
+    SessionDeleteResponse,
     SessionEntry,
     SessionEvent,
+    SessionRenameRequest,
     StopResponse,
     TierSummary,
     TreeEntryOut,
@@ -125,6 +140,7 @@ def get_config(settings: Settings = Depends(get_settings)) -> dict:
         "uploads_dir": d.get("uploads_dir", ""),
         "upload_max_bytes": d.get("upload_max_bytes", 0),
         "upload_allowed_mime": list(d.get("upload_allowed_mime", [])),
+        "projects": [ProjectOut(name=p["name"], root=p["root"]).model_dump() for p in d.get("projects", [])],
     }
 
 
@@ -144,56 +160,242 @@ def get_tiers(settings: Settings = Depends(get_settings)) -> dict:
     }
 
 
-@router.get("/sessions")
-def get_sessions(settings: Settings = Depends(get_settings)) -> dict:
-    sessions_dir = Path(settings.workspace) / "sessions"
-    entries = []
-    if sessions_dir.exists():
-        for f in sorted(sessions_dir.glob("*.jsonl"), reverse=True):
-            try:
-                stat = f.stat()
-                entries.append(
-                    SessionEntry(
-                        id=f.stem,
-                        path=str(f),
-                        size_bytes=stat.st_size,
-                        mtime_iso=datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    ).model_dump()
-                )
-            except OSError:
-                continue
-    return {"sessions": entries}
+@router.get("/sessions", response_model=dict)
+def get_sessions(
+    settings: Settings = Depends(get_settings),
+    project: str | None = Query(default=None, description="Project name to scope the listing."),
+) -> dict:
+    """List chat-session files.
+
+    Phase 1 (decision 0025 §6.3): optional ``?project=foo`` query param
+    scopes the listing to that project's session dir
+    (``<project>/.smolcode/sessions/``). When omitted, lists sessions
+    in the legacy ``<workspace>/sessions/`` dir so existing callers
+    keep working.
+    """
+    root = resolve_project_root(settings, project)
+    entries = list_sessions(root, project=project)
+    return {
+        "sessions": [
+            SessionEntry(
+                id=e["id"],
+                path=e["path"],
+                size_bytes=e["size_bytes"],
+                mtime_iso=e["mtime_iso"],
+                name=e["name"],
+                run_count=e["run_count"],
+                project=e["project"],
+            ).model_dump()
+            for e in entries
+        ]
+    }
 
 
-@router.get("/sessions/{session_id}")
-def get_session(session_id: str, settings: Settings = Depends(get_settings)) -> dict:
-    if "/" in session_id or "\\" in session_id or session_id.startswith("."):
-        raise HTTPException(status_code=400, detail="invalid session id")
-    sessions_dir = Path(settings.workspace) / "sessions"
-    target = sessions_dir / (session_id + ".jsonl")
-    if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="session not found")
-    events = []
+@router.post("/sessions", response_model=SessionCreateResponse, status_code=201)
+def post_sessions(
+    req: SessionCreateRequest,
+    settings: Settings = Depends(get_settings),
+    project: str | None = Query(default=None, description="Project name to scope the new session."),
+) -> dict:
+    """Create a new chat session (Phase 1, decision 0025 §6.3).
+
+    Always creates the file under the resolved root so the GET can
+    list it. ``name`` is optional; the SPA can rename later via PATCH.
+    When ``project`` is unknown (or omitted) the session is created
+    in legacy workspace mode and the response reports ``project=None``.
+    """
+    # Resolve to a known project name (None when missing/unknown).
+    effective_project = None
+    if project is not None:
+        for p in settings.projects:
+            if p.name == project:
+                effective_project = p.name
+                break
+    root = resolve_project_root(settings, effective_project)
+    name = req.name if req.name else None
     try:
-        text = target.read_text(encoding="utf-8")
+        jsonl = create_session_file(root, project=effective_project, name=name)
+    except (ValueError, FileExistsError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except OSError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        events.append(
+    return SessionCreateResponse(id=jsonl.stem, name=name, project=effective_project).model_dump()
+
+
+@router.patch("/sessions/{session_id}", response_model=dict)
+def patch_session(
+    session_id: str,
+    req: SessionRenameRequest,
+    settings: Settings = Depends(get_settings),
+    project: str | None = Query(default=None),
+) -> dict:
+    """Rename a session (Phase 1, decision 0025 §6.3)."""
+    try:
+        safe_id(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    root = resolve_project_root(settings, project)
+    sdir = session_dir_for(root, project)
+    target = sdir / (session_id + ".jsonl")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="session not found")
+    try:
+        rename_session_file(root, project=project, session_id=session_id, new_name=req.name)
+    except (ValueError, OSError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"id": session_id, "name": req.name}
+
+
+@router.delete("/sessions/{session_id}", response_model=SessionDeleteResponse)
+def delete_session(
+    session_id: str,
+    settings: Settings = Depends(get_settings),
+    project: str | None = Query(default=None),
+) -> dict:
+    """Delete a session and its meta.json (Phase 1, decision 0025 §6.3)."""
+    try:
+        safe_id(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    root = resolve_project_root(settings, project)
+    sdir = session_dir_for(root, project)
+    target = sdir / (session_id + ".jsonl")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="session not found")
+    removed = delete_session_file(root, project=project, session_id=session_id)
+    return SessionDeleteResponse(id=session_id, deleted=bool(removed)).model_dump()
+
+
+@router.get("/sessions/{session_id}", response_model=dict)
+def get_session(
+    session_id: str,
+    settings: Settings = Depends(get_settings),
+    project: str | None = Query(default=None),
+) -> dict:
+    """Return the full event timeline of one session (Phase 1)."""
+    try:
+        safe_id(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    root = resolve_project_root(settings, project)
+    sdir = session_dir_for(root, project)
+    target = sdir / (session_id + ".jsonl")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="session not found")
+    events = read_session_events(target)
+    return {
+        "id": session_id,
+        "project": project,
+        "events": [
             SessionEvent(
-                ts=entry.get("ts", ""),
-                event=entry.get("event", ""),
-                raw=entry,
+                ts=str(e.get("ts", "")),
+                event=str(e.get("event", "")),
+                raw=e,
             ).model_dump()
-        )
-    return {"id": session_id, "events": events}
+            for e in events
+        ],
+    }
+
+
+# ---- Phase 1 (decision 0025 §6.3): project endpoints --------------------
+
+
+@router.get("/projects", response_model=ProjectListResponse)
+def get_projects(settings: Settings = Depends(get_settings)) -> dict:
+    """List the configured projects (Phase 1, decision 0025 §6.3).
+
+    Mirrors ``Settings.projects``. The SPA uses this to render the
+    ``ProjectSwitcher`` dropdown and to validate ``?project=`` query
+    params before forwarding them to other endpoints.
+    """
+    return ProjectListResponse(
+        projects=[
+            ProjectOut(name=p.name, root=str(p.root)).model_dump() for p in settings.projects
+        ]
+    ).model_dump()
+
+
+@router.post("/projects", response_model=ProjectOut, status_code=201)
+def post_project(
+    req: ProjectCreateRequest,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Create / register a project at runtime (Phase 1).
+
+    For Phase 1, project registration is in-memory only: the new
+    project is appended to the live ``Settings.projects`` tuple for
+    the lifetime of the running server. A persistent registration
+    (write to ``SMOLCODE_PROJECTS`` env or a ``projects.toml``) is a
+    Phase 1 followup; for now the user can copy the suggested
+    ``SMOLCODE_PROJECTS`` string out of the response.
+    """
+    name = req.name
+    if any(p.name == name for p in settings.projects):
+        raise HTTPException(status_code=400, detail="project name already exists: " + name)
+    if req.root:
+        root_path = Path(req.root).expanduser().resolve()
+        if not root_path.exists():
+            raise HTTPException(status_code=400, detail="project root does not exist: " + str(root_path))
+    else:
+        root_path = (settings.workspace / name).resolve()
+        root_path.mkdir(parents=True, exist_ok=True)
+    try:
+        project = Project(name, root_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # Mutate the live settings tuple (Settings is a frozen shape; we
+    # rebuild with the new projects list).
+    new_settings = Settings(
+        workspace=settings.workspace,
+        executor=settings.executor,
+        provider=settings.provider,
+        model=settings.model,
+        litellm_proxy=settings.litellm_proxy,
+        log_level=settings.log_level,
+        tiers=settings.tiers,
+        uploads_dir=settings.uploads_dir,
+        upload_max_bytes=settings.upload_max_bytes,
+        upload_allowed_mime=settings.upload_allowed_mime,
+        projects=tuple(list(settings.projects) + [project]),
+    )
+    # Update the app's stored settings so subsequent requests see the new project.
+    request.app.state.settings = new_settings
+    return ProjectOut(name=project.name, root=str(project.root)).model_dump()
+
+
+@router.delete("/projects/{project_name}", response_model=dict)
+def delete_project(
+    project_name: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Remove a project from the live settings (Phase 1).
+
+    For Phase 1 this only removes the project from the in-memory
+    Settings.projects tuple -- the on-disk project directory is left
+    untouched (a conservative choice; the user can ``rm -rf`` it
+    manually if desired). Restarting the server restores any
+    ``SMOLCODE_PROJECTS`` from the env.
+    """
+    remaining = [p for p in settings.projects if p.name != project_name]
+    if len(remaining) == len(settings.projects):
+        raise HTTPException(status_code=404, detail="project not found: " + project_name)
+    new_settings = Settings(
+        workspace=settings.workspace,
+        executor=settings.executor,
+        provider=settings.provider,
+        model=settings.model,
+        litellm_proxy=settings.litellm_proxy,
+        log_level=settings.log_level,
+        tiers=settings.tiers,
+        uploads_dir=settings.uploads_dir,
+        upload_max_bytes=settings.upload_max_bytes,
+        upload_allowed_mime=settings.upload_allowed_mime,
+        projects=tuple(remaining),
+    )
+    request.app.state.settings = new_settings
+    return {"deleted": project_name}
 
 
 @router.get("/audit", response_model=AuditListResponse)
@@ -419,6 +621,8 @@ def _run_summary(run: Run) -> dict:
         step_count=int(snap["step_count"]),
         remaining_s=snap.get("remaining_s"),
         subagent=sub_summary,
+        session_id=run.session_id,
+        project=run.project,
     ).model_dump()
 
 
@@ -502,6 +706,8 @@ def start_run(
             provider_override=req.provider,
             model_override=req.model,
             api_key_value=api_key_value,
+            session_id=req.session_id,
+            project=req.project,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

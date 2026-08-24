@@ -118,6 +118,10 @@ export interface StartRunOptions {
   model?: string | null
   /** Map of env-var-name → API-key-value. The backend only accepts whitelisted names. */
   keys?: Record<string, string>
+  /** Phase 1 (decision 0025 §6.3): attach this run to a chat session id. */
+  session_id?: string | null
+  /** Phase 1 (decision 0025 §6.3): scope this run to a named project. */
+  project?: string | null
 }
 
 // --- M9 types -------------------------------------------------------------
@@ -167,6 +171,10 @@ export interface RunSummary {
   remaining_s?: number | null
   // Latest sub-agent invocation. null when the run has not delegated.
   subagent?: SubAgentSummary | null
+  // Phase 1 (decision 0025 §6.3): chat session id + project name the
+  // run is attached to. Both additive; older servers omit them.
+  session_id?: string | null
+  project?: string | null
 }
 
 export interface RunListResponse {
@@ -199,6 +207,10 @@ export interface StreamEvent {
   model?: string
   provider?: string
   workspace?: string
+  // Phase 1 (decision 0025 §6.3): session_id + project surfaced on
+  // the run.started event so the SPA can tag the event stream.
+  session_id?: string | null
+  project?: string | null
   status?: string
   exit_code?: number
   duration_s?: number
@@ -257,8 +269,9 @@ export async function getConfig(): Promise<ConfigResponse> {
   return jsonOrThrow(await fetch('/api/config'))
 }
 
-export async function listUploads(): Promise<UploadListResponse> {
-  return jsonOrThrow(await fetch('/api/uploads'))
+export async function listUploads(project?: string | null): Promise<UploadListResponse> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(await fetch('/api/uploads' + q))
 }
 
 export async function uploadFile(file: File, tier: string): Promise<UploadMetadata> {
@@ -304,6 +317,8 @@ export async function startRun(
   if (opts.keys && Object.keys(opts.keys).length > 0) {
     body.keys = opts.keys
   }
+  if (opts.session_id) body.session_id = opts.session_id
+  if (opts.project) body.project = opts.project
   return jsonOrThrow(
     await fetch('/api/runs', {
       method: 'POST',
@@ -407,14 +422,143 @@ export interface WorkspaceTreeResponse {
 export async function getWorkspaceTree(
   maxEntries: number = 5000,
   maxDepth: number = 10,
+  project?: string | null,
 ): Promise<WorkspaceTreeResponse> {
+  const params = new URLSearchParams()
+  params.set('max_entries', String(maxEntries))
+  params.set('max_depth', String(maxDepth))
+  if (project) params.set('project', project)
   return jsonOrThrow(
-    await fetch(
-      '/api/workspace/tree?max_entries=' +
-        encodeURIComponent(maxEntries) +
-        '&max_depth=' +
-        encodeURIComponent(maxDepth),
-    ),
+    await fetch('/api/workspace/tree?' + params.toString()),
+  )
+}
+
+// --- Phase 1 (decision 0025 §6.3): projects + chat sessions --------------
+
+export interface ProjectInfo {
+  name: string
+  root: string
+}
+
+export interface ProjectListResponse {
+  projects: ProjectInfo[]
+}
+
+export interface SessionInfo {
+  id: string
+  path: string
+  size_bytes: number
+  mtime_iso: string
+  /** User-provided label (stored in sibling meta.json). null until renamed. */
+  name: string | null
+  /** Number of run.started events in the jsonl. */
+  run_count: number
+  /** Project name when scoped; null for legacy workspace sessions. */
+  project: string | null
+}
+
+export interface SessionListResponse {
+  sessions: SessionInfo[]
+}
+
+export interface SessionCreateRequest {
+  name?: string | null
+  project?: string | null
+}
+
+export interface SessionCreateResponse {
+  id: string
+  name: string | null
+  project: string | null
+}
+
+export interface SessionDetailResponse {
+  id: string
+  project: string | null
+  events: { ts: string; event: string; raw: Record<string, unknown> }[]
+}
+
+export interface ProjectCreateRequest {
+  name: string
+  /** Omit to default to <workspace>/<name>. */
+  root?: string | null
+}
+
+export async function listProjects(): Promise<ProjectListResponse> {
+  return jsonOrThrow(await fetch('/api/projects'))
+}
+
+export async function createProject(req: ProjectCreateRequest): Promise<ProjectInfo> {
+  return jsonOrThrow(
+    await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+  )
+}
+
+export async function deleteProject(name: string): Promise<{ deleted: string }> {
+  return jsonOrThrow(
+    await fetch('/api/projects/' + encodeURIComponent(name), { method: 'DELETE' }),
+  )
+}
+
+export async function listSessions(
+  project?: string | null,
+): Promise<SessionListResponse> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(await fetch('/api/sessions' + q))
+}
+
+export async function createSession(
+  req: SessionCreateRequest,
+  project?: string | null,
+): Promise<SessionCreateResponse> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(
+    await fetch('/api/sessions' + q, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+  )
+}
+
+export async function renameSession(
+  id: string,
+  name: string,
+  project?: string | null,
+): Promise<{ id: string; name: string }> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(
+    await fetch('/api/sessions/' + encodeURIComponent(id) + q, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }),
+  )
+}
+
+export async function deleteSession(
+  id: string,
+  project?: string | null,
+): Promise<{ id: string; deleted: boolean }> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(
+    await fetch('/api/sessions/' + encodeURIComponent(id) + q, {
+      method: 'DELETE',
+    }),
+  )
+}
+
+export async function getSession(
+  id: string,
+  project?: string | null,
+): Promise<SessionDetailResponse> {
+  const q = project ? '?project=' + encodeURIComponent(project) : ''
+  return jsonOrThrow(
+    await fetch('/api/sessions/' + encodeURIComponent(id) + q),
   )
 }
 

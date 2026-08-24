@@ -15,6 +15,9 @@ interface Props {
   // refresh (instead of waiting for the 10s poll). undefined / 0
   // means "no external trigger; rely on the internal interval".
   refreshTrigger?: number
+  // Phase 1 (decision 0025 §6.3): scope the tree to the active project.
+  // null/undefined = legacy workspace; string = project name.
+  project?: string | null
 }
 
 interface TreeNode {
@@ -90,7 +93,7 @@ function NodeRow({
   )
 }
 
-export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDepth, refreshTrigger }: Props) {
+export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDepth, refreshTrigger, project }: Props) {
   const [data, setData] = useState<WorkspaceTreeResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -98,7 +101,7 @@ export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDept
   const refresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const r = await getWorkspaceTree(maxEntries, maxDepth)
+      const r = await getWorkspaceTree(maxEntries, maxDepth, project)
       setData(r)
       setError(null)
     } catch (e) {
@@ -106,7 +109,7 @@ export function WorkspaceTree({ workspaceRoot, touchedPaths, maxEntries, maxDept
     } finally {
       setRefreshing(false)
     }
-  }, [maxEntries, maxDepth])
+  }, [maxEntries, maxDepth, project])
 
   useEffect(() => {
     // Schedule the initial refresh via setTimeout so the setState inside

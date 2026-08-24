@@ -16,10 +16,13 @@ interface Props {
   keyValue: string | null
   /** env var name the backend expects for this provider (e.g. "OPENAI_API_KEY"). */
   apiKeyEnv: string | null
+  /** Phase 1 (decision 0025 §6.3): attach the run to a chat session + project. */
+  sessionId?: string | null
+  project?: string | null
   onSubmitted: (runId: string) => void
 }
 
-export function RunComposer({ tier, provider, model, keyValue, apiKeyEnv, onSubmitted }: Props) {
+export function RunComposer({ tier, provider, model, keyValue, apiKeyEnv, sessionId, project, onSubmitted }: Props) {
   const [task, setTask] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +42,8 @@ export function RunComposer({ tier, provider, model, keyValue, apiKeyEnv, onSubm
         provider: provider ?? undefined,
         model: model ?? undefined,
         keys,
+        session_id: sessionId ?? undefined,
+        project: project ?? undefined,
       })
       setTask('')
       onSubmitted(r.run_id)

@@ -146,6 +146,12 @@ class Run:
     subagent_tier: str | None = None
     subagent_started_at: float | None = None
     subagent_ended_at: float | None = None
+    # Phase 1 (decision 0025 §6.3): chat-session id + project name the
+    # run is attached to. Both None for legacy / standalone runs.
+    # Surfaced in RunSummary + run.started event payload; the SPA's
+    # SessionsPane filters / highlights by these.
+    session_id: str | None = None
+    project: str | None = None
 
     def record_touch(self, rel_path):
         if not isinstance(rel_path, str) or not rel_path:
@@ -290,6 +296,8 @@ class RunManager:
         provider_override=None,
         model_override=None,
         api_key_value=None,
+        session_id=None,
+        project=None,
     ):
         """Start one agent run.
 
@@ -301,6 +309,13 @@ class RunManager:
         is consumed exactly once, in ``agent_runner.run_in_thread``,
         when constructing the LiteLLM model. It is NEVER included in
         any event payload or audit record.
+
+        Phase 1 (decision 0025 §6.3): ``session_id`` + ``project``
+        are optional; when supplied they tag the run so the SPA's
+        SessionsPane can filter history. ``project`` is resolved
+        against ``settings.projects`` -- an unknown name is silently
+        coerced to None (legacy mode) so a stale ``?project=foo``
+        from a previous config doesn't hard-fail new runs.
         """
         if not isinstance(task, str) or not task.strip():
             raise ValueError("task must be a non-empty string")
@@ -326,6 +341,25 @@ class RunManager:
         # supplied it). Reject obviously malformed values early.
         ak = api_key_value if isinstance(api_key_value, str) and api_key_value.strip() else None
 
+        # Phase 1: validate project against configured list; coerce
+        # unknown to None so legacy mode is the safe default.
+        effective_project = None
+        if project is not None:
+            for p in getattr(settings, "projects", ()):
+                if p.name == project:
+                    effective_project = p.name
+                    break
+
+        # Phase 1: validate session_id (safe chars only; no traversal).
+        from ..session import safe_id
+
+        effective_session_id = None
+        if session_id is not None:
+            try:
+                effective_session_id = safe_id(session_id)
+            except ValueError:
+                effective_session_id = None
+
         run = Run(
             id=uuid.uuid4().hex,
             task=task.strip(),
@@ -337,6 +371,8 @@ class RunManager:
             provider_override=provider_override,
             model_override=model_override,
             api_key_value=ak,
+            session_id=effective_session_id,
+            project=effective_project,
         )
         with self._lock:
             self._runs[run.id] = run

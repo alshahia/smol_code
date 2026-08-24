@@ -28,6 +28,9 @@ interface Props {
   // diff.proposed / diff.resolved event so the WorkspaceTree refreshes
   // immediately instead of waiting for the 10s poll.
   treeRefreshTrigger?: number
+  // Phase 1 (decision 0025 §6.3): scope the workspace tree to the
+  // active project (null = legacy workspace).
+  project?: string | null
 }
 
 const MAX_RUN_WALL_S_FALLBACK = 900 // SMOLCODE_WEB_RUN_TIMEOUT_S default (decision 0023)
@@ -40,7 +43,7 @@ function formatHMS(totalSeconds: number): string {
   return sign + m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0')
 }
 
-export function Inspector({ activeRun, config, treeRefreshTrigger }: Props) {
+export function Inspector({ activeRun, config, treeRefreshTrigger, project }: Props) {
   // 1s tick for the countdown. We start at 0 and only flip to active
   // when the run is in flight; this avoids spurious re-renders for
   // terminal runs.
@@ -188,6 +191,7 @@ export function Inspector({ activeRun, config, treeRefreshTrigger }: Props) {
           workspaceRoot={config.workspace}
           touchedPaths={activeRun?.touched_paths}
           refreshTrigger={treeRefreshTrigger}
+          project={project}
         />
       </div>
 

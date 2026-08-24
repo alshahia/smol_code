@@ -410,6 +410,11 @@ def run_in_thread(run, settings):
             "model": run.model,
             "provider": run.provider,
             "workspace": run.workspace,
+            # Phase 1 (decision 0025 §6.3): tag the run with its
+            # session + project so the SPA can group events. Both
+            # additive; older clients ignore unknown fields.
+            "session_id": run.session_id,
+            "project": run.project,
             "ts": _time_now_iso(),
         },
     )

@@ -18,6 +18,8 @@ import { RunHistory } from './components/RunHistory'
 import { Inspector } from './components/Inspector'
 import { ProviderSelector } from './components/ProviderSelector'
 import { ApiKeyPanel } from './components/ApiKeyPanel'
+import { SessionsPane } from './components/SessionsPane'
+import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
 import {
@@ -73,6 +75,34 @@ function App() {
       return false
     }
   })
+
+  // Phase 1 (decision 0025 §6.3): active project + chat session. Both
+  // hoisted to App so the SessionsPane, ProjectSwitcher, RunComposer,
+  // and every list-fetching callback can stay in sync. Persisted to
+  // localStorage so reloads restore the user's selection.
+  const [activeProject, setActiveProjectRaw] = useState<string | null>(() => {
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return null
+    }
+    try {
+      return window.localStorage.getItem('smolcode.activeProject.v1') || null
+    } catch {
+      return null
+    }
+  })
+  const setActiveProject = (p: string | null) => {
+    setActiveProjectRaw(p)
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      try {
+        if (p) window.localStorage.setItem('smolcode.activeProject.v1', p)
+        else window.localStorage.removeItem('smolcode.activeProject.v1')
+      } catch {
+        // ignore
+      }
+    }
+  }
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [projectRefreshTrigger, setProjectRefreshTrigger] = useState<number>(0)
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return
@@ -92,12 +122,12 @@ function App() {
 
   const refreshUploads = useCallback(async () => {
     try {
-      const r = await listUploads()
+      const r = await listUploads(activeProject)
       setUploads(r.uploads)
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [])
+  }, [activeProject])
 
   const refreshRuns = useCallback(async () => {
     try {
@@ -194,6 +224,20 @@ function App() {
     }, 5000)
     return () => window.clearInterval(id)
   }, [refreshRuns])
+
+  // Phase 1 (decision 0025 §6.3): refetch the sessions + uploads +
+  // workspace tree whenever the active project changes. Each list
+  // owns its own re-fetch on project-change so we don't need a
+  // central fan-out here. The SessionsPane re-fetches via its
+  // internal useEffect when `project` changes; WorkspaceTree + uploads
+  // re-fetch when refreshUploads / Inspector re-renders with the new
+  // project prop.
+  useEffect(() => {
+    void refreshUploads()
+    // Also bump the project refresh trigger so children that key off
+    // it (ProjectSwitcher dropdown) reload their options.
+    setProjectRefreshTrigger((n) => n + 1)
+  }, [activeProject, refreshUploads])
 
   const selectedProvider: ProviderInfo | null = useMemo(() => {
     if (!selectedProviderId) return null
@@ -318,6 +362,11 @@ function App() {
         <div className="ws" title={config.workspace}>
           {config.workspace.split(/[\\/]/).slice(-2).join('/')}
         </div>
+        <ProjectSwitcher
+          value={activeProject}
+          onChange={setActiveProject}
+          refreshTrigger={projectRefreshTrigger}
+        />
       </header>
 
       <div className="header-row-m11">
@@ -362,7 +411,19 @@ function App() {
               model={selectedModel || null}
               keyValue={storedKeyValue}
               apiKeyEnv={selectedProvider?.env_vars[0] ?? null}
+              sessionId={activeSessionId}
+              project={activeProject}
               onSubmitted={onSubmitted}
+            />
+          </section>
+
+          <section className="plan-sessions">
+            <h3>Sessions</h3>
+            <SessionsPane
+              project={activeProject}
+              activeSessionId={activeSessionId}
+              onSelect={setActiveSessionId}
+              refreshTrigger={projectRefreshTrigger}
             />
           </section>
 
@@ -412,7 +473,7 @@ function App() {
           style={{ display: isMobile && !inspectorOpen ? 'none' : 'block' }}
         >
           <h3>Inspector</h3>
-          <Inspector activeRun={activeRun} config={config} treeRefreshTrigger={treeRefreshTrigger} />
+          <Inspector activeRun={activeRun} config={config} treeRefreshTrigger={treeRefreshTrigger} project={activeProject} />
         </aside>
       </div>
 

@@ -36,19 +36,107 @@ class ConfigResponse(BaseModel):
     uploads_dir: str
     upload_max_bytes: int
     upload_allowed_mime: list[str]
+    # Phase 1 (decision 0025 §6.3): list of named project roots. Empty
+    # means legacy single-workspace mode.
+    projects: list[ProjectOut] = Field(default_factory=list)
+
+
+# --- Phase 1 (decision 0025 §6.3): project + session types ---------------
+
+
+class ProjectOut(BaseModel):
+    """One project in ``Settings.projects``.
+
+    ``name`` is the unique key (URL-safe, no whitespace, no slashes);
+    ``root`` is the absolute filesystem path the SPA's tree panel renders.
+    Additive + backwards-compatible: older servers omit this from /api/config.
+    """
+
+    name: str
+    root: str
+
+
+class ProjectListResponse(BaseModel):
+    projects: list[ProjectOut]
+
+
+class ProjectCreateRequest(BaseModel):
+    """POST /api/projects body. Phase 1, decision 0025 §6.3.
+
+    ``name`` is the unique key (validated by the Project constructor).
+    ``root`` is optional: when omitted the project is rooted at
+    ``<workspace>/<name>``; when supplied it must be a path that
+    already exists.
+    """
+
+    name: str = Field(..., description="Unique project name; URL-safe.")
+    root: str | None = Field(
+        default=None,
+        description="Filesystem path; omit to default to <workspace>/<name>.",
+    )
 
 
 class SessionEntry(BaseModel):
+    """Metadata for one chat-session file.
+
+    Phase 1 extension: ``name`` (user-provided label stored in sibling
+    ``meta.json``), ``run_count`` (number of ``run.started`` events in
+    the jsonl), ``project`` (which project the session belongs to;
+    ``None`` for sessions created before the project concept landed).
+    All additive + optional so older servers can omit them and the SPA
+    renders the empty state.
+    """
+
     id: str
     path: str
     size_bytes: int
     mtime_iso: str
+    name: str | None = None
+    run_count: int = 0
+    project: str | None = None
 
 
 class SessionEvent(BaseModel):
     ts: str
     event: str
     raw: dict[str, Any]
+
+
+class SessionCreateRequest(BaseModel):
+    """POST /api/sessions body. Phase 1, decision 0025 §6.3.
+
+    ``name`` is an optional user-friendly label. Empty/omitted creates
+    an unnamed session (the SPA can rename later). ``project``
+    associates the session with one of the configured projects; when
+    omitted the session is created under the legacy ``workspace/sessions/``
+    dir so it shows up in existing GET /api/sessions listings.
+    """
+
+    name: str | None = Field(
+        default=None,
+        description="Optional human-friendly label; stored in sibling meta.json.",
+    )
+    project: str | None = Field(
+        default=None,
+        description="Project name to scope this session to; omit for the legacy workspace.",
+    )
+
+
+class SessionCreateResponse(BaseModel):
+    id: str
+    name: str | None = None
+    project: str | None = None
+
+
+class SessionRenameRequest(BaseModel):
+    """PATCH /api/sessions/{id} body. Phase 1, decision 0025 §6.3."""
+
+    name: str = Field(..., description="New human-friendly label.")
+
+
+class SessionDeleteResponse(BaseModel):
+    id: str
+    deleted: bool
 
 
 class AuditEntry(BaseModel):
@@ -143,6 +231,17 @@ class RunStartRequest(BaseModel):
             "*_API_KEY, *_APIKEY, HF_TOKEN."
         ),
     )
+    # Phase 1 (decision 0025 §6.3): attach the run to a chat session + project.
+    # Both optional. When omitted the runner still works (legacy mode);
+    # when provided, the SPA's SessionsPane filters history by session_id.
+    session_id: str | None = Field(
+        default=None,
+        description="Phase 1: attach this run to an existing chat session id.",
+    )
+    project: str | None = Field(
+        default=None,
+        description="Phase 1: scope this run to a named project (must be in Settings.projects).",
+    )
 
 
 class RunStartResponse(BaseModel):
@@ -202,6 +301,11 @@ class RunSummary(BaseModel):
     # Phase 0 (decision 0025): latest sub-agent invocation. None when
     # the run has not delegated.
     subagent: SubAgentSummary | None = None
+    # Phase 1 (decision 0025 §6.3): chat session id + project name the
+    # run is attached to. Both additive; older servers omit them and
+    # the SPA renders the empty state.
+    session_id: str | None = None
+    project: str | None = None
 
 
 class RunListResponse(BaseModel):

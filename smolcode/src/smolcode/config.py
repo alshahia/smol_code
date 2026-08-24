@@ -47,6 +47,43 @@ def load_dotenv_into_environ(search_paths=DEFAULT_DOTENV_SEARCH_PATHS):
 # --- Tier + Settings dataclasses --------------------------------------------
 
 
+# Phase 1 (decision 0025 §6.3): a Project is a named workspace root.
+# Projects let the SPA switch between multiple working directories
+# without restarting smolcode. Stored as a tuple on Settings so it
+# behaves immutably like Tier. Equality + hash follow the Tier pattern
+# so two Projects with the same name + root compare equal.
+class Project:
+    """A named project root (Phase 1, decision 0025 §6.3)."""
+
+    __slots__ = ("name", "root")
+
+    def __init__(self, name, root):
+        if not isinstance(name, str) or not name:
+            raise ConfigError("project name must be a non-empty string")
+        # Project names are used as URL path segments and filesystem
+        # directory names; reject anything that would either need
+        # percent-encoding or fail the latter.
+        if any(ch in name for ch in ("/", "\\", ",", "=", "..", ":")):
+            raise ConfigError(
+                "invalid project name " + repr(name) + "; must not contain /, \\, ',', '=', ':' or '..'"
+            )
+        if any(ch.isspace() for ch in name):
+            raise ConfigError("invalid project name " + repr(name) + "; must not contain whitespace")
+        self.name = name
+        self.root = Path(root).resolve()
+
+    def __repr__(self):
+        return "Project(name=" + repr(self.name) + ", root=" + str(self.root) + ")"
+
+    def __eq__(self, other):
+        if not isinstance(other, Project):
+            return NotImplemented
+        return self.name == other.name and self.root == other.root
+
+    def __hash__(self):
+        return hash((self.name, str(self.root)))
+
+
 class Tier:
     """A trust tier. See docs/architecture.md 5.1."""
 
@@ -141,6 +178,12 @@ class Settings:
         "uploads_dir",
         "upload_max_bytes",
         "upload_allowed_mime",
+        # Phase 1 (decision 0025 §6.3): named project roots. When
+        # non-empty, the SPA exposes a switcher; ``deps.get_active_project``
+        # resolves the active one from ``?project=`` or the SPA's last
+        # selection. When empty (legacy single-workspace mode), the
+        # ``workspace`` path is the implicit project.
+        "projects",
     )
 
     def __init__(
@@ -155,6 +198,7 @@ class Settings:
         uploads_dir=None,
         upload_max_bytes=None,
         upload_allowed_mime=None,
+        projects=(),
     ):
         self.workspace = Path(workspace)
         self.executor = executor
@@ -169,6 +213,8 @@ class Settings:
         self.uploads_dir = Path(uploads_dir) if uploads_dir is not None else None
         self.upload_max_bytes = upload_max_bytes
         self.upload_allowed_mime = upload_allowed_mime
+        # Phase 1: tuple of Project. ``with_*`` helpers thread it through.
+        self.projects = tuple(projects)
 
     def with_executor(self, executor):
         """Return a new Settings with the executor swapped."""
@@ -183,6 +229,7 @@ class Settings:
             uploads_dir=self.uploads_dir,
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
+            projects=self.projects,
         )
 
     def with_overrides(self, provider=None, model=None, litellm_proxy=None, workspace=None):
@@ -198,6 +245,7 @@ class Settings:
             uploads_dir=self.uploads_dir,
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
+            projects=self.projects,
         )
 
     def __repr__(self):
@@ -380,6 +428,51 @@ class ConfigError(RuntimeError):
     """Raised when configuration cannot be resolved."""
 
 
+# Phase 1 (decision 0025 §6.3): parse the SMOLCODE_PROJECTS env var into a
+# tuple of Project. Format:
+#
+#     name1,name2,name3           -> each rooted under <workspace>/<name>
+#     name1=path1,name2=path2     -> explicit root; relative paths resolve
+#                                     against <workspace>; absolute paths
+#                                     must already exist.
+#
+# Bare names auto-create the directory on first load so the SPA can
+# switch into a freshly-named project without an extra step. Names with
+# ``=`` must use the ``name=path`` form.
+def _parse_projects(raw, workspace):
+    if not raw:
+        return ()
+    out = []
+    seen = set()
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "=" in entry:
+            name, path_str = entry.split("=", 1)
+            name = name.strip()
+            path_str = path_str.strip()
+        else:
+            name = entry
+            path_str = entry
+        p = Path(path_str)
+        if not p.is_absolute():
+            p = workspace / p
+        # Bare names auto-create; explicit paths must already exist.
+        if "=" in entry:
+            if not p.exists():
+                raise ConfigError(
+                    "project " + repr(name) + ": root " + str(p) + " does not exist"
+                )
+        else:
+            p.mkdir(parents=True, exist_ok=True)
+        if name in seen:
+            raise ConfigError("project names must be unique; duplicate " + repr(name))
+        seen.add(name)
+        out.append(Project(name, p))
+    return tuple(out)
+
+
 def load_settings(cli_overrides=None, dotenv_paths=None):
     """Resolve settings from CLI overrides + env + dotenv + defaults.
 
@@ -443,6 +536,7 @@ def load_settings(cli_overrides=None, dotenv_paths=None):
         uploads_dir=uploads_dir,
         upload_max_bytes=upload_max_bytes,
         upload_allowed_mime=upload_allowed_mime,
+        projects=_parse_projects(os.environ.get("SMOLCODE_PROJECTS", ""), workspace),
     )
 
     if cli_overrides:
@@ -494,4 +588,7 @@ def as_dict(s):
         out["upload_max_bytes"] = s.upload_max_bytes
     if s.upload_allowed_mime is not None:
         out["upload_allowed_mime"] = list(s.upload_allowed_mime)
+    # Phase 1 (decision 0025 §6.3): list of project roots. Empty tuple
+    # means legacy mode (single implicit project == ``workspace``).
+    out["projects"] = [{"name": p.name, "root": str(p.root)} for p in s.projects]
     return out
