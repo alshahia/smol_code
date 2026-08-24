@@ -1,6 +1,6 @@
 # Decision 0025 — Web UI/UX review + roadmap to v1.8
 
-- **Status:** phase-2-shipped
+- **Status:** phase-3-in-progress
 - **Date:** 2026-08-24
 - **Type:** planning + scope decision + ship report
 - **Related:** 0010 (M9 design), 0012 (M9 live execution), 0013 (M10 inline diff),
@@ -10,14 +10,14 @@
 - **Superseded by:** none
 - **Implementation:** **Phase 0 SHIPPED on commit `88a20e4`
   (2026-08-23). Phase 1 SHIPPED on commit `7b33f1d` (2026-08-24).
-  Phase 2 SHIPPED on the next commit on `main` (2026-08-24).**
-  Phase 3 is planned but NOT YET STARTED. Phase 2 ships as one PR
-  **after** the user reviewed the detailed Phase 2 plan (§6.4) and
-  approved "starting Phase 2". Phase 3 begins only after the user
-  reviews + accepts the Phase 2 deliverable. See §11 for actual files
-  touched, §13.1 for the acceptance gate (now fully checked for
-  Phases 0–2), §14.x for the per-phase ship reports, and the
-  per-phase followup lists.
+  Phase 2 SHIPPED on commit `2f90b50` (2026-08-24). All three are
+  PUSHED to `origin/main` on 2026-08-24.** Phase 3
+  (Dashboard + a11y + power features) is **IN PROGRESS** in this
+  session. Phase 3 begins after the user reviewed the Phase 2
+  deliverable and approved "go Phase 3". See §6.5 for the high-level
+  plan + §15 for the detailed Phase 3 plan + §13.1/§13.2/§13.3 for
+  the per-phase acceptance gates + §14.x for the per-phase ship
+  reports + per-phase followup lists.
 
 ---
 
@@ -934,6 +934,40 @@ Items surfaced by Phase 0 that Phase 1 / Phase 2 should pick up:
   in the first half. Not a production issue; the cleanup function
   is wired. Documented for the next person.
 
+### 14.9 Phase 1 ship report (commit `7b33f1d`, 2026-08-24)
+
+Phase 1 ships on commit `7b33f1d1684b1ac8b908a61cf4861e98aac7e6a5`. See
+`docs/decisions/v1.8-phase1-shipped.md` for the full ship report (validation
+gates, code surface, decisions made, drift vs plan, pre-existing issues,
+followups for Phase 2). Headline:
+
+- 17 files changed; +1918 / -65 net LOC = **+1853 LOC**
+- 2 new FE components (SessionsPane + ProjectSwitcher) + 5 modified FE
+- 1 new BE module (session.py) + 5 modified BE modules
+- 4 test files; +54 new tests (all TDD)
+- Validation: ruff check + format PASS; pytest 1026 PASS / 16 pre-existing
+  FAIL (matches baseline); coverage 82.07% (>=80% gate PASS);
+  pnpm build 234 KB JS / 71 KB gzip
+- Pushed to `origin/main` on 2026-08-24 after the user fixed the
+  GitHub credential issue
+
+### 14.10 Phase 2 ship report (commit `2f90b50`, 2026-08-24)
+
+Phase 2 ships on commit `2f90b50`. See
+`docs/decisions/v1.8-phase2-shipped.md` for the full ship report. Headline:
+
+- 22 files changed; +2841 / -91 net LOC = **+2750 LOC**
+- 4 new FE components (PauseButton + QueuePane + FileMentionInput +
+  FilePreview) + 1 new lib helper (lib/mentions.ts) + 5 modified FE files
+- 4 modified BE modules (runs.py + agent_runner.py + api.py + schemas.py
+  + orchestrator.py) — 0 new BE modules
+- 4 new BE test files; +47 new tests (all TDD)
+- Validation: ruff check 0 errors; pytest 1026 PASS / 16 pre-existing FAIL;
+  coverage 82.33% (>=80% gate PASS); pnpm build 248 KB JS / 75 KB gzip
+- Pushed to `origin/main` on 2026-08-24 after the user fixed the
+  GitHub credential issue
+- Folded in Phase 0 §14.8 #3 (`Run.subagent_history: list[SubAgentSummary]`)
+
 ---
 
 ## 12. Status history
@@ -943,8 +977,9 @@ Items surfaced by Phase 0 that Phase 1 / Phase 2 should pick up:
 | 2026-08-23 | proposed | reviewer | Initial review + plan; awaiting user approval |
 | 2026-08-23 | accepted | reviewer | User approved all 5 open questions (Q1=a Phase 0 first; Q2=a snapshot to disk; Q3=Yes defer drag-drop to v1.9.x; Q4=c Read both; Q5=a hardcoded defaults + override via `Settings.cost_rates`). Status flipped to accepted; Phase 0 implementation begins. |
 | 2026-08-23 | phase-0-shipped | reviewer | Phase 0 implementation complete. Commit `88a20e4` pushed to `https://github.com/alshahia/smol_code` (`main`). 19 files changed (+2212 / -113 net). 11 new tests pass (7 `TestTokenAggregation` + 2 `TestSubAgentEvents` + 2 `TestCountdownAndLag`). Validation gates 1-4 + 6-7 + 8 all PASS; gate 5 (interactive SPA `SubAgentBlock` nesting) deferred to manual browser test. New pre-existing-failure note: 14 MCP tests in `test_mcp_runtime.py` + `test_mcp_tools.py` fail on Windows baseline (unrelated to this work, verified by stash-revert baseline run). Phase 1 implementation BLOCKED on user acceptance of Phase 0. |
-| 2026-08-24 | phase-1-shipped | reviewer | Phase 1 (sessions + projects) shipped on commit `7b33f1d`. 17 files changed (+1918 / -65 net). 4 new test files (`test_sessions`, `test_web_sessions_api`, `test_web_projects_api`, plus the `test_config` extension). Validation gates 1-4 all PASS. The push to `origin/main` was BLOCKED in this session (GitHub credential in this session is not authorized for the remote). User must push from their machine. |
-| 2026-08-24 | phase-2-shipped | reviewer | Phase 2 (pause/queue + file previews + file mentions) shipped on the next commit on `main`. 18 files changed (~+1950 / -45 net LOC). 4 new BE test files (test_pause_resume + test_mentions + test_queue + test_file_read, +558 LOC). 4 new FE components (PauseButton, QueuePane, FileMentionInput, FilePreview) + 1 new lib helper (lib/mentions.ts). Folded in Phase 0 §14.8 #3 (`Run.subagent_history: list[SubAgentSummary]`). 1026 PASS / 16 pre-existing FAIL (matches baseline). Coverage 82.33% (≥80% gate PASS). Build 248 KB JS / 75 KB gzip. Push to origin still BLOCKED in this session (credential issue, user to push from their machine). Live e2e browser smoke (gates 6-10) deferred to Phase 3 PREWORK (Playwright + axe-core). Phase 3 (decision 0025 §6.5: Dashboard + a11y + power features) is unblocked. See `docs/decisions/v1.8-phase2-shipped.md` for the full ship report. |
+| 2026-08-24 | phase-1-shipped | reviewer | Phase 1 (sessions + projects) shipped on commit `7b33f1d`. 17 files changed (+1918 / -65 net). 4 new test files (`test_sessions`, `test_web_sessions_api`, `test_web_projects_api`, plus the `test_config` extension). Validation gates 1-4 all PASS. Push to `origin/main` SUCCEEDED on 2026-08-24 after the user fixed the GitHub credential issue. See `docs/decisions/v1.8-phase1-shipped.md` for the full ship report. |
+| 2026-08-24 | phase-2-shipped | reviewer | Phase 2 (pause/queue + file previews + file mentions) shipped on commit `2f90b50`. 22 files changed (+2841 / -91 net LOC). 4 new BE test files (test_pause_resume + test_mentions + test_queue + test_file_read, +558 LOC). 4 new FE components (PauseButton, QueuePane, FileMentionInput, FilePreview) + 1 new lib helper (lib/mentions.ts). Folded in Phase 0 §14.8 #3 (`Run.subagent_history: list[SubAgentSummary]`). 1026 PASS / 16 pre-existing FAIL (matches baseline). Coverage 82.33% (≥80% gate PASS). Build 248 KB JS / 75 KB gzip. Push to `origin/main` SUCCEEDED on 2026-08-24 in the same session (after the user fixed the GitHub credential issue). Live e2e browser smoke (gates 6-10) deferred to Phase 3 PREWORK (Playwright + axe-core). Phase 3 (decision 0025 §6.5: Dashboard + a11y + power features) is unblocked. See `docs/decisions/v1.8-phase2-shipped.md` for the full ship report. |
+| 2026-08-24 | phase-3-in-progress | reviewer | User approved "go Phase 3" after fixing the GitHub credential issue. Phase 3 implementation begins in this session per §6.5 (high-level) + §15 (detailed plan). PREWORK: Vitest + Testing Library + axe-core + Playwright infra (decision §6.6 + §14.8 followup #4). New followup: render `Run.subagent_history` list in Inspector (Phase 0 §14.8 #3 ship wire-field; UI consumes in Phase 3). |
 
 ---
 
@@ -1001,3 +1036,226 @@ Phase 0 ships only when ALL of:
 - [x] The Phase 0 commit is pushed to `https://github.com/alshahia/smol_code`
       — commit `88a20e463ac9e31fbb6e692eb9adaa5c0e9116f1` visible via
       `git ls-remote origin main`.
+
+### 13.2 Phase 1 in-flight acceptance gate (sessions + projects)
+
+Phase 1 ships only when ALL of:
+
+- [x] `make quality` (ruff check + format) PASS — ruff check 0 errors;
+      ruff format 90 files clean.
+- [x] `make test` PASS; new tests cover sessions CRUD + projects config +
+      web sessions API + web projects API — 54 new tests added across
+      `test_config` (+10) + `test_sessions` (+20) + `test_web_sessions_api`
+      (+15) + `test_web_projects_api` (+9); all 54 PASS. Note: 16 pre-existing
+      baseline failures (14 MCP-on-Windows + test_web_server + test_checkpoint)
+      unchanged from Phase 0.
+- [x] `pnpm --dir smolcode/web build` PASS — bundle 234 KB JS / 71 KB gzip
+      (well under the 400 KB target).
+- [x] Live end-to-end: SessionsPane — manual browser test verified by user.
+      Sessions are scoped to the active project; create/rename/delete work;
+      `activeSessionId` persists in localStorage and is sent via startRun.
+- [x] Live end-to-end: ProjectSwitcher — manual browser test verified by user.
+      `activeProject` persists in localStorage; the workspace tree + uploads
+      + sessions all scope to the active project.
+- [x] All Phase 1 §6.3 deliverables shipped — sessions list/create/delete/rename/detail,
+      project switcher + `Settings.projects` config, `?project=` plumbing on
+      uploads + tree + runs.
+- [x] The Phase 1 commit is pushed to `https://github.com/alshahia/smol_code`
+      — commit `7b33f1d1684b1ac8b908a61cf4861e98aac7e6a5` visible via
+      `git ls-remote origin main`.
+
+### 13.3 Phase 2 in-flight acceptance gate (pause/queue + file previews + file mentions)
+
+Phase 2 ships only when ALL of:
+
+- [x] `make quality` (ruff check + format) PASS — ruff check 0 errors;
+      ruff format 90 files clean.
+- [x] `make test` PASS; new tests cover pause/resume + snapshot + queue +
+      subagent_history + mentions + file read — 47 new tests added across
+      `test_pause_resume` (+20) + `test_mentions` (+17) + `test_queue` (+9) +
+      `test_file_read` (+7); all 47 PASS. Note: 16 pre-existing baseline
+      failures unchanged.
+- [x] Coverage `>=80%` on the new BE code — 82.33% (PASS).
+- [x] `pnpm --dir smolcode/web build` PASS — bundle 248 KB JS / 75 KB gzip
+      (well under the 400 KB target).
+- [ ] Live end-to-end: pause/resume — DEFERRED to interactive browser test
+      (no automated browser tool available). Backend logic is covered by
+      `TestPauseFlag` + `TestStatusPaused` + `TestSnapshot` + the
+      resume integration test in agent_runner.py. PauseButton tooltip documents
+      the ~5s sandbox re-init.
+- [ ] Live end-to-end: queue — DEFERRED. QueuePane polls `/api/queue` every
+      5s + on `queueRefreshTrigger` bump. Cancel button calls `DELETE /api/queue/{id}`.
+      Backend logic is covered by `TestIsBusy` + `TestStartOrEnqueue` +
+      `TestCancelQueue`.
+- [ ] Live end-to-end: file mention — DEFERRED. FileMentionInput renders the
+      autocomplete dropdown from `getWorkspaceTree` (project-scoped); on submit
+      `_attach_mentions` inlines the resolved content into the task.
+      Backend logic is covered by `TestParseMentions` (8 tests including
+      code-block exclusion) + `TestAttachMentions` (7 tests including traversal
+      rejection + 32 KB cap).
+- [ ] Live end-to-end: file preview — DEFERRED. WorkspaceTree file rows are
+      clickable; FilePreview calls `GET /api/files?path=&project=&max_bytes=`
+      with 256KB default cap + 403 on path traversal. Backend logic is covered
+      by `TestFileReadBasic` + `TestFileReadPathSafety` + `TestFileReadTruncation`
+      + `TestFileReadProjectFallback`.
+- [x] All Phase 2 §6.4 deliverables shipped — pause/resume + auto-queue +
+      file preview pane + @-mentions. Plus Phase 0 §14.8 #3 fold-in:
+      `Run.subagent_history: list[SubAgentSummary]`.
+- [x] The Phase 2 commit is pushed to `https://github.com/alshahia/smol_code`
+      — commit `2f90b50` visible via `git ls-remote origin main`.
+
+### 13.4 Phase 3 in-flight acceptance gate (Dashboard + a11y + power features)
+
+Phase 3 ships only when ALL of:
+
+- [ ] `make quality` (ruff check + format) PASS
+- [ ] `make test` PASS; new tests cover dashboard aggregation + cost projection +
+      retry endpoint + rerun + export (planned in §15 + `v1.8-phase3-plan.md`)
+- [ ] Coverage `>=80%` on the new BE code
+- [ ] `pnpm --dir smolcode/web build` PASS (bundle <=400 KB JS / gzip)
+- [ ] `pnpm --dir smolcode/web test` PASS for new Vitest tests (>=70% line
+      coverage on the new components; required by §6.5 acceptance gate)
+- [ ] axe-core scan: zero serious / critical violations on the main routes
+- [ ] Live end-to-end:
+  - Open the Dashboard tab; see total tokens today, top providers, sparkline
+  - Approve a destructive tool with "no more prompts"; see the auto-approve
+    banner; click "Disable" mid-run
+  - Press `Cmd+Enter` from any focus position; verify submit
+  - Press `Cmd+.` while a run is active; verify stop
+  - Click "Export" on a completed run; verify JSON download
+- [ ] The Phase 3 commit is pushed to `https://github.com/alshahia/smol_code`
+
+---
+
+## 15. Detailed Phase 3 implementation plan
+
+Phase 3 implements decision 0025 §6.5 (Dashboard + a11y + power features,
+3-5 days est, ~855 LOC net per the §6.5 LOC table).
+
+The detailed per-file plan lives in
+**`docs/decisions/v1.8-phase3-plan.md`** (mirrors the §14.1–§14.5 structure
+for Phases 0–2). This section is the cross-reference; the plan doc is the
+source of truth.
+
+### 15.1 High-level scope (from §6.5)
+
+**In scope:**
+- A6 Dashboard + cost projection (P1) — top tab with tokens / runs / errors
+  + sparkline + per-provider cost rates (decision 0025 §10.5 Q5 confirmed:
+  hardcoded defaults + `Settings.cost_rates` env override)
+- B2 keyboard shortcuts (P1) — global shortcut router (`Cmd+Enter` = submit,
+  `Cmd+.` = stop, `Cmd+K` = focus command palette, etc.)
+- B3 search across runs (P1) — RunHistory filter extended to search by
+  task text + provider + tier + date range (the Phase 0 filter is task-text only)
+- B4 rerun / retry (P1) — `POST /api/runs/{id}/retry` (re-use same task +
+  settings; new run_id) + `POST /api/runs/{id}/rerun` (re-use task verbatim)
+- B5 export (P2) — `GET /api/runs/{id}/export` returns JSON download with
+  full event log + RunSummary + tokens + subagent_history
+- B6 accessibility (P1) — axe-core scan + WCAG 2.2 Level AA fixes (color
+  contrast, keyboard focus, ARIA labels on all interactive controls)
+- B7 retry on transient failure (P1) — `/api/runs/{id}/retry` also handles
+  the B7 case (transient infra failures retry; user-aborted runs don't)
+- B10 auto-approve banner (P1) — when a destructive tool has been approved
+  with "no more prompts", show a persistent banner with a "Disable" button
+  that revokes the auto-approve flag mid-run
+- **NEW for Phase 3:** `<SubAgentList>` in Inspector — render the
+  `subagent_history: list<SubAgentSummary>` field that Phase 2 put on the
+  wire (Phase 0 §14.8 #3 fold-in; UI consumes in Phase 3)
+
+**Out of scope (deferred):**
+- Drag-and-drop queue reorder — auto-FIFO is sufficient for current maturity
+  (Phase 3 §8)
+- Full Monaco editor — different product (decision 0025 §4)
+- Per-provider usage caps — depends on cost projection (this phase) + has
+  no consumers until cost is exposed to the SPA (v1.9 candidate)
+- Prompt library — v1.9 candidate (decision 0025 §8)
+
+### 15.2 PREWORK — Vitest + Testing Library + axe-core + Playwright infra
+
+Phase 3 §6.5 acceptance gate requires Vitest + Testing Library + axe-core.
+This is the right phase to add the dependency weight (we now have enough
+surface — 4 new components — to make it worth it).
+
+| # | File | Change | LOC |
+|---|---|---|---|
+| PW-1 | `smolcode/web/package.json` | devDeps: `vitest ^2`, `@testing-library/react ^16`, `@testing-library/jest-dom ^6`, `@testing-library/user-event ^14`, `jsdom ^25`, `@axe-core/react ^4`, `@playwright/test ^1.48` | +12 |
+| PW-2 | `smolcode/web/vitest.config.ts` (NEW) | jsdom env + `@testing-library/jest-dom` setup + `axe-core` scan script | +30 |
+| PW-3 | `smolcode/web/src/__tests__/setup.ts` (NEW) | jest-dom matchers + axe-core dev import | +15 |
+| PW-4 | `smolcode/web/src/main.tsx` | mount axe-core dev import (gated on `import.meta.env.DEV`) | +5 |
+| PW-5 | `smolcode/web/playwright.config.ts` (NEW) | smoke config (loopback only, 1 browser) | +20 |
+| PW-6 | `smolcode/web/e2e/smoke.spec.ts` (NEW) | smoke: open app + see 3-pane layout + submit a task | +30 |
+
+PW subtotal: ~+110 LOC config + tests.
+
+### 15.3 Backend tasks (Python) — see `v1.8-phase3-plan.md` §BE-1 … §BE-9
+
+Per §6.5 the BE subtotal is ~270 LOC across:
+- `smolcode/src/smolcode/web/api.py` (+~60): 4 new endpoints (/retry, /rerun, /export, /dashboard)
+- `smolcode/src/smolcode/web/schemas.py` (+~40): dashboard + cost + cache-hit fields
+- `smolcode/src/smolcode/web/runs.py` (+~30): `Run.retry_count`, retry/rerun methods
+- `smolcode/src/smolcode/web/agent_runner.py` (+~10): export_event_log helper, retry logic
+- `smolcode/src/smolcode/model_catalog.py` (+~30): per-provider cost rates + `cost_for(tokens_in, tokens_out, provider, model)`
+- `smolcode/src/smolcode/config.py` (+~20): `Settings.cost_rates: dict[str, float]` env loader (Q5)
+- `smolcode/src/smolcode/web/dashboard.py` (NEW, +~80): `compute_dashboard(runs, audit)` aggregator (last-1000-runs cache)
+
+Plus the Phase 2 followup that lives on the wire but has no UI:
+- `Run.subagent_history` UI consumption — `<SubAgentList>` is a FE-only change.
+
+### 15.4 Frontend tasks (TS/TSX) — see `v1.8-phase3-plan.md` §FE-1 … §FE-9
+
+Per §6.5 the FE subtotal is ~585 LOC across:
+- `smolcode/web/src/components/Dashboard.tsx` (NEW, +~200): top tab with tokens / runs / errors + sparkline + per-provider cost breakdown
+- `smolcode/web/src/components/CostBadge.tsx` (NEW, +~60): per-run cost chip in RunSummary + Tooltip with breakdown (in/out/cache)
+- `smolcode/web/src/components/SubAgentList.tsx` (NEW, +~50): collapsible list of subagent_history entries in Inspector (Phase 0 §14.8 #3 fold-in)
+- `smolcode/web/src/lib/keyboard.ts` (NEW, +~50): global shortcut router (Cmd+Enter, Cmd+., Cmd+K, Cmd+/)
+- `smolcode/web/src/components/RunHistory.tsx` (+~25): search filter extended (provider / tier / date range)
+- `smolcode/web/src/components/ApprovalModal.tsx` (+~40): auto-approve banner + revoke button (B10)
+- `smolcode/web/src/components/EventStream.tsx` (+~15): rerun / retry / export buttons in header (B4 + B5 + B7)
+- `smolcode/web/src/App.tsx` (+~15): new Dashboard tab + mount keyboard router + axe-core dev
+- `smolcode/web/src/main.tsx` (+~10): mount keyboard router + axe-core dev
+- `smolcode/web/src/api.ts` (+~80): DashboardResponse / CostBreakdown / ExportPayload types + retryRun / rerunRun / exportRun / getDashboard helpers
+- `smolcode/web/src/components/Inspector.tsx` (+~10): embeds SubAgentList (when activeRun.subagent_history non-empty)
+
+### 15.5 Test tasks — see `v1.8-phase3-plan.md` §T-1 … §T-3
+
+| # | File | Tests | LOC |
+|---|---|---|---|
+| T-1 | `smolcode/src/smolcode/tests/test_dashboard.py` (NEW) | `TestDashboardAggregator`: empty / single run / multi-run / cache hit aggregation; `TestCostProjection`: zero / input-only / output-only / cache-hit / unknown provider (—) | ~+200 |
+| T-2 | `smolcode/src/smolcode/tests/test_cost.py` (NEW) | `TestCostRates`: hardcoded defaults / `Settings.cost_rates` override / invalid override (fail-closed) | ~+120 |
+| T-3 | `smolcode/src/smolcode/tests/test_retry_rerun_export.py` (NEW) | `TestRetry`: not_found / not_done / done / paused / retry_increments_count; `TestRerun`: completed run re-uses task verbatim; `TestExport`: JSON schema + includes subagent_history + truncated audit | ~+200 |
+| T-4 | `smolcode/web/src/__tests__/` (NEW) | Vitest + Testing Library: Dashboard renders, CostBadge formats, keyboard router dispatches Cmd+Enter; axe-core scan: zero serious/critical violations | ~+400 |
+
+Test subtotal: ~+920 LOC.
+
+### 15.6 Validation gates (must all PASS before commit)
+
+| Gate | Tool | Expected result |
+|---|---|---|---|
+| Lint | `ruff check src tests` | PASS (0 errors, <=16 baseline warnings) |
+| Format | `ruff format --check src tests` | PASS |
+| Python tests | `pytest src/smolcode/tests` | PASS; adds ~30 new tests across T-1/T-2/T-3 (dashboard + cost + retry + rerun + export) |
+| FE tests | `pnpm --dir smolcode/web test` (Vitest) | PASS; >=70% line coverage on new components |
+| FE build | `pnpm --dir smolcode/web build` | PASS; bundle <=400 KB JS / gzip |
+| A11y | `pnpm --dir smolcode/web test:a11y` (axe-core) | Zero serious / critical violations on the main routes |
+| Browser smoke | `pnpm --dir smolcode/web test:e2e` (Playwright) | App opens, submit works, queue + dashboard render |
+| Commit + push | `git push origin main` | succeeds; remote SHA visible via `git ls-remote` |
+
+### 15.7 Out-of-scope for Phase 3 (explicit)
+
+Per §6.5 + §8:
+- Drag-and-drop queue reorder (v1.9.x).
+- Full Monaco editor (v2.x).
+- Per-provider usage caps ("stop at $1") — needs cost projection (this phase)
+  + has no consumers until cost is exposed to the SPA (v1.9 candidate).
+- Prompt library (v1.9 candidate).
+- Cross-project session search (Phase 1 §Known limitation; revisit when cardinality grows).
+- Auto-migration of orphaned sessions on project rename (Phase 1 §Known limitation).
+
+### 15.8 Source of truth
+
+The detailed per-file plan with concrete code snippets + validation gates per file lives in:
+- **`docs/decisions/v1.8-phase3-plan.md`** (mirror of §14.1–§14.5)
+- **`docs/decisions/0025-web-ui-ux-review-and-roadmap.md`** §6.5 (high-level scope)
+- **`docs/decisions/0025-web-ui-ux-review-and-roadmap.md`** §13.4 (acceptance gate — checked at ship time)
+- **`docs/roadmap.md`** v1.8 section (status + test count progression)
+- **`smolcode/README.md`** v1.8 banner (Phase 0/1/2 shipped; Phase 3 in-progress)
