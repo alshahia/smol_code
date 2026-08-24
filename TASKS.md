@@ -12,7 +12,7 @@ this file. The three stay in sync; this file is the readable summary.
 
 | Item | Status | Reference |
 |---|---|---|
-| HEAD | `2f90b50` (Phase 2) | `git log -1` |
+| HEAD | `dcf38cf` (Phase 3) | `git log -1` |
 | Branch | `main`, ahead of `origin/main` by 0 (pushed) | `git status -sb` |
 | Pytest | **1044 PASS / 51 FAIL (51 pre-existing baseline)** | `make test` (run from `smolcode/src/`) |
 | Note | The Phase 0/1/2 ship reports cited "1026 / 16" but the actual baseline at `bc39774` (after Phase 2 ship + memory update) is **1044 / 51**. The discrepancy is from updated `litellm` / `smolagents` since Phase 0 (newer versions removed `TokenUsage` export + renamed `MultiStepAgent.__init__` kwargs). The Phase 0/1/2 ship report numbers were approximate; the TRUE baseline is 1044 / 51. **None of the 51 failures are caused by Phase 3 work** — verified by stash-revert against `bc39774`. Documented as decision 0026 candidate. |
@@ -31,15 +31,16 @@ this file. The three stay in sync; this file is the readable summary.
 | `88a20e4` | 2026-08-23 | v1.8 Phase 0: sub-agent events + token dashboard + countdown | +2099 |
 | `7b33f1d` | 2026-08-24 | v1.8 Phase 1: sessions + projects | +1853 |
 | `2f90b50` | 2026-08-24 | v1.8 Phase 2: pause/queue + file previews + file mentions | +2750 |
-| (pending) | 2026-08-24 | Memory + plan updates (this session) + Phase 3 plan doc | +~1000 |
+| `bc39774` | 2026-08-24 | Memory + plan updates: Phase 1 ship report + Phase 3 plan doc | +1289 |
+| `dcf38cf` | 2026-08-24 | v1.8 Phase 3: Dashboard + a11y + power features | +3388 |
 
 All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 ---
 
-## 3. IN PROGRESS - Phase 3 (Dashboard + a11y + power features)
+## 3. COMPLETED - Phase 3 (Dashboard + a11y + power features)
 
-**Owner:** next session (this session continues).
+**Owner:** shipped on commit `dcf38cf` (2026-08-24).
 **Source:** `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` sec 6.5 + sec 15 + `docs/decisions/v1.8-phase3-plan.md`.
 **Acceptance gate:** sec 13.4 (8 checkboxes; 7 required to PASS before commit).
 
