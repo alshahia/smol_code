@@ -64,9 +64,7 @@ class Project:
         # directory names; reject anything that would either need
         # percent-encoding or fail the latter.
         if any(ch in name for ch in ("/", "\\", ",", "=", "..", ":")):
-            raise ConfigError(
-                "invalid project name " + repr(name) + "; must not contain /, \\, ',', '=', ':' or '..'"
-            )
+            raise ConfigError("invalid project name " + repr(name) + "; must not contain /, \\, ',', '=', ':' or '..'")
         if any(ch.isspace() for ch in name):
             raise ConfigError("invalid project name " + repr(name) + "; must not contain whitespace")
         self.name = name
@@ -184,6 +182,11 @@ class Settings:
         # selection. When empty (legacy single-workspace mode), the
         # ``workspace`` path is the implicit project.
         "projects",
+        # Phase 3 (decision 0025 sec 6.5 / Q5): per-provider per-model USD
+        # cost rates as {provider: {model: [in_per_1k, out_per_1k, cache_per_1k]}}.
+        # Loaded from SMOLCODE_COST_RATES (JSON env var). Empty dict means
+        # "use model_catalog.DEFAULT_COST_RATES only".
+        "cost_rates",
     )
 
     def __init__(
@@ -199,6 +202,7 @@ class Settings:
         upload_max_bytes=None,
         upload_allowed_mime=None,
         projects=(),
+        cost_rates=None,
     ):
         self.workspace = Path(workspace)
         self.executor = executor
@@ -215,6 +219,8 @@ class Settings:
         self.upload_allowed_mime = upload_allowed_mime
         # Phase 1: tuple of Project. ``with_*`` helpers thread it through.
         self.projects = tuple(projects)
+        # Phase 3: cost rates. ``None`` defaults to {} (use defaults only).
+        self.cost_rates = dict(cost_rates) if cost_rates is not None else {}
 
     def with_executor(self, executor):
         """Return a new Settings with the executor swapped."""
@@ -230,6 +236,7 @@ class Settings:
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
             projects=self.projects,
+            cost_rates=self.cost_rates,
         )
 
     def with_overrides(self, provider=None, model=None, litellm_proxy=None, workspace=None):
@@ -246,6 +253,7 @@ class Settings:
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
             projects=self.projects,
+            cost_rates=self.cost_rates,
         )
 
     def __repr__(self):
@@ -439,6 +447,36 @@ class ConfigError(RuntimeError):
 # Bare names auto-create the directory on first load so the SPA can
 # switch into a freshly-named project without an extra step. Names with
 # ``=`` must use the ``name=path`` form.
+def _parse_cost_rates(raw):
+    """Parse the SMOLCODE_COST_RATES JSON env var.
+
+    Shape: {"provider": {"model": [in_per_1k, out_per_1k, cache_per_1k]}}
+    Empty -> {}. Invalid JSON or wrong shape -> ConfigError (fail-closed,
+    matches the decision 0025 Q5 contract + decision 0025 sec 6.5).
+    """
+    if not raw:
+        return {}
+    import json as _json
+
+    try:
+        parsed = _json.loads(raw)
+    except _json.JSONDecodeError as e:
+        raise ConfigError("SMOLCODE_COST_RATES is not valid JSON: " + str(e)) from e
+    if not isinstance(parsed, dict):
+        raise ConfigError("SMOLCODE_COST_RATES must be a JSON object")
+    for prov, models in parsed.items():
+        if not isinstance(models, dict):
+            raise ConfigError("SMOLCODE_COST_RATES[" + repr(prov) + "] must be a dict")
+        for model, rates in models.items():
+            if not isinstance(rates, (list, tuple)) or len(rates) != 3:
+                raise ConfigError(
+                    "SMOLCODE_COST_RATES[" + repr(prov) + "][" + repr(model) + "] must be [in, out, cache]"
+                )
+            if not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in rates):
+                raise ConfigError("SMOLCODE_COST_RATES[" + repr(prov) + "][" + repr(model) + "] rates must be numeric")
+    return parsed
+
+
 def _parse_projects(raw, workspace):
     if not raw:
         return ()
@@ -461,9 +499,7 @@ def _parse_projects(raw, workspace):
         # Bare names auto-create; explicit paths must already exist.
         if "=" in entry:
             if not p.exists():
-                raise ConfigError(
-                    "project " + repr(name) + ": root " + str(p) + " does not exist"
-                )
+                raise ConfigError("project " + repr(name) + ": root " + str(p) + " does not exist")
         else:
             p.mkdir(parents=True, exist_ok=True)
         if name in seen:
@@ -537,6 +573,7 @@ def load_settings(cli_overrides=None, dotenv_paths=None):
         upload_max_bytes=upload_max_bytes,
         upload_allowed_mime=upload_allowed_mime,
         projects=_parse_projects(os.environ.get("SMOLCODE_PROJECTS", ""), workspace),
+        cost_rates=_parse_cost_rates(os.environ.get("SMOLCODE_COST_RATES", "")),
     )
 
     if cli_overrides:
@@ -591,4 +628,8 @@ def as_dict(s):
     # Phase 1 (decision 0025 §6.3): list of project roots. Empty tuple
     # means legacy mode (single implicit project == ``workspace``).
     out["projects"] = [{"name": p.name, "root": str(p.root)} for p in s.projects]
+    # Phase 3 (decision 0025 sec 6.5 / Q5): only surface overrides (defaults
+    # are owned by model_catalog.DEFAULT_COST_RATES, not duplicated here).
+    if s.cost_rates:
+        out["cost_rates"] = s.cost_rates
     return out

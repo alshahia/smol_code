@@ -46,6 +46,12 @@ Behavior:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from .config import Settings
+
 import os
 import time
 from collections.abc import Callable
@@ -225,6 +231,99 @@ def get_provider(provider_id: str) -> ProviderSpec | None:
         if p.id == provider_id:
             return p
     return None
+
+
+# --- Cost rates (Phase 3, decision 0025 sec 6.5 / Q5) ----------------------------
+
+# Per-1k-token USD rates. Tuple = (input_per_1k, output_per_1k, cache_hit_per_1k).
+# Hardcoded defaults; users override per provider/model via the
+# SMOLCODE_COST_RATES JSON env var (Settings.cost_rates).
+DEFAULT_COST_RATES: dict[str, dict[str, tuple[float, float, float]]] = {
+    "openai": {
+        "gpt-4o": (0.005, 0.015, 0.0),
+        "gpt-4o-mini": (0.00015, 0.0006, 0.0),
+        "o1-preview": (0.015, 0.06, 0.0),
+        "o1-mini": (0.003, 0.012, 0.0),
+    },
+    "anthropic": {
+        "claude-3-5-sonnet-latest": (0.003, 0.015, 0.0),
+        "claude-3-5-haiku-latest": (0.0008, 0.004, 0.0),
+        "claude-3-opus-latest": (0.015, 0.075, 0.0),
+    },
+    "MiniMax": {
+        "MiniMax-M3": (0.001, 0.002, 0.0),
+    },
+    "opencode-go": {
+        "deepseek-v4-flash": (0.0002, 0.0006, 0.0),
+    },
+}
+
+
+def _resolve_rates(
+    provider: str | None,
+    model: str | None,
+    settings: "Settings | None" = None,
+    # `Settings` is a forward reference (only used for type hints).,
+) -> tuple[float, float, float] | None:
+    """Return (in, out, cache) rates for provider/model, or None.
+
+    Override > default > None. The override is read from
+    ``settings.cost_rates`` (Phase 3 sec 6.5 / Q5).
+    """
+    if not provider or not model:
+        return None
+    override = getattr(settings, "cost_rates", None) or {}
+    prov_override = override.get(provider) or {}
+    if model in prov_override:
+        rates_tuple = prov_override[model]
+        # Stored as list[str] from JSON env; normalize to tuple[float].
+        if isinstance(rates_tuple, (list, tuple)) and len(rates_tuple) == 3:
+            return (float(rates_tuple[0]), float(rates_tuple[1]), float(rates_tuple[2]))
+    prov_default = DEFAULT_COST_RATES.get(provider) or {}
+    if model in prov_default:
+        return prov_default[model]
+    return None
+
+
+def cost_for(
+    provider: str | None,
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+    cache_hit: int = 0,
+    settings: "Settings | None" = None,
+    # `Settings` is a forward reference (only used for type hints).,
+) -> float:
+    """Compute USD cost for a token-bucket.
+
+    Returns 0.0 when provider/model is unknown or tokens are zero.
+    Cache-hit tokens are charged at the cache rate when set > 0.
+    """
+    rates = _resolve_rates(provider, model, settings)
+    if rates is None:
+        return 0.0
+    in_rate, out_rate, cache_rate = rates
+    cost = (input_tokens / 1000.0) * in_rate + (output_tokens / 1000.0) * out_rate
+    if cache_hit and cache_rate:
+        cost += (cache_hit / 1000.0) * cache_rate
+    return round(cost, 6)
+
+
+def rate_source_for(
+    provider: str | None,
+    model: str | None,
+    settings: "Settings | None" = None,
+    # `Settings` is a forward reference (only used for type hints).,
+) -> str:
+    """Return 'override' | 'default' | 'unknown'."""
+    if not provider or not model:
+        return "unknown"
+    override = getattr(settings, "cost_rates", None) or {}
+    if provider in override and model in (override.get(provider) or {}):
+        return "override"
+    if provider in DEFAULT_COST_RATES and model in DEFAULT_COST_RATES[provider]:
+        return "default"
+    return "unknown"
 
 
 # --- Per-process cache ------------------------------------------------------
@@ -430,6 +529,10 @@ __all__ = [
     "get_providers",
     "clear_cache",
     "_CACHE_TTL_S",
+    # Phase 3 (decision 0025 sec 6.5): per-provider cost rates.
+    "DEFAULT_COST_RATES",
+    "cost_for",
+    "rate_source_for",
     # Public alias for the env-var whitelist used by the web layer.
     "is_api_key_env",
 ]

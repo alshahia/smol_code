@@ -44,8 +44,11 @@ so existing callers stay backwards-compatible.
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -82,6 +85,7 @@ from .schemas import (
     AuditListResponse,
     CleanRequest,
     ConfigResponse,
+    DashboardResponse,
     FileReadResponse,
     HealthResponse,
     ModelListResponse,
@@ -835,6 +839,184 @@ def post_resume(
     if not ok:
         raise HTTPException(status_code=409, detail=str(err or "resume failed"))
     return {"run_id": run_id, "resumed": True}
+
+
+# Phase 3 (decision 0025 sec 6.5): retry / rerun / export endpoints.
+# retry = re-run with the SAME task + SAME settings; returns a new run_id.
+#       The parent run must be terminal (done/error/stopped). Used both for
+#       manual re-runs AND for transient-failure retry (B7).
+# rerun = re-run with the SAME task verbatim, regardless of run status;
+#       only valid when the original run is done.
+# export = JSON download of {summary, events, subagent_history, schema_version}.
+# dashboard = aggregate runs/audit/cost for the Dashboard tab.
+
+_TERMINAL_STATUSES = frozenset({"done", "error", "stopped"})
+
+
+@router.post("/runs/{run_id}/retry", response_model=RunStartResponse)
+def post_retry(
+    run_id: str,
+    req: RunStartRequest | None = None,
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    """Retry a terminal run with the same task + settings (B4 + B7).
+
+    Returns a new run_id. The parent run's task/provider/model/session_id/
+    project are preserved; an optional RunStartRequest body can override.
+    Returns 404 if the parent doesn't exist, 409 if the parent is still
+    active.
+    """
+    parent = mgr.get(run_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if parent.status not in _TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail="can only retry a terminal run (status=" + parent.status + ")")
+    # Map the parent's api_key (we don't re-extract; the parent used its
+    # own override). For Phase 3 we trust that the SPA re-sends keys on the
+    # next start_run call; this endpoint just needs to reproduce the task +
+    # settings.
+    api_key_value = getattr(parent, "api_key_value", None)
+    extracted_keys = extract_keys((req.keys if req else None) or {})
+    if req and req.provider:
+        from ..models import get_preset
+
+        try:
+            preset = get_preset(req.provider)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if preset.api_key_env and preset.api_key_env in extracted_keys:
+            api_key_value = extracted_keys[preset.api_key_env]
+    new_id, status = mgr.start_or_enqueue_run(
+        task=(req.task if req and req.task else parent.task).strip(),
+        tier=(req.tier if req and req.tier else parent.tier),
+        settings=settings,
+        session_id=(req.session_id if req and req.session_id else parent.session_id),
+        project=(req.project if req and req.project else parent.project),
+        provider_override=(req.provider if req and req.provider else parent.provider),
+        model_override=(req.model if req and req.model else parent.model),
+        api_key_value=api_key_value,
+        parent_retry_of=parent.id,
+    )
+    parent.retry_count = getattr(parent, "retry_count", 0) + 1
+    return RunStartResponse(run_id=new_id, status=status).model_dump()
+
+
+@router.post("/runs/{run_id}/rerun", response_model=RunStartResponse)
+def post_rerun(
+    run_id: str,
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    """Re-run a completed run verbatim (B4). Only valid when status=done.
+
+    Returns a new run_id. Provider/model/task/session_id/project are all
+    copied from the parent. Returns 404 if missing, 409 if not done.
+    """
+    parent = mgr.get(run_id)
+    if parent is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if parent.status != "done":
+        raise HTTPException(status_code=409, detail="can only rerun a completed run (status=" + parent.status + ")")
+    new_id, status = mgr.start_or_enqueue_run(
+        task=parent.task,
+        tier=parent.tier,
+        settings=settings,
+        session_id=parent.session_id,
+        project=parent.project,
+        provider_override=parent.provider,
+        model_override=parent.model,
+        api_key_value=getattr(parent, "api_key_value", None),
+        parent_rerun_of=parent.id,
+    )
+    return RunStartResponse(run_id=new_id, status=status).model_dump()
+
+
+@router.get("/runs/{run_id}/export")
+def export_run(
+    run_id: str,
+    mgr: RunManager = Depends(get_run_manager),
+) -> Response:
+    """Export a run as a JSON download (B5). Includes RunSummary + event log + subagent_history.
+
+    Truncates long observations to 8 KB each (same cap as the SSE event stream).
+    Schema version 1 (decision 0025 sec 6.5: schema is additive; bump only on breaking change).
+    """
+    run = mgr.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    # Pull the event log via the RunManager subscribe API's snapshot mode.
+    try:
+        raw_events = mgr.events_snapshot(run_id, max_events=2000)
+    except Exception:
+        raw_events = []
+    # Truncate long string observations (defense-in-depth; SSE already truncates).
+    events_out = []
+    for ev in raw_events:
+        if isinstance(ev, dict):
+            obs = ev.get("observations")
+            if isinstance(obs, list):
+                for i, o in enumerate(obs):
+                    if isinstance(o, str) and len(o) > 8192:
+                        obs[i] = o[:8192] + "...[truncated]..."
+        events_out.append(ev)
+    payload = {
+        "summary": _run_summary(run),
+        "events": events_out,
+        "subagent_history": [
+            s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in getattr(run, "subagent_history", [])
+        ],
+        "exported_at": time.time(),
+        "schema_version": 1,
+    }
+    return Response(
+        content=json.dumps(payload, indent=2, default=str),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="run-' + run_id + '.json"'},
+    )
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+def get_dashboard(
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+    audit_sink: AuditSink | None = Depends(get_audit_sink),
+) -> DashboardResponse:
+    """Aggregate runs / audit / cost for the Dashboard tab (A6).
+
+    Counts bounded to the last 24h. The sparkline is capped at 24 buckets.
+    Cost is computed via model_catalog.cost_for() with optional override
+    via Settings.cost_rates (decision 0025 Q5).
+    """
+    from .dashboard import compute_dashboard
+
+    # Use the audit reader (count_since) if available, else fall back to None.
+    audit_reader = SimpleNamespace(count_since=lambda t, level=None: _audit_count_since(audit_sink, t, level))
+    return compute_dashboard(mgr, audit_reader, settings)
+
+
+def _audit_count_since(audit_sink: AuditSink | None, since: float, level: str | None) -> int:
+    """Count audit entries >= since timestamp and matching level.
+
+    audit_sink is a writer; we read via the audit_reader module when the sink is missing.
+    """
+    if audit_sink is None:
+        return 0
+    try:
+        # Use the in-memory deque if available (audit_sink exposes .entries as deque).
+        entries = getattr(audit_sink, "entries", None)
+        if entries is None:
+            return 0
+        count = 0
+        for ev in entries:
+            try:
+                if ev.timestamp >= since and (level is None or getattr(ev, "level", None) == level):
+                    count += 1
+            except AttributeError:
+                continue
+        return count
+    except Exception:
+        return 0
 
 
 @router.get("/queue", response_model=QueueListResponse)

@@ -469,3 +469,21 @@ class FileReadResponse(BaseModel):
     truncated: bool = False
     encoding: str = "utf-8"
     content: str
+
+
+class DashboardResponse(BaseModel):
+    """Phase 3 (A6 Dashboard tab): aggregate counters + 24h sparkline.
+
+    Counts are bounded to the last 24h. ``by_provider`` is a per-provider
+    token breakdown for the same window. ``sparkline`` is 24 integer
+    buckets (oldest first; bucket 23 = current hour). ``cost_estimate_usd_today``
+    uses ``model_catalog.cost_for()`` with optional override via
+    ``Settings.cost_rates`` (decision 0025 Q5)."""
+
+    runs_today: int = 0
+    tokens_today: TokenSummary = Field(default_factory=TokenSummary)
+    errors_today: int = 0
+    by_provider: dict[str, TokenSummary] = Field(default_factory=dict)
+    sparkline: list[int] = Field(default_factory=lambda: [0] * 24)
+    cost_estimate_usd_today: float = 0.0
+    generated_at: float = 0.0

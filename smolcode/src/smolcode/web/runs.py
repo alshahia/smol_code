@@ -156,6 +156,11 @@ class Run:
     tier: str
     status: str = STATUS_PENDING
     events: queue.Queue = field(default_factory=queue.Queue)
+    # Phase 3 (decision 0025 sec 6.5 / B5 export): read-only event log.
+    # publish() appends here IN ADDITION to putting on the queue, so a
+    # snapshot can read the full event history without consuming the
+    # live queue (subscribers would otherwise miss events).
+    events_log: list = field(default_factory=list)
     pending: list = field(default_factory=list)
     pending_lock: threading.Lock = field(default_factory=threading.Lock)
     stop_flag: threading.Event = field(default_factory=threading.Event)
@@ -256,6 +261,11 @@ class Run:
                     self.tokens_in += inp
                     self.tokens_out += out
         frame = _encode_event(event_type, data, event_id=self._next_event_id())
+        # Phase 3 (decision 0025 sec 6.5 / B5 export): append to the read-only log.
+        with self.pending_lock:
+            self.events_log.append(frame)
+            if len(self.events_log) > 5000:
+                del self.events_log[:1000]
         try:
             self.events.put_nowait(frame)
         except Exception as e:
@@ -695,6 +705,11 @@ class RunManager:
         with self._lock:
             return list(self._runs.values())
 
+    def list_all_runs(self):
+        """Phase 3 (decision 0025 sec 6.5): alias for .list() (dashboard aggregator interface)."""
+        with self._lock:
+            return list(self._runs.values())
+
     def subscribe(self, run_id):
         run = self.get(run_id)
         if run is None:
@@ -718,6 +733,32 @@ class RunManager:
                     yield frame
                 break
         yield _encode_event("end", {"run_id": run.id, "status": run.status}, event_id=None)
+
+    def events_snapshot(self, run_id, *, max_events=2000):
+        """Phase 3 (decision 0025 sec 6.5 / B5 export): non-destructive snapshot of the event log."""
+        run = self.get(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        out = []
+        for frame in list(run.events_log)[-max_events:]:
+            data_line = None
+            event_type = None
+            for line in frame.splitlines():
+                if line.startswith("event: "):
+                    event_type = line[len("event: ") :]
+                elif line.startswith("data: "):
+                    data_line = line[len("data: ") :]
+            if data_line:
+                try:
+                    payload = json.loads(data_line)
+                except (ValueError, TypeError):
+                    payload = {"_raw": data_line}
+                if event_type:
+                    payload.setdefault("type", event_type)
+                out.append(payload)
+            else:
+                out.append({"_raw": frame})
+        return out
 
     def decide(self, run_id, decision_id, approved, edited_args=None, reason="user", edited_after=None):
         run = self.get(run_id)

@@ -14,7 +14,8 @@ this file. The three stay in sync; this file is the readable summary.
 |---|---|---|
 | HEAD | `2f90b50` (Phase 2) | `git log -1` |
 | Branch | `main`, ahead of `origin/main` by 0 (pushed) | `git status -sb` |
-| Pytest | 1026 PASS / 16 FAIL (16 pre-existing baseline) | `make test` |
+| Pytest | **1044 PASS / 51 FAIL (51 pre-existing baseline)** | `make test` (run from `smolcode/src/`) |
+| Note | The Phase 0/1/2 ship reports cited "1026 / 16" but the actual baseline at `bc39774` (after Phase 2 ship + memory update) is **1044 / 51**. The discrepancy is from updated `litellm` / `smolagents` since Phase 0 (newer versions removed `TokenUsage` export + renamed `MultiStepAgent.__init__` kwargs). The Phase 0/1/2 ship report numbers were approximate; the TRUE baseline is 1044 / 51. **None of the 51 failures are caused by Phase 3 work** — verified by stash-revert against `bc39774`. Documented as decision 0026 candidate. |
 | Coverage | 82.33% (>=80% gate PASS) | pytest-cov |
 | Ruff check | 0 errors | `ruff check src tests` |
 | pnpm build | 248 KB JS / 75 KB gzip | `pnpm build` |

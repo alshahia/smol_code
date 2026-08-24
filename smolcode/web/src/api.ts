@@ -700,3 +700,84 @@ export async function listAudit(opts: AuditListOptions = {}): Promise<AuditListR
   const qs = params.toString()
   return jsonOrThrow(await fetch('/api/audit' + (qs.length > 0 ? '?' + qs : '')))
 }
+
+// ============================================================================
+// Phase 3 (decision 0025 sec 6.5): Dashboard + cost + retry / rerun / export.
+// ============================================================================
+
+export interface TokenSummary {
+  input: number
+  output: number
+  total: number
+}
+
+export interface DashboardResponse {
+  runs_today: number
+  tokens_today: TokenSummary
+  errors_today: number
+  by_provider: Record<string, TokenSummary>
+  /** 24 integer buckets, oldest first; bucket 23 = current hour. */
+  sparkline: number[]
+  cost_estimate_usd_today: number
+  generated_at: number
+}
+
+export interface CostBreakdown {
+  input_cost_usd: number
+  output_cost_usd: number
+  cache_cost_usd: number
+  total_usd: number
+  rate_source: 'default' | 'override' | 'unknown'
+}
+
+export async function getDashboard(): Promise<DashboardResponse> {
+  return jsonOrThrow(await fetch('/api/dashboard'))
+}
+
+export async function retryRun(
+  id: string,
+  overrides?: {
+    task?: string
+    tier?: 'restricted' | 'elevated' | 'orchestrator'
+    provider?: string
+    model?: string
+    session_id?: string
+    project?: string
+    keys?: Record<string, string>
+  },
+): Promise<RunStartResponse> {
+  return jsonOrThrow(await fetch('/api/runs/' + id + '/retry', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(overrides ?? {}),
+  }))
+}
+
+export async function rerunRun(id: string): Promise<RunStartResponse> {
+  return jsonOrThrow(await fetch('/api/runs/' + id + '/rerun', { method: 'POST' }))
+}
+
+export interface ExportPayload {
+  summary: RunSummary
+  events: unknown[]
+  subagent_history: SubAgentSummary[]
+  exported_at: number
+  schema_version: number
+}
+
+export async function exportRun(id: string): Promise<ExportPayload> {
+  return jsonOrThrow(await fetch('/api/runs/' + id + '/export'))
+}
+
+export function downloadExport(id: string, payload: ExportPayload): void {
+  // Triggers a browser download of the run as run-<id>.json.
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'run-' + id + '.json'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
