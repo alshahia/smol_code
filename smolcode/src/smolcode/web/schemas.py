@@ -518,6 +518,28 @@ class QueueListResponse(BaseModel):
     queued: list[QueueEntryOut] = Field(default_factory=list)
 
 
+class QueueMoveRequest(BaseModel):
+    """Decision 0031: move a queued entry to a new 1-based position.
+
+    ``position=1`` puts the entry at the head of the FIFO list (runs
+    next); ``position=N`` puts it at the tail. Values outside
+    ``[1, len(queue)]`` are clamped by the BE (no 422 -- the FE
+    computes the clamp locally anyway and we want a permissive
+    default). The BE rejects ``position`` types other than int
+    with 422 (Pydantic-level).
+    """
+
+    position: int
+
+
+class QueueMoveResponse(BaseModel):
+    """Decision 0031: response shape for PATCH /api/queue/{id}."""
+
+    run_id: str
+    position: int
+    queue: list["QueueEntryOut"] = Field(default_factory=list)
+
+
 class FileReadResponse(BaseModel):
     """Phase 2 (A4 file preview pane): the content of a file under
     the active project root. ``truncated`` is True when the file

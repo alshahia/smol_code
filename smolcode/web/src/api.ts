@@ -448,6 +448,28 @@ export async function cancelQueueEntry(
   )
 }
 
+// Decision 0031: drag-and-drop queue reorder.
+export interface QueueMoveResponse {
+  run_id: string
+  position: number
+  // The full updated queue (same shape as QueueListResponse.queued)
+  // so the FE can patch local state without a follow-up GET.
+  queue: QueueEntry[]
+}
+
+export async function moveQueueEntry(
+  runId: string,
+  position: number,
+): Promise<QueueMoveResponse> {
+  return jsonOrThrow(
+    await fetch('/api/queue/' + encodeURIComponent(runId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position }),
+    }),
+  )
+}
+
 export interface FileReadResponse {
   path: string
   abs_path: string

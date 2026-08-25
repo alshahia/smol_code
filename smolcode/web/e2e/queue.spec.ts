@@ -51,7 +51,9 @@ test('Cancel button DELETEs /api/queue/{id}', async ({ page }) => {
   // Auto-accept confirm dialog.
   page.on('dialog', (d) => { void d.accept().catch(() => {}) })
   await expect(page.locator('.queue-row')).toHaveCount(1)
-  await page.locator('.queue-row button').click()
+  // Decision 0031: each queue row now has 3 buttons (move-up,
+  // move-down, cancel). Select the Cancel button by name.
+  await page.getByRole('button', { name: /^Cancel$/ }).click()
   await expect
     .poll(() => captured.find((c) => /\/api\/queue\/[^/]+$/.test(c.url) && c.method === 'DELETE'), { timeout: 5000 })
     .toBeTruthy()

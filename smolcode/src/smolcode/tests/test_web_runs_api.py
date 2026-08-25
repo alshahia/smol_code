@@ -717,3 +717,136 @@ class TestRunSummaryTouchedPaths:
         # Stub agent doesn't touch files, so list is empty.
         assert "touched_paths" in body
         assert body["touched_paths"] == []
+
+
+# ---- Decision 0031: drag-and-drop queue reorder --------------------------
+
+
+class TestRunsQueueMove:
+    """Decision 0031: ``PATCH /api/queue/{run_id}`` reorders the FIFO
+    queue. The endpoint takes ``{"position": <int 1-based>}`` and
+    clamps out-of-range positions to ``[1, len(queue)]``. The
+    response shape is ``{"run_id": str, "position": int, "queue": [...]``
+    so the FE can patch its local state without a follow-up GET.
+    """
+
+    def _seed_queue(self, client, n: int = 3) -> list[str]:
+        """Inject ``n`` queued runs directly into the run manager.
+
+        Returns the list of run ids in queue order. The tests do
+        not exercise the runner thread -- they only validate the
+        reorder endpoint's contract.
+        """
+        app = client.app
+        mgr = getattr(app.state, "run_manager", None)
+        assert mgr is not None, "expected run_manager on app.state"
+        ids: list[str] = []
+        for i in range(n):
+            run_id = f"q{i + 1:08d}-stub-id"
+            ids.append(run_id)
+            from smolcode.web.runs import QueueEntry, Run
+
+            entry = QueueEntry(
+                id=run_id,
+                task=f"task-{i + 1}",
+                tier="restricted",
+                queued_at=float(i),
+            )
+            with mgr._queue_lock:
+                mgr._queue.append(entry)
+            run = Run(id=run_id, task=entry.task, tier=entry.tier)
+            run.status = "queued"
+            run.queue_position = i + 1
+            with mgr._lock:
+                mgr._runs[run.id] = run
+        return ids
+
+    def test_patch_queue_middle_to_head(self, client):
+        """Moving the middle of [a, b, c] to position 1 yields [b, a, c]."""
+        ids = self._seed_queue(client, n=3)
+        r = client.patch(
+            f"/api/queue/{ids[1]}",
+            json={"position": 1},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["run_id"] == ids[1]
+        assert body["position"] == 1
+        ordered = [q["id"] for q in body["queue"]]
+        assert ordered == [ids[1], ids[0], ids[2]]
+        # Positions in the response are 1-based + contiguous.
+        assert [q["queue_position"] for q in body["queue"]] == [1, 2, 3]
+
+    def test_patch_queue_position_clamped_above(self, client):
+        """``position > len(queue)`` clamps to the tail (no 422)."""
+        ids = self._seed_queue(client, n=3)
+        r = client.patch(
+            f"/api/queue/{ids[0]}",
+            json={"position": 999},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["position"] == 3
+        ordered = [q["id"] for q in body["queue"]]
+        assert ordered == [ids[1], ids[2], ids[0]]
+
+    def test_patch_queue_position_clamped_below(self, client):
+        """``position <= 0`` clamps to the head (no 422)."""
+        ids = self._seed_queue(client, n=3)
+        r = client.patch(
+            f"/api/queue/{ids[2]}",
+            json={"position": -5},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["position"] == 1
+        ordered = [q["id"] for q in body["queue"]]
+        assert ordered == [ids[2], ids[0], ids[1]]
+
+    def test_patch_queue_unknown_run_returns_404(self, client):
+        """A run_id that is not in the queue returns a clean 404."""
+        r = client.patch("/api/queue/nonexistent", json={"position": 1})
+        assert r.status_code == 404
+        assert "queue entry not found" in r.json()["detail"]
+
+    def test_patch_queue_non_int_position_returns_422(self, client):
+        """Pydantic-level: ``position`` must be a whole int.
+
+        Pydantic v2 in non-strict mode coerces strings like ``"1"`` to
+        ``1`` (no 422). But floats with a fractional part are rejected
+        (``int_from_float``). We document both behaviours here so a
+        future schema change to strict mode is a deliberate decision.
+        """
+        ids = self._seed_queue(client, n=2)
+        # Float with fractional part -> 422 (Pydantic rejects).
+        r = client.patch(
+            f"/api/queue/{ids[0]}",
+            json={"position": 1.5},
+        )
+        assert r.status_code == 422
+        # String that parses as a whole int -> coerced, succeeds.
+        r2 = client.patch(
+            f"/api/queue/{ids[0]}",
+            json={"position": "1"},
+        )
+        assert r2.status_code == 200, r2.text
+
+    def test_patch_queue_empty_queue_returns_404(self, client):
+        """An empty queue + a valid-format run_id is still a 404."""
+        r = client.patch("/api/queue/anything", json={"position": 1})
+        assert r.status_code == 404
+
+    def test_patch_queue_same_position_noop_returns_position(self, client):
+        """Re-PATCHing an entry to its current position is a no-op
+        that still returns the position + queue snapshot."""
+        ids = self._seed_queue(client, n=3)
+        r = client.patch(
+            f"/api/queue/{ids[1]}",
+            json={"position": 2},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["position"] == 2
+        # Order is unchanged.
+        ordered = [q["id"] for q in body["queue"]]
+        assert ordered == [ids[0], ids[1], ids[2]]

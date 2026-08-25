@@ -326,6 +326,7 @@ export interface BackendMock {
   stop_response?: { stopped: boolean }
   auto_approve_response?: { enabled: boolean }
   cancel_queue_response?: { run_id: string; cancelled: boolean }
+  move_queue_response?: { run_id: string; position: number; queue: MockQueueEntry[] }
   approval_response?: { decided: boolean }
   upload_response?: MockUpload
   delete_upload_response?: { deleted: string }
@@ -345,6 +346,7 @@ export interface BackendMock {
     auto_approve?: number
     approval?: number
     export?: number
+    move_queue?: number
   }
   /** Capture all POST/PUT/DELETE bodies for assertion. */
   capturedRequests?: { method: string; url: string; body?: string }[]
@@ -633,6 +635,28 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(opts.delete_upload_response ?? { deleted: 'x' }),
+        })
+        return
+      }
+    }
+    if (method === 'PATCH') {
+      // Decision 0031: PATCH /api/queue/{id} reorders a queued entry.
+      // The default response just echoes the run_id and a 1-based
+      // position so the FE patches local state; the spec supplies
+      // ``move_queue_response`` when it wants to drive the queue
+      // back into a specific shape.
+      if (pathname.match(/^\/api\/queue\/[^/]+$/)) {
+        await sleep(opts.delays?.move_queue ?? 0)
+        const id = pathname.split('/').pop() ?? ''
+        const fallback = {
+          run_id: id,
+          position: 1,
+          queue: opts.queue?.queued ?? [],
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(opts.move_queue_response ?? fallback),
         })
         return
       }

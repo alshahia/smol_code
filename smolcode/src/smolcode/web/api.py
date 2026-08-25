@@ -30,6 +30,7 @@ Live-execution endpoints (M9):
 Queue endpoints (Phase 2, decision 0025 §6.4):
     GET    /api/queue              -> list queued + active runs
     DELETE /api/queue/{run_id}     -> cancel a queued run
+    PATCH  /api/queue/{run_id}     -> move a queued entry to a new 1-based position (decision 0031)
 
 File preview endpoints (Phase 2, decision 0025 §6.4):
     GET    /api/files              -> read a file by relative path (project-scoped)
@@ -98,6 +99,8 @@ from .schemas import (
     ProviderListResponse,
     ProviderOut,
     QueueListResponse,
+    QueueMoveRequest,
+    QueueMoveResponse,
     RunListResponse,
     RunStartRequest,
     RunStartResponse,
@@ -1134,6 +1137,50 @@ def cancel_queue(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dic
     if not ok:
         raise HTTPException(status_code=404, detail="queue entry not found")
     return {"run_id": run_id, "cancelled": True}
+
+
+@router.patch("/queue/{run_id}", response_model=QueueMoveResponse)
+def move_queue_entry(
+    run_id: str,
+    req: QueueMoveRequest,
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    """Decision 0031: move a queued entry to a new 1-based position.
+
+    ``position=1`` puts the entry at the head of the FIFO list (runs
+    next); ``position=N`` puts it at the tail. Out-of-range values
+    are clamped server-side to ``[1, len(queue)]`` so a stale FE
+    computation (after a cancel) doesn't 422 -- the user just sees
+    the entry snap to the nearest valid slot.
+
+    Returns 404 if ``run_id`` is not currently in the queue. Pydantic
+    rejects non-int ``position`` with 422.
+    """
+    try:
+        new_pos = mgr.move_queue(run_id, int(req.position))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if new_pos is None:
+        raise HTTPException(status_code=404, detail="queue entry not found")
+    # Return the full updated queue so the FE can patch its local
+    # state without a follow-up GET /api/queue.
+    queued = mgr.queue()
+    return QueueMoveResponse(
+        run_id=run_id,
+        position=new_pos,
+        queue=[
+            {
+                "id": e.id,
+                "task": e.task,
+                "tier": e.tier,
+                "queued_at": e.queued_at,
+                "project": e.project,
+                "session_id": e.session_id,
+                "queue_position": i + 1,
+            }
+            for i, e in enumerate(queued)
+        ],
+    ).model_dump()
 
 
 @router.get("/files", response_model=FileReadResponse)

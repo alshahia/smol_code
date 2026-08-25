@@ -1070,6 +1070,47 @@ class RunManager:
         self._refresh_queue_positions()
         return True
 
+    def move_queue(self, run_id, new_position):
+        """Decision 0031: move the queued entry at ``run_id`` to the
+        1-based ``new_position``. ``new_position=1`` puts it at the
+        head of the FIFO list (runs next); ``new_position=len`` puts it
+        at the tail. Out-of-range values are clamped to ``[1, len]``.
+
+        Returns the resulting 1-based position on success, ``None`` if
+        ``run_id`` is not currently in the queue. The position of
+        every other queued run is recomputed via
+        ``_refresh_queue_positions`` so the FE's ``queue_position``
+        stays in sync with the new ordering.
+        """
+        if not isinstance(new_position, int) or isinstance(new_position, bool):
+            # Reject bool (subclass of int) and non-int inputs cleanly.
+            raise ValueError("new_position must be an int")
+        with self._queue_lock:
+            ids = [e.id for e in self._queue]
+            try:
+                cur_idx = ids.index(run_id)
+            except ValueError:
+                return None
+            n = len(self._queue)
+            # Clamp to [1, n] (1-based). 0 / negative / >= n+1 all clamp.
+            target_1based = max(1, min(int(new_position), n))
+            target_0based = target_1based - 1
+            if target_0based == cur_idx:
+                # No-op. Refresh positions outside the lock below
+                # (``_refresh_queue_positions`` also takes ``_queue_lock``
+                # so we MUST release it first -- otherwise re-entering
+                # the same RLock-equivalent via the threading.Lock would
+                # deadlock).
+                pass
+            else:
+                entry = self._queue.pop(cur_idx)
+                self._queue.insert(target_0based, entry)
+        # Always refresh positions after releasing the lock (no-op
+        # moves included, so a stale cached value from a concurrent op
+        # still gets corrected).
+        self._refresh_queue_positions()
+        return target_1based
+
     def _refresh_queue_positions(self):
         """Update each queued Run's ``queue_position`` (1-based) for the FE."""
         with self._queue_lock:
