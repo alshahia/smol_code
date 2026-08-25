@@ -1,7 +1,7 @@
 # Decision 0025 — Web UI/UX review + roadmap to v1.8
 
-- **Status:** phase-3-shipped
-- **Date:** 2026-08-24
+- **Status:** phase-3-shipped + v1.9.x-fe-wireup-shipped
+- **Date:** 2026-08-25 (last update; originally 2026-08-22)
 - **Type:** planning + scope decision + ship report
 - **Related:** 0010 (M9 design), 0012 (M9 live execution), 0013 (M10 inline diff),
   0014 (M11 provider/model/key UI), 0015 (M12 SPA polish), 0024 (Web UI
@@ -10,14 +10,14 @@
 - **Superseded by:** none
 - **Implementation:** **Phase 0 SHIPPED on commit `88a20e4`
   (2026-08-23). Phase 1 SHIPPED on commit `7b33f1d` (2026-08-24).
-  Phase 2 SHIPPED on commit `2f90b50` (2026-08-24). All three are
-  PUSHED to `origin/main` on 2026-08-24.** Phase 3
-  (Dashboard + a11y + power features) is **IN PROGRESS** in this
-  session. Phase 3 begins after the user reviewed the Phase 2
-  deliverable and approved "go Phase 3". See §6.5 for the high-level
-  plan + §15 for the detailed Phase 3 plan + §13.1/§13.2/§13.3 for
-  the per-phase acceptance gates + §14.x for the per-phase ship
-  reports + per-phase followup lists.
+  Phase 2 SHIPPED on commit `2f90b50` (2026-08-24). Phase 3 SHIPPED
+  on commit `dcf38cf` (Phase 3 code) + `509288f` (Phase 3 ship docs)
+  on 2026-08-24. v1.9.x FE wire-up SHIPPED on commit `bec3ce9`
+  on 2026-08-25.** All five are PUSHED to `origin/main`.
+  See §6.5 for the high-level Phase 3 plan + §15 for the detailed
+  Phase 3 plan + §13.1/§13.2/§13.3 for the per-phase acceptance gates +
+  §14.x for the per-phase ship reports + per-phase followup lists +
+  the v1.9.x history entry in §12 below for the FE wire-up followups.
 
 ---
 
@@ -980,6 +980,7 @@ Phase 2 ships on commit `2f90b50`. See
 | 2026-08-24 | phase-1-shipped | reviewer | Phase 1 (sessions + projects) shipped on commit `7b33f1d`. 17 files changed (+1918 / -65 net). 4 new test files (`test_sessions`, `test_web_sessions_api`, `test_web_projects_api`, plus the `test_config` extension). Validation gates 1-4 all PASS. Push to `origin/main` SUCCEEDED on 2026-08-24 after the user fixed the GitHub credential issue. See `docs/decisions/v1.8-phase1-shipped.md` for the full ship report. |
 | 2026-08-24 | phase-2-shipped | reviewer | Phase 2 (pause/queue + file previews + file mentions) shipped on commit `2f90b50`. 22 files changed (+2841 / -91 net LOC). 4 new BE test files (test_pause_resume + test_mentions + test_queue + test_file_read, +558 LOC). 4 new FE components (PauseButton, QueuePane, FileMentionInput, FilePreview) + 1 new lib helper (lib/mentions.ts). Folded in Phase 0 §14.8 #3 (`Run.subagent_history: list[SubAgentSummary]`). 1026 PASS / 16 pre-existing FAIL (matches baseline). Coverage 82.33% (≥80% gate PASS). Build 248 KB JS / 75 KB gzip. Push to `origin/main` SUCCEEDED on 2026-08-24 in the same session (after the user fixed the GitHub credential issue). Live e2e browser smoke (gates 6-10) deferred to Phase 3 PREWORK (Playwright + axe-core). Phase 3 (decision 0025 §6.5: Dashboard + a11y + power features) is unblocked. See `docs/decisions/v1.8-phase2-shipped.md` for the full ship report. |
 | 2026-08-24 | phase-3-shipped | reviewer | Phase 3 (Dashboard + a11y + power features) shipped on commit `dcf38cf2298e32fdfc320d4c1bae708f4e36b14e`. 25 files changed; +3398 / -10 net = +3388 LOC. 4 new FE components (Dashboard + CostBadge + SubAgentList + keyboard router) + 4 new BE test files (test_cost + test_dashboard + test_retry_rerun_export) + 1 new BE module (web/dashboard.py). PREWORK Vitest + Testing Library + axe-core + Playwright infra installed (132 packages); 33 Vitest tests pass; 43 BE tests pass; axe-core scans zero serious/critical. Folded in Phase 0 §14.8 #3 (`Run.subagent_history` UI consumption in Inspector). Push to `origin/main` SUCCEEDED in the same session (credential still working). Live e2e browser smoke (gates 9-10) deferred (Playwright spec written but not run; next session: `pnpm test:e2e` after dev server up). FE-5/6/7/8/9 App-level wire-up deferred to v1.9.x (the components + helpers exist; the App integration is the next session's work). v1.9.x scope: drag-drop queue reorder, per-provider usage caps, full Playwright e2e suite, MCP-on-Windows + pyproject/uv.lock cleanup (decision 0026). All four v1.8 phases complete. See `docs/decisions/v1.8-phase3-shipped.md` for the full ship report. |
+| 2026-08-25 | v1.9.x-fe-wireup-shipped | reviewer | v1.9.x FE wire-up (Phase 3 followups #2 + #4 + BE-6 + BE-7 remain OPEN) shipped on commit `bec3ce9011468e58ffe809a362a5379496a30a83`. 12 files changed; +750 / -101 net LOC. FE-5 (RunHistory tier + status filter selects intersect with text filter; options derived from history), FE-6/B10 (new `<AutoApproveBanner>` + `ApprovalModal.onAutoApproveToggle`; mid-run banner above event stream; client-side flag auto-clears when run becomes terminal; server-side auto-approve OFF still OPEN), FE-7/B4+B5+B7 (new `<RunActions>` Retry/Re-run/Export cluster in stream header when terminal), FE-8 (Dashboard button in header + modal overlay; `<Dashboard>` component mounted with axe-core-friendly styles; keyboard router mounted on App startup with real handlers: Cmd/Ctrl+Enter -> submit, Cmd/Ctrl+. -> stop, Cmd/Ctrl+K + Cmd/Ctrl+/ -> open dashboard), FE-9 (`main.tsx` mounts `@axe-core/react` in dev only, gated on `import.meta.env.DEV` so it tree-shakes out of production), PW-4 (Playwright smoke spec rewritten to be backend-tolerant: 2 pass + 1 skipped when no backend on :7860; Playwright config uses `localhost:5173` because vite binds there; chromium already in the system cache `ms-playwright`). 22 new Vitest tests across 4 new files (RunHistory 9, AutoApproveBanner 4, RunActions 4, ApprovalModal 5); 55/55 Vitest pass total (was 33 + 22 new). `pnpm build` 257.80 KB JS / 77.67 KB gzip (under 400 KB target; +9.56 KB JS / +2.43 KB gzip vs Phase 3 ship). Playwright smoke 2/3 pass + 1 skipped. No BE changes (the 51 pre-existing pytest failures are unchanged; not part of this commit). Push to `origin/main` SUCCEEDED 2026-08-25. v1.8 decision 0025 is now COMPLETE from feature + test + wire-up perspective. Remaining v1.9.x followups (drag-drop queue reorder, per-provider usage caps, per-subagent cost aggregation, server-side auto-approve OFF endpoint, full Playwright e2e suite, IPv6 iptables enforcement) tracked in `TASKS.md` §4. See `TASKS.md` §3.2 for the per-item file map. |
 
 ---
 

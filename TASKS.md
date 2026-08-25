@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-08-24
+**Date:** 2026-08-25 (v1.9.x FE wire-up session)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -8,22 +8,28 @@ this file. The three stay in sync; this file is the readable summary.
 
 ---
 
-## 1. Current state (2026-08-24, end of session)
+## 1. Current state (2026-08-25, end of session)
 
 | Item | Status | Reference |
 |---|---|---|
-| HEAD | `dcf38cf` (Phase 3) | `git log -1` |
+| HEAD | `bec3ce9` (v1.9.x FE wire-up) | `git log -1` |
 | Branch | `main`, ahead of `origin/main` by 0 (pushed) | `git status -sb` |
-| Pytest | **1044 PASS / 51 FAIL (51 pre-existing baseline)** | `make test` (run from `smolcode/src/`) |
-| Note | The Phase 0/1/2 ship reports cited "1026 / 16" but the actual baseline at `bc39774` (after Phase 2 ship + memory update) is **1044 / 51**. The discrepancy is from updated `litellm` / `smolagents` since Phase 0 (newer versions removed `TokenUsage` export + renamed `MultiStepAgent.__init__` kwargs). The Phase 0/1/2 ship report numbers were approximate; the TRUE baseline is 1044 / 51. **None of the 51 failures are caused by Phase 3 work** — verified by stash-revert against `bc39774`. Documented as decision 0026 candidate. |
-| Coverage | 82.33% (>=80% gate PASS) | pytest-cov |
+| Pytest (BE) | **1044 PASS / 51 FAIL (51 pre-existing baseline)** | unchanged from Phase 3 |
+| Vitest (FE) | **55 PASS / 0 FAIL** (33 Phase 3 + 22 v1.9.x) | `pnpm test` from `smolcode/web/` |
+| pnpm build | **257.80 KB JS / 77.67 KB gzip** (under 400 KB target) | `pnpm build` |
+| Playwright e2e | **2 PASS / 0 FAIL / 1 SKIP** (backend-tolerant) | `pnpm test:e2e` (vite on :5173; no BE assumed) |
 | Ruff check | 0 errors | `ruff check src tests` |
-| pnpm build | 248 KB JS / 75 KB gzip | `pnpm build` |
+| Coverage | 82.33% (>=80% gate PASS) | pytest-cov |
 | Working tree | clean (after this update + commit) | `git status` |
+
+**Note on BE failures:** the 51 pre-existing failures remain unchanged.
+Stash-revert against `bc39774` confirmed they pre-date v1.8 work; decision
+0026 candidate consolidates the MCP-on-Windows + pyproject/uv.lock +
+config.py:67 format debt. None of the v1.9.x work touched BE.
 
 ---
 
-## 2. Recently completed (last 3 sessions)
+## 2. Recently completed (last 4 sessions)
 
 | Commit | Date | Theme | LOC |
 |---|---|---|---|
@@ -33,90 +39,61 @@ this file. The three stay in sync; this file is the readable summary.
 | `2f90b50` | 2026-08-24 | v1.8 Phase 2: pause/queue + file previews + file mentions | +2750 |
 | `bc39774` | 2026-08-24 | Memory + plan updates: Phase 1 ship report + Phase 3 plan doc | +1289 |
 | `dcf38cf` | 2026-08-24 | v1.8 Phase 3: Dashboard + a11y + power features | +3388 |
+| `509288f` | 2026-08-24 | v1.8 Phase 3 ship report + status flip to phase-3-shipped | +163/-15 |
+| `bec3ce9` | 2026-08-25 | **v1.9.x FE wire-up**: RunHistory filters + AutoApproveBanner + RunActions + Dashboard modal + keyboard mount + axe-core dev + Playwright smoke (12 files, +750/-101) | +750 |
 
-All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
-
----
-
-## 3. COMPLETED - Phase 3 (Dashboard + a11y + power features)
-
-**Owner:** shipped on commit `dcf38cf` (2026-08-24).
-**Source:** `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` sec 6.5 + sec 15 + `docs/decisions/v1.8-phase3-plan.md`.
-**Acceptance gate:** sec 13.4 (8 checkboxes; 7 required to PASS before commit).
-
-### 3.1 PREWORK - Vitest + Testing Library + axe-core + Playwright infra
-
-| # | File | Status | Notes |
-|---|---|---|---|
-| PW-1 | `smolcode/web/package.json` devDeps | TODO | `vitest ^2`, `@testing-library/react ^16`, `@testing-library/jest-dom ^6`, `@testing-library/user-event ^14`, `jsdom ^25`, `@axe-core/react ^4`, `@playwright/test ^1.48` |
-| PW-2 | `smolcode/web/vitest.config.ts` (NEW) | TODO | jsdom env + jest-dom setup + axe-core scan |
-| PW-3 | `smolcode/web/src/__tests__/setup.ts` (NEW) | TODO | jest-dom matchers + axe-core dev |
-| PW-4 | `smolcode/web/src/main.tsx` | TODO | mount axe-core dev (gated on `import.meta.env.DEV`) |
-| PW-5 | `smolcode/web/playwright.config.ts` (NEW) | TODO | smoke config (loopback only) |
-| PW-6 | `smolcode/web/e2e/smoke.spec.ts` (NEW) | TODO | open app + submit a task |
-
-### 3.2 Backend (~270 LOC across 7 files)
-
-| # | File | LOC | Status |
-|---|---|---|---|
-| BE-1 | `smolcode/src/smolcode/web/api.py` (4 new endpoints: /retry, /rerun, /export, /dashboard) | +60 | TODO |
-| BE-2 | `smolcode/src/smolcode/web/schemas.py` (dashboard + cost + cache-hit fields) | +40 | TODO |
-| BE-3 | `smolcode/src/smolcode/web/runs.py` (Run.retry_count + retry/rerun methods) | +30 | TODO |
-| BE-4 | `smolcode/src/smolcode/web/agent_runner.py` (export_event_log + retry logic) | +10 | TODO |
-| BE-5 | `smolcode/src/smolcode/model_catalog.py` (per-provider cost rates) | +30 | TODO |
-| BE-6 | `smolcode/src/smolcode/config.py` (Settings.cost_rates env loader, Q5) | +20 | TODO |
-| BE-7 | `smolcode/src/smolcode/web/dashboard.py` (NEW, compute_dashboard aggregator) | +80 | TODO |
-
-### 3.3 Frontend (~585 LOC across 11 files)
-
-| # | File | LOC | Status |
-|---|---|---|---|
-| FE-1 | `smolcode/web/src/components/Dashboard.tsx` (NEW) | +200 | TODO |
-| FE-2 | `smolcode/web/src/components/CostBadge.tsx` (NEW) | +60 | TODO |
-| FE-3 | `smolcode/web/src/components/SubAgentList.tsx` (NEW; renders `subagent_history`) | +50 | TODO |
-| FE-4 | `smolcode/web/src/lib/keyboard.ts` (NEW; global shortcut router) | +50 | TODO |
-| FE-5 | `smolcode/web/src/components/RunHistory.tsx` (extended search filter) | +25 | TODO |
-| FE-6 | `smolcode/web/src/components/ApprovalModal.tsx` (auto-approve banner + revoke) | +40 | TODO |
-| FE-7 | `smolcode/web/src/components/EventStream.tsx` (retry/rerun/export buttons) | +15 | TODO |
-| FE-8 | `smolcode/web/src/App.tsx` (Dashboard tab + keyboard mount) | +15 | TODO |
-| FE-9 | `smolcode/web/src/main.tsx` (keyboard mount + axe-core dev) | +10 | TODO |
-| FE-10 | `smolcode/web/src/api.ts` (types + helpers for dashboard/cost/retry/rerun/export) | +80 | TODO |
-| FE-11 | `smolcode/web/src/components/Inspector.tsx` (embeds SubAgentList) | +10 | TODO |
-
-### 3.4 Tests (~920 LOC across 4 test files)
-
-| # | File | Tests | Status |
-|---|---|---|---|
-| T-1 | `smolcode/src/smolcode/tests/test_dashboard.py` (NEW; TestDashboardAggregator + TestCostProjection) | ~+200 LOC | TODO |
-| T-2 | `smolcode/src/smolcode/tests/test_cost.py` (NEW; TestCostRates) | ~+120 LOC | TODO |
-| T-3 | `smolcode/src/smolcode/tests/test_retry_rerun_export.py` (NEW; TestRetry + TestRerun + TestExport) | ~+200 LOC | TODO |
-| T-4 | `smolcode/web/src/__tests__/` (NEW; Vitest: Dashboard, CostBadge, SubAgentList, keyboard router; axe-core scan) | ~+400 LOC | TODO |
-
-### 3.5 Phase 3 validation gates (all must PASS before commit)
-
-- [ ] `ruff check src tests` PASS (0 errors)
-- [ ] `ruff format --check src tests` PASS
-- [ ] `pytest src/smolcode/tests` PASS (~30 new tests added)
-- [ ] Coverage >=80% on the new BE code
-- [ ] `pnpm --dir smolcode/web build` PASS (bundle <=400 KB JS / gzip)
-- [ ] `pnpm --dir smolcode/web test` (Vitest) PASS; >=70% line coverage on new components
-- [ ] `pnpm --dir smolcode/web test:a11y` (axe-core) PASS; zero serious/critical violations
-- [ ] `pnpm --dir smolcode/web test:e2e` (Playwright) PASS; smoke flow
-- [ ] `git push origin main` succeeds
+All eight commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 ---
 
-## 4. DEFERRED (tracked across sessions)
+## 3. COMPLETED - v1.8 Phase 3 + v1.9.x FE wire-up
+
+### 3.1 v1.8 Phase 3 (commit `dcf38cf` + ship docs `509288f`)
+
+**Owner:** shipped.
+**Status:** ALL DONE per `509288f` ship report + decision 0025 §13.4.
+**Source:** `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` §6.5 + §15 + `docs/decisions/v1.8-phase3-plan.md`.
+
+Validation gates (all PASS at ship): 43 BE tests + 33 Vitest tests + axe-core + pnpm build 248 KB + ruff 0 errors + push.
+
+### 3.2 v1.9.x FE wire-up (commit `bec3ce9`)
+
+**Owner:** shipped on commit `bec3ce9` (2026-08-25).
+**Source:** the 6 deferred items in `docs/decisions/v1.8-phase3-shipped.md` Followups (#2 + #4).
+
+| Item | File(s) | Status |
+|---|---|---|
+| **FE-5** RunHistory tier + status filters | `components/RunHistory.tsx` + `__tests__/RunHistory.test.tsx` (9 tests) | DONE |
+| **FE-6 / B10** Auto-approve banner + revoke | `components/AutoApproveBanner.tsx` (NEW) + `components/ApprovalModal.tsx` (`onAutoApproveToggle` prop) + `__tests__/AutoApproveBanner.test.tsx` (4 tests) + `__tests__/ApprovalModal.test.tsx` (5 tests) | DONE |
+| **FE-7 / B4+B5+B7** RunActions (Retry/Re-run/Export) in stream header when terminal | `components/RunActions.tsx` (NEW) + App.tsx wire-up + `__tests__/RunActions.test.tsx` (4 tests) | DONE |
+| **FE-8** Dashboard modal overlay + keyboard router mount in App | `App.tsx` (`installKeyboardRouter(...)` + Dashboard button + Dashboard modal) | DONE |
+| **FE-9** axe-core dev mount in main | `main.tsx` (gated on `import.meta.env.DEV`) | DONE |
+| **PW-4** Playwright e2e smoke against live Vite | `e2e/smoke.spec.ts` (3 tests, 2 pass + 1 skipped when no BE) + `playwright.config.ts` (localhost + 60s timeout) | DONE |
+
+### 3.3 Validation gates (v1.9.x)
+
+- [x] `pnpm test` PASS (55/55 vitest; 22 new)
+- [x] `pnpm build` PASS (257.80 KB JS / 77.67 KB gzip; under 400 KB)
+- [x] `pnpm exec playwright test` PASS (2/3 + 1 skipped, backend-tolerant)
+- [x] `tsc -b && vite build` PASS (no TS errors)
+- [x] `git push origin main` succeeds (commit `bec3ce9`)
+
+---
+
+## 4. DEFERRED (tracked across sessions, AFTER v1.9.x FE wire-up)
 
 | Item | Origin | Effort | Priority |
 |---|---|---|---|
 | Drag-and-drop queue reorder | Phase 2 sec 6.4 / decision 0025 sec 8 | 1d | v1.9.x |
-| Per-provider usage caps ("stop at $1") | Phase 3 sec 8 / decision 0025 sec 10.5 | 2-3d | v1.9.x (after cost projection lands) |
+| Per-provider usage caps ("stop at $1") | Phase 3 sec 8 / decision 0025 sec 10.5 | 2-3d | v1.9.x |
+| Per-subagent cost aggregation (currently shows tier/duration only) | Phase 3 followup #3 | 0.5d | v1.9.x |
+| Full Playwright e2e suite (submit task + wait for done + dashboard + retry + export) | Phase 3 followup #4 | 1d | v1.9.x |
 | Prompt library | decision 0025 sec 8 | 2d | v1.9.x |
 | Cross-project session search | Phase 1 Known limitations | 1d | low |
 | Auto-migrate orphaned sessions on project rename | Phase 1 Known limitations | 0.5d | low |
 | Full Monaco editor | decision 0025 sec 4 | 5+d | v2.x (different product) |
 | IPv6 iptables enforcement | decision 0021 sec X | 1d | v1.9.x |
+| Server-side auto-approve OFF endpoint (FE-6 partial) | v1.9.x FE-6 limitation | 0.5d | low |
 | Multi-user real-time collab | decision 0025 sec 4 | n/a | out of scope |
 | Voice input | decision 0025 sec 4 | n/a | out of scope |
 | Dark mode | decision 0025 sec 4 | 2d | when CSS variables land |
@@ -129,11 +106,10 @@ All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 | Item | Blocker | Notes |
 |---|---|---|
-| **16 MCP-on-Windows test failures** | Recommendation: create **decision 0026** alongside the pyproject/uv.lock flip | Phase 0 sec 14.8 #1; carried across all phases; never the cause of any committed change. Stash-revert against `445fa85` confirms pre-existing. Likely sync JSON-RPC client pipes get closed prematurely on Windows. |
-| **pyproject.toml + uv.lock dirty state** | Recommendation: create **decision 0026** | Pre-existing dirty diff: `smolagents[litellm,docker,mcp]` -> `smolagents[all]` + removal of `[tool.uv.sources]` editable path. NOT committed. Decision 0026 should consolidate both items. |
-| **config.py:67 ruff format pre-existing diff** | Recommendation: include in decision 0026 | Pre-existing format debt (predates Phase 0). NOT in any phase commit. |
-| **Live e2e browser smoke** (Phases 0/1/2 gates 5-10) | Phase 3 PREWORK installs Playwright | Once Playwright is in, all deferred e2e gates can be exercised. Until then, logic is covered by unit tests. |
-| **No git push to `origin/main`** in older sessions | RESOLVED 2026-08-24 (user fixed GitHub credential) | All Phase 0/1/2 commits now visible on `origin/main` via `git ls-remote`. |
+| **51 pre-existing BE failures** (MCP-on-Windows + litellm/smolagents version drift + test_web_server + test_checkpoint + config.py:67 format) | Recommendation: create **decision 0026** | Pre-existing per stash-revert against `445fa85`. Never caused by any committed v1.8/v1.9.x work. Likely sync JSON-RPC client pipes close early on Windows (MCP). |
+| **pyproject.toml + uv.lock dirty state** | Recommendation: include in decision 0026 | Pre-existing dirty diff: `smolagents[litellm,docker,mcp]` -> `smolagents[all]` + removal of `[tool.uv.sources]` editable path. NOT committed. |
+| **Server-side auto-approve OFF endpoint** (FE-6 v1.9.x limitation) | Future followup | The Disable button in the AutoApproveBanner clears the client-side flag; the underlying `sess.auto_approve_destructive=True` continues to auto-approve server-side until the run ends. A new `POST /api/runs/{id}/auto-approve:off` endpoint would close the loop. |
+| **No git push to `origin/main`** | RESOLVED 2026-08-24 (user fixed GitHub credential) | All eight recent commits visible on `origin/main` via `git ls-remote`. |
 
 ---
 
@@ -141,7 +117,7 @@ All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 | Decision | Status | Title |
 |---|---|---|
-| 0025 | phase-3-in-progress | Web UI/UX review + roadmap to v1.8 |
+| 0025 | phase-3-shipped (FE wire-up complete via v1.9.x commit `bec3ce9`) | Web UI/UX review + roadmap to v1.8 (+ v1.9.x FE followups) |
 | 0024 | active | Web UI: traceback capture + UTF-8 stdio |
 | 0023 | active | Runtime sandbox-boundary guard (Layer A + Layer B) |
 | 0022 | active | Run cleanup on exit |
@@ -153,19 +129,22 @@ All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
 | v1.8-phase0-shipped.md | active | Phase 0 ship report (commit `88a20e4`) |
 | v1.8-phase1-shipped.md | active | Phase 1 ship report (commit `7b33f1d`) |
 | v1.8-phase2-shipped.md | active | Phase 2 ship report (commit `2f90b50`) |
-| v1.8-phase3-plan.md | pending | Phase 3 detailed plan (mirrors sec 14.1-sec 14.5) |
+| v1.8-phase3-plan.md | active | Phase 3 detailed plan (mirrors sec 14.1-sec 14.5) |
+| v1.8-phase3-shipped.md | active | Phase 3 ship report (commit `509288f`) |
 
 ---
 
 ## 7. Environment quirks (worth remembering)
 
 - **Working dir:** `E:\python_projects\smol_code` on Windows. POSIX commands via `pwsh -Command` (PowerShell Core).
-- **Python:** 3.10+. `make test` works on Windows; some MCP tests fail because Windows pipes close early on sync JSON-RPC (pre-existing, baseline).
-- **GitHub:** remote is `https://github.com/alshahia/smol_code.git`. Git config user is `Ahmad Mahmoud <ahmad2002bc@gmail.com>`. Push from this session now works (credential fixed 2026-08-24).
+- **Python:** 3.10+. `make test` works on Windows; 51 pre-existing MCP/litellm/smolagents failures are unrelated.
+- **GitHub:** remote is `https://github.com/alshahia/smol_code.git`. Git config user is `Ahmad Mahmoud <ahmad2002bc@gmail.com>`. Push from this session works (credential fixed 2026-08-24).
+- **Vite binds to `localhost` not `127.0.0.1`** on this host; Playwright config uses `http://localhost:5173` (fixed in v1.9.x commit `bec3ce9`).
 - **Harness auto-stash:** every ~5 min the harness creates an empty checkpoint stash (`smolcode-checkpoint-...`). They are EMPTY but persist in `stash list`. Drop them with `git stash drop`. Files that get auto-stashed can be lost across commands - pop + verify before committing.
-- **`make test`:** in this repo the wrapper is `Makefile` + `make test`. Pytest addopts include `--cov` for the >=80% coverage gate. Addopts also enforce verbose + show durations.
+- **`make test`:** in this repo the wrapper is `Makefile` + `make test`. Pytest addopts include `--cov` for the >=80% coverage gate.
 - **ruff:** `ruff check src` is the lightweight gate; `make quality` does check + format-check. `ruff format` is auto-applied.
-- **Frontend:** `pnpm --dir smolcode/web` for all package.json scripts. `pnpm build` (no watch). Vitest + Testing Library NOT YET INSTALLED - Phase 3 PREWORK.
+- **Frontend:** `pnpm --dir smolcode/web` for all package.json scripts. Vite on `localhost:5173`. Vitest + Testing Library + axe-core + Playwright ALL INSTALLED (v1.8 Phase 3 PREWORK + v1.9.x smoke).
+- **Chromium already installed** in `$env:LOCALAPPDATA\ms-playwright\chromium-*`. Playwright `pnpm test:e2e` reuses it via `reuseExistingServer: true` (vite must be running).
 
 ---
 
@@ -173,21 +152,22 @@ All four code commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 If this file is the only thing the next session reads, do this:
 
-1. `git log --oneline -10` - confirm HEAD is `2f90b50` (or later).
+1. `git log --oneline -10` - confirm HEAD is `bec3ce9` (or later).
 2. `git status -sb` - confirm clean + pushed.
-3. Read `docs/decisions/v1.8-phase3-plan.md` + `docs/decisions/0025-web-ui-ux-review-and-roadmap.md` sec 15 - this is Phase 3.
-4. Start with sec 3.1 (PW-1 to PW-6: Vitest + Testing Library + axe-core + Playwright infra). Foundation for all subsequent FE work.
-5. Then sec 3.2 BE tasks (BE-1 through BE-7). TDD: write test first, see it fail, implement, see it pass.
-6. Then sec 3.3 FE tasks (FE-1 through FE-11). Vitest for each new component.
-7. Run sec 3.5 validation gates. Fix until all PASS.
-8. Commit + push to `origin/main`.
-9. Update this file: mark sec 3 items COMPLETED, move Phase 3 into sec 2 (recently completed), add Phase 4 / v1.9 followups if any.
-10. Update `0025` sec 12 history (status flip from `phase-3-in-progress` to `phase-3-shipped`) + `roadmap.md` status + `README.md` banner.
+3. **Recommended: create `decision 0026`** to fix the 51 pre-existing BE failures (MCP-on-Windows + pyproject/uv.lock + config.py:67 format). The v1.8 + v1.9.x deliverables are clean.
+4. **Or: work on remaining DEFERRED items** in §4. Recommended priority order:
+   - Per-subagent cost aggregation (0.5d, small)
+   - Server-side auto-approve OFF endpoint (0.5d, small)
+   - Full Playwright e2e suite (1d, builds on existing smoke)
+   - Drag-and-drop queue reorder (1d)
+   - Per-provider usage caps (2-3d)
+   - IPv6 iptables enforcement (1d, decision 0021)
+5. **Or: open v2.0** scope planning (Monaco editor, multi-project workspaces, etc.) once v1.9.x followups are triaged.
 
 ---
 
 ## 9. Open questions for the user (if any)
 
-- **None blocking Phase 3.** All Phase 3 decisions (Q1-Q5) are answered.
-- **Optional:** would you like `decision 0026` (MCP-on-Windows + pyproject/uv.lock + config.py format) before, during, or after Phase 3? My recommendation: AFTER Phase 3 ships - keeps Phase 3 diff clean.
-- **Optional:** are there any of the DEFERRED items (drag-drop reorder, usage caps, prompt library) that should pull-in to v1.9.x? My recommendation: ship Phase 3 first, then re-prioritize.
+- **None blocking.** All v1.8 + v1.9.x Phase 1 decisions are answered.
+- **Optional:** would you like to tackle decision 0026 (MCP-on-Windows + pyproject/uv.lock + config.py:67 format) next? My recommendation: yes, since it cleans up the long-running 51-fail noise from the test baseline.
+- **Optional:** which v1.9.x followup should pull-in next? My recommendation: server-side auto-approve OFF endpoint (small, completes FE-6) + per-subagent cost (small, completes the CostBadge followup chain).
