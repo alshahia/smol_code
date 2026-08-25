@@ -20,6 +20,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Decision 0028: cost_for() is used in summary_dict() to derive the
+# per-sub-agent USD cost from the per-sub-agent token accumulators.
+# Imported lazily here to keep the module-level dependency surface
+# explicit; the function itself is a pure helper that reads
+# DEFAULT_COST_RATES (no Settings needed for v1).
+from smolcode.model_catalog import cost_for
+
 
 _log = logging.getLogger(__name__)
 
@@ -100,6 +107,16 @@ class SubAgentSummary:
     The orchestrator's ``do_<tier>_task`` / ``do_specialist`` tools
     append one of these on every delegation and mutate ``ended_at`` on
     completion. ``Run.subagent_history`` is a list of these.
+
+    Decision 0028: ``tokens_in`` / ``tokens_out`` accumulate the LLM
+    tokens that were attributed to THIS sub-agent invocation by
+    ``Run.publish`` while the sub-agent was active. The active
+    sub-agent id is tracked on ``Run`` so concurrent ``step.action``
+    publishes can route their tokens to the right entry. Cost is
+    derived at read time in ``Run.summary_dict`` via
+    ``cost_for()`` using the OUTER run's provider/model (sub-agents
+    inherit); not stored here to keep the dataclass lean and to
+    avoid threading ``Settings`` through every mutation.
     """
 
     id: str
@@ -107,6 +124,11 @@ class SubAgentSummary:
     started_at: float
     ended_at: float | None = None
     specialist: str | None = None
+    # Decision 0028: per-sub-agent LLM token attribution. Updated
+    # under ``Run.pending_lock`` whenever a ``step.action`` event is
+    # published while this sub-agent is the active one.
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 @dataclass
@@ -219,6 +241,12 @@ class Run:
     # legacy ``run.subagent`` property still returns the latest entry
     # for backward compatibility with Phase 0 FE consumers.
     subagent_history: list = field(default_factory=list)
+    # Decision 0028: id of the currently-active sub-agent (set by
+    # ``append_subagent``, cleared by ``close_subagent``). Used by
+    # ``publish()`` to attribute ``step.action`` tokens to the
+    # right entry. ``None`` when no sub-agent is active (the
+    # orchestrator's own steps, or no orchestrator at all).
+    active_subagent_id: str | None = None
     # Phase 1 (decision 0025 §6.3): chat-session id + project name the
     # run is attached to. Both None for legacy / standalone runs.
     # Surfaced in RunSummary + run.started event payload; the SPA's
@@ -258,6 +286,24 @@ class Run:
                     except (TypeError, ValueError):
                         inp = 0
                         out = 0
+                    # Decision 0028: when a sub-agent is active,
+                    # ALSO attribute the tokens to that sub-agent's
+                    # accumulator so the per-sub-agent cost view can
+                    # be derived in ``summary_dict``. The outer
+                    # ``tokens_in``/``tokens_out`` continue to
+                    # receive EVERY token (own + sub-agents) so the
+                    # run-level Dashboard cost math is unchanged.
+                    # Concurrency: ``pending_lock`` covers both
+                    # the outer accumulators and the sub-agent entry
+                    # mutation, so concurrent ``step.action``
+                    # publishes from the orchestrator thread + the
+                    # inner sub-agent thread are consistent.
+                    if self.active_subagent_id:
+                        for s in self.subagent_history:
+                            if s.id == self.active_subagent_id:
+                                s.tokens_in += inp
+                                s.tokens_out += out
+                                break
                     self.tokens_in += inp
                     self.tokens_out += out
         frame = _encode_event(event_type, data, event_id=self._next_event_id())
@@ -322,21 +368,42 @@ class Run:
         """
         with self.pending_lock:
             total = self.tokens_in + self.tokens_out
+            # Decision 0028: compute per-sub-agent USD cost at read
+            # time. Uses the OUTER run's provider/model (sub-agents
+            # inherit the orchestrator's settings; if a future
+            # variant overrides per-sub-agent, this is the surface
+            # to extend). Default rates only -- settings plumbing
+            # to the runner is deferred until the override is
+            # surfaced through Settings.cost_rates.
+            subagent_history = [
+                {
+                    "id": s.id,
+                    "tier": s.tier,
+                    "specialist": getattr(s, "specialist", None),
+                    "started_at": s.started_at,
+                    "ended_at": s.ended_at,
+                    "tokens_in": s.tokens_in,
+                    "tokens_out": s.tokens_out,
+                    "cost_usd": round(
+                        cost_for(
+                            self.provider or None,
+                            self.model or None,
+                            s.tokens_in,
+                            s.tokens_out,
+                        ),
+                        6,
+                    )
+                    if (s.tokens_in or s.tokens_out)
+                    else 0.0,
+                }
+                for s in self.subagent_history
+            ]
             snap = {
                 "tokens_in": self.tokens_in,
                 "tokens_out": self.tokens_out,
                 "tokens_total": total,
                 "step_count": self.step_count,
-                "subagent_history": [
-                    {
-                        "id": s.id,
-                        "tier": s.tier,
-                        "started_at": s.started_at,
-                        "ended_at": s.ended_at,
-                        "specialist": getattr(s, "specialist", None),
-                    }
-                    for s in self.subagent_history
-                ],
+                "subagent_history": subagent_history,
                 "snapshot_at": self.snapshot_at,
                 "queue_position": self.queue_position,
             }
@@ -397,15 +464,30 @@ class Run:
             if any(s.id == entry.id for s in self.subagent_history):
                 return entry
             self.subagent_history.append(entry)
+            # Decision 0028: this sub-agent is now active; subsequent
+            # ``step.action`` publishes will attribute their tokens
+            # to it. ``close_subagent`` clears the active id.
+            self.active_subagent_id = entry.id
         return entry
 
     def close_subagent(self, sub_id, *, ended_at=None):
-        """Mark a sub-agent invocation as closed. Defensive: missing id is a no-op."""
+        """Mark a sub-agent invocation as closed. Defensive: missing id is a no-op.
+
+        Decision 0028: also clears ``active_subagent_id`` if it
+        matches the closing sub-agent so subsequent ``step.action``
+        publishes attribute their tokens to the outer run again. A
+        nested sub-agent start that happens before close would have
+        already overwritten ``active_subagent_id``, so we only
+        clear when the id still matches -- this preserves correct
+        attribution across nested invocations.
+        """
         ended = float(ended_at) if ended_at is not None else time.monotonic()
         with self.pending_lock:
             for s in self.subagent_history:
                 if s.id == sub_id:
                     s.ended_at = ended
+                    if self.active_subagent_id == sub_id:
+                        self.active_subagent_id = None
                     return True
         return False
 
@@ -811,7 +893,8 @@ class RunManager:
     # flipped; the next destructive gate call (shell.py / git.py
     # forward()) sees the new value through ``current_session()``.
     def set_auto_approve(self, run_id, enabled):
-        from ..session import get_auto_approve as _get, set_auto_approve as _set
+        from ..session import get_auto_approve as _get
+        from ..session import set_auto_approve as _set
 
         # 404 first so a stale run id (run already ended + purged)
         # returns the same status as POST /stop etc.

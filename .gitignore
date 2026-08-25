@@ -107,3 +107,4 @@ smolcode/**/test-results/
 
 # .pytest_out.txt is a stale pytest output capture from earlier sessions.
 **/.pytest_out.txt
+**/.pytest_tmp/

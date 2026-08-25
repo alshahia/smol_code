@@ -253,18 +253,42 @@ class RunStartResponse(BaseModel):
 
 
 class SubAgentSummary(BaseModel):
-    """Phase 0 (decision 0025): latest sub-agent invocation for a run.
+    """Decision 0028 (per-sub-agent cost aggregation).
 
-    Set by the orchestrator do_<tier>_task / do_specialist tools
-    around their inner agent.run() call. None when the run has not
-    delegated to a sub-agent (e.g. a restricted-tier run that
-    executes directly).
+    Originally Phase 0 (decision 0025): one sub-agent invocation
+    record. Set by the orchestrator do_<tier>_task / do_specialist
+    tools around their inner agent.run() call. Reused for both the
+    legacy single-entry shape (``subagent`` field on RunSummary) AND
+    the new ``subagent_history`` list shape.
+
+    Decision 0028 additions:
+    - ``specialist``: name of the specialist agent when the
+      sub-agent was invoked via do_specialist(name=...); None for
+      do_<tier>_task. The BE dataclass already had this field; the
+      Pydantic schema was missing it -- gap fixed by this decision
+      so the wire now reflects every field Run.summary_dict emits.
+    - ``tokens_in`` / ``tokens_out``: per-sub-agent LLM token
+      attribution accumulated by Run.publish while the sub-agent
+      was the active one. The outer run's tokens remain the
+      TOTAL (own + all sub-agents) so run-level Dashboard cost is
+      unchanged.
+    - ``cost_usd``: derived at summary_dict() time via cost_for()
+      using the outer run's provider/model. Default rates only
+      for v1; settings plumbing deferred.
     """
 
     id: str
     tier: str
     started_at: float
     ended_at: float | None = None
+    # Decision 0028: specialist name (was on BE dataclass but missing
+    # from this Pydantic schema -- gap fix).
+    specialist: str | None = None
+    # Decision 0028: per-sub-agent LLM token attribution.
+    tokens_in: int = 0
+    tokens_out: int = 0
+    # Decision 0028: per-sub-agent USD cost, derived at read time.
+    cost_usd: float = 0.0
 
 
 class TokenSummary(BaseModel):

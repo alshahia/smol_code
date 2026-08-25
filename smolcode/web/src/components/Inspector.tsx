@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { TierBadge } from './TierBadge'
 import { WorkspaceTree } from './WorkspaceTree'
 import { AuditPanel } from './AuditPanel'
+import { SubAgentList } from './SubAgentList'
 import type { ConfigResponse, RunSummary } from '../api'
 
 interface Props {
@@ -91,7 +92,7 @@ export function Inspector({
 
   const tokens = activeRun?.tokens
   const stepCount = activeRun?.step_count ?? 0
-  const sub = activeRun?.subagent ?? null
+  // const sub = activeRun?.subagent ?? null (decision 0028: legacy single hint removed; SubAgentList consumes subagent_history)
 
   return (
     <>
@@ -163,22 +164,16 @@ export function Inspector({
         </div>
       )}
 
-      {activeRun && sub && (
+      {activeRun && (activeRun.subagent_history?.length ?? 0) > 0 && (
         <div className="inspector-section">
-          <h4>Sub-agent</h4>
-          <div className="kv">
-            <span>tier:</span> <code>{sub.tier}</code>
-          </div>
-          <div className="kv">
-            <span>id:</span> <code>{sub.id.slice(0, 12)}</code>
-          </div>
-          {sub.ended_at === null ? (
-            <div className="muted small">in flight</div>
-          ) : (
-            <div className="muted small">
-              ended {(sub.ended_at - sub.started_at).toFixed(1)}s after start
-            </div>
-          )}
+          <h4>Sub-agents</h4>
+          {/* Decision 0028: replaced legacy single-sub-agent hint
+              (showed tier/id only) with the full SubAgentList which
+              also renders per-sub-agent tokens + USD cost. The
+              legacy sub. accessor still drives the live nested
+              block inside <EventStream>; the Inspector now shows
+              the post-hoc list. */}
+          <SubAgentList history={activeRun.subagent_history ?? []} />
         </div>
       )}
 
