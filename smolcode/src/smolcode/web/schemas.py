@@ -420,7 +420,7 @@ class ModelListResponse(BaseModel):
     """
 
     provider: str
-    models: list[dict] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
     cached: bool = False
     fetched_at: float = 0.0
     error: str | None = None

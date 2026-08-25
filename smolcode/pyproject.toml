@@ -8,7 +8,11 @@ version = "0.1.0"
 description = "Local/Docker multi-agent coding assistant built on smolagents."
 requires-python = ">=3.10"
 dependencies = [
-    "smolagents[litellm,docker,mcp]",
+    # smolagents >=1.27 is on main (1.27.0.dev0) but never released on
+    # PyPI. 1.26.0 is the last published tag and contains every API
+    # smolcode uses (decision 0026). Pin <1.27 so a future 1.27
+    # release forces an explicit bump.
+    "smolagents[litellm,docker,mcp]>=1.26.0,<1.27",
     "python-dotenv>=1.0.1",
     "pyyaml>=6.0",
 ]
@@ -21,12 +25,16 @@ dev = [
     "pytest-timeout",
     "pytest-cov>=5.0.0",
 ]
+
 web = [
     # M8 GUI viewer (decision 0010 D2). Optional install via
     # `uv pip install -e ".[web]"`. Not required for CLI use.
-    # FastAPI >=0.140 has a route-registration regression (routes are
-    # silently dropped from APIRouter.include_router). Pin to <0.140.
-    "fastapi>=0.115,<0.140",
+    # FastAPI >=0.137 has a route-registration regression in this app:
+    # APIRouter(prefix='/api').include_router() silently drops routes
+    # under FastAPI 0.137+. Pin to <0.137 (last known-good release).
+    # Decision 0026 reproduced this on 0.137.0 / 0.138.0 / 0.139.x and
+    # verified 0.115.x / 0.116.x / 0.136.x register routes correctly.
+    "fastapi>=0.115,<0.137",
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.9",
 ]
@@ -42,14 +50,6 @@ dev-dependencies = [
     "pytest-timeout",
     "pytest-cov>=5.0.0",
 ]
-web = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "python-multipart>=0.0.9",
-]
-
-[tool.uv.sources]
-smolagents = { path = "../smolagents", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
