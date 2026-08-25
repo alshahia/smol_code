@@ -33,9 +33,7 @@ class TestSessionsList:
     def test_legacy_sessions_listed(self, client, tmp_path):
         sessions_dir = tmp_path / "ws" / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)
-        (sessions_dir / "abc.jsonl").write_text(
-            json.dumps({"ts": "t", "event": "run.started"}) + "\n"
-        )
+        (sessions_dir / "abc.jsonl").write_text(json.dumps({"ts": "t", "event": "run.started"}) + "\n")
         r = client.get("/api/sessions")
         assert r.status_code == 200
         rows = r.json()["sessions"]

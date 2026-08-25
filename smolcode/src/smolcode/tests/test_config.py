@@ -51,9 +51,7 @@ class TestProjects:
         s = load_settings()
         assert s.projects == ()
 
-    def test_project_name_only_resolves_under_workspace(
-        self, _isolate_env, tmp_path, monkeypatch
-    ):
+    def test_project_name_only_resolves_under_workspace(self, _isolate_env, tmp_path, monkeypatch):
         # Default project root = <workspace>/<name>.
         ws = tmp_path / "ws"
         monkeypatch.setenv("SMOLCODE_WORKSPACE", str(ws))
@@ -95,9 +93,7 @@ class TestProjects:
         else:
             raise AssertionError("expected ConfigError")
 
-    def test_project_explicit_missing_path_raises(
-        self, _isolate_env, tmp_path, monkeypatch
-    ):
+    def test_project_explicit_missing_path_raises(self, _isolate_env, tmp_path, monkeypatch):
         ws = tmp_path / "ws"
         monkeypatch.setenv("SMOLCODE_WORKSPACE", str(ws))
         ghost = tmp_path / "does-not-exist"

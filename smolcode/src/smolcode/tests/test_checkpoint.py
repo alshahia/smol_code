@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -47,20 +49,36 @@ class TestWorkspaceRequired:
 
 
 class TestNotAGitRepo:
-    def test_non_git_directory_skipped(self, tmp_path):
-        # tmp_path is created by pytest; never initialise git in it.
-        assert not (tmp_path / ".git").exists()
-        res = create_checkpoint(tmp_path)
+    def test_non_git_directory_skipped(self, tmp_path_factory):
+        # pytest's default tmp_path is under the repository, so Git
+        # would discover the parent worktree. Use a path outside the repo.
+        workspace = _non_git_workspace(tmp_path_factory)
+        assert not (workspace / ".git").exists()
+        res = create_checkpoint(workspace)
         assert res.status == "skipped"
         assert res.reason == "not-a-git-repo"
         assert res.ref == ""
         assert res.timestamp != ""
 
-    def test_non_git_directory_emits_audit(self, tmp_path):
+    def test_non_git_directory_emits_audit(self, tmp_path_factory):
         audit = _FakeAudit()
-        res = create_checkpoint(tmp_path, audit_sink=audit)
+        workspace = _non_git_workspace(tmp_path_factory)
+        res = create_checkpoint(workspace, audit_sink=audit)
         assert res.status == "skipped"
         assert audit.events and audit.events[0][0] == "checkpoint"
+
+
+def _non_git_workspace(tmp_path_factory):
+    """Create a directory outside the repository for Git-discovery tests.
+
+    pytest's default ``tmp_path`` is under the repository, so Git
+    discovers the parent worktree and treats the test directory as
+    part of it. We need a fresh empty directory *outside* the
+    repository's working tree. We use ``tempfile.mkdtemp`` under
+    the OS temp directory; cleanup relies on the OS temp policy
+    (pytest's finalizer hooks vary by version).
+    """
+    return Path(tempfile.mkdtemp(prefix="smolcode-not-a-git-repo-"))
 
 
 # ---- Workspace path doesn't exist -----------------------------------------

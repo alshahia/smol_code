@@ -100,9 +100,11 @@ class TestSessionCrud:
 
         p = tmp_path / "x.jsonl"
         p.write_text(
-            json.dumps({"ts": "t1", "event": "start"}) + "\n"
+            json.dumps({"ts": "t1", "event": "start"})
+            + "\n"
             + "not json\n"
-            + json.dumps({"ts": "t2", "event": "end"}) + "\n"
+            + json.dumps({"ts": "t2", "event": "end"})
+            + "\n"
         )
         events = read_session_events(p)
         assert len(events) == 2
@@ -152,9 +154,12 @@ class TestListAndCount:
 
         p1 = create_session_file(tmp_path, project=None, session_id="a", name="First")
         p1.write_text(
-            json.dumps({"ts": "t", "event": "run.started"}) + "\n"
-            + json.dumps({"ts": "t", "event": "run.started"}) + "\n"
-            + json.dumps({"ts": "t", "event": "step.action"}) + "\n"
+            json.dumps({"ts": "t", "event": "run.started"})
+            + "\n"
+            + json.dumps({"ts": "t", "event": "run.started"})
+            + "\n"
+            + json.dumps({"ts": "t", "event": "step.action"})
+            + "\n"
         )
         create_session_file(tmp_path, project=None, session_id="b")
         entries = list_sessions(tmp_path, project=None)

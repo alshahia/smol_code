@@ -185,9 +185,7 @@ def safe_id(session_id):
     if not isinstance(session_id, str) or not session_id:
         raise ValueError("invalid session id: must be a non-empty string")
     if not _SESSION_ID_RE.match(session_id):
-        raise ValueError(
-            "invalid session id " + repr(session_id) + ": must match [a-zA-Z0-9][a-zA-Z0-9_-]{0,127}"
-        )
+        raise ValueError("invalid session id " + repr(session_id) + ": must match [a-zA-Z0-9][a-zA-Z0-9_-]{0,127}")
     return session_id
 
 
@@ -419,4 +417,3 @@ def read_session_events(jsonl_path):
             continue
         out.append(obj)
     return out
-
