@@ -1,9 +1,12 @@
-// NOTE: same EventStream.tsx SSE-bug as approval.spec.ts. These tests
-// are skipped until the parseFrames / onmessage bug is fixed.
+// Decision 0030: previously skipped because EventStream.tsx used
+// es.onmessage + parseFrames() which silently dropped every named
+// SSE frame. The SPA now registers an addEventListener per known
+// event type, so approval.requested reaches the parent and the
+// modal opens (which then enables the AutoApproveBanner).
 import { test, expect } from '@playwright/test'
 import { mockBackend, mockSSE, waitForAppShell } from './_helpers'
 
-test.skip('AutoApproveBanner appears after enabling auto-approve via the approval modal', async ({ page }) => {
+test('AutoApproveBanner appears after enabling auto-approve via the approval modal', async ({ page }) => {
   const captured: { method: string; url: string; body?: string }[] = []
   await mockBackend(page, {
     runs: [],
@@ -14,11 +17,10 @@ test.skip('AutoApproveBanner appears after enabling auto-approve via the approva
     {
       type: 'approval.requested',
       data: {
-        decisionId: 'd-aa',
+        decision_id: 'd-aa',
         tool: 'shell',
         args: {},
         summary: 'Destructive op',
-        kind: 'destructive',
       },
     },
   ])
@@ -32,7 +34,7 @@ test.skip('AutoApproveBanner appears after enabling auto-approve via the approva
   await expect(page.locator('.auto-approve-banner-text')).toContainText('Auto-approve is ON')
 })
 
-test.skip('Clicking Disable on the banner POSTs /auto-approve and removes the banner', async ({ page }) => {
+test('Clicking Disable on the banner POSTs /auto-approve and removes the banner', async ({ page }) => {
   const captured: { method: string; url: string; body?: string }[] = []
   await mockBackend(page, {
     runs: [],
@@ -43,11 +45,10 @@ test.skip('Clicking Disable on the banner POSTs /auto-approve and removes the ba
     {
       type: 'approval.requested',
       data: {
-        decisionId: 'd-aa2',
+        decision_id: 'd-aa2',
         tool: 'shell',
         args: {},
         summary: 'Destructive op',
-        kind: 'destructive',
       },
     },
   ])

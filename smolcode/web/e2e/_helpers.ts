@@ -592,12 +592,12 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
         })
         return
       }
-      if (pathname.match(/^\/api\/runs\/[^/]+\/approvals$/)) {
+      if (pathname.match(/^\/api\/runs\/[^/]+\/approval$/) && req.method() === 'POST') {
         await sleep(opts.delays?.approval ?? 0)
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(opts.approval_response ?? { decided: true }),
+          body: JSON.stringify(opts.approval_response ?? { resolved: true, decision_id: 'd-1' }),
         })
         return
       }
@@ -669,21 +669,21 @@ export async function waitForLoadingScreen(page: Page): Promise<void> {
  * Fires the given events exactly once on first connection, then returns
  * keep-alive frames so EventSource doesn't error-out.
  *
+ * Mirrors the real BE format (runs.py:_encode_event): each frame sets
+ * the `event:` line followed by `data:` JSON. Decision 0030 changed
+ * the SPA to dispatch via addEventListener(<type>, ...) so named
+ * events now reach the handler.
+ *
  * Common usage:
  *
  *   await mockSSE(page, [
- *     { event: 'approval.requested', data: { decisionId: 'd1', tool: 'shell', ... } },
+ *     { event: 'approval.requested', data: { decision_id: 'd1', tool: 'shell', ... } },
  *   ])
  */
 export async function mockSSE(
   page: Page,
   events: Array<{ type: string; data: Record<string, unknown>; id?: string }>,
 ): Promise<void> {
-  // EventStream uses es.onmessage (the default event handler), so we must
-  // NOT set the SSE `event:` line -- a named event would go to a different
-  // handler the SPA never wires up. Instead we put the event `type` inside
-  // the data payload; parseFrames() in EventStream.tsx then sets e.type from
-  // the parsed JSON and dispatches accordingly.
   let fired = false
   await page.route('**/api/runs/*/events', async (route: Route) => {
     if (fired) {
@@ -695,17 +695,14 @@ export async function mockSSE(
       return
     }
     fired = true
-    // KNOWN LIMITATION: EventStream.tsx uses es.onmessage + parseFrames()
-    // which requires `curType` to be set. The real BE sends `event: <type>`
-    // lines (named events) which the browser does NOT deliver to onmessage.
-    // So in production, the approval modal also doesn't open via SSE -- there
-    // is a separate bug to file. Until that's fixed, the e2e tests that
-    // depend on approval.requested are marked test.skip.
     const body = events
       .map((e) => {
         const lines: string[] = []
         if (e.id) lines.push('id: ' + e.id)
-        lines.push('data: ' + JSON.stringify({ type: e.type, ...e.data }))
+        // Set the `event:` line so EventSource dispatches to the typed
+        // addEventListener handler registered by EventStream.tsx.
+        lines.push('event: ' + e.type)
+        lines.push('data: ' + JSON.stringify(e.data))
         lines.push('')
         lines.push('')
         return lines.join('\n')

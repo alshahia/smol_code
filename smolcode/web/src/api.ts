@@ -210,6 +210,10 @@ export interface StreamEvent {
     | 'error'
     | 'subagent.started'
     | 'subagent.ended'
+    // Phase 2 (decision 0025 sec 6.4): pause/resume lifecycle.
+    | 'run.paused'
+    | 'run.resumed'
+    // SSE close-frame emitted by the BE when the run ends.
     | 'end'
   run_id?: string
   task?: string

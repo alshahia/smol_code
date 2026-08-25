@@ -2,12 +2,27 @@
 // Opens an EventSource on /api/runs/{id}/events, parses each frame,
 // and renders events chronologically. Calls onApprovalRequest when
 // an approval.requested arrives so the parent can show a modal.
-
+//
 // Phase 0 (decision 0025, FE-3):
 //   - Render subagent.started / subagent.ended events as a nested
 //     <SubAgentBlock> child of the parent's outer step.action row.
 //   - Bump hard truncation from 2000 -> 8000 chars for thought /
 //     code_action / observations with a Show full <details> toggle.
+//
+// Decision 0030: dispatch via addEventListener per type.
+//
+// The BE (runs.py:_encode_event) always emits named SSE frames
+// (\`event: <type>\` followed by \`data: <json>\`). The browser's
+// EventSource API only dispatches named events to handlers
+// registered via \`addEventListener(<type>, ...)\` -- the
+// \`onmessage\` shorthand only fires for default-type events
+// (no \`event:\` line). The previous implementation relied on
+// \`onmessage\` + a buffer-based \`parseFrames\` parser, which
+// silently dropped every named event. That meant approval
+// modals, run-end, step events, etc. were never rendered in
+// production. We now pre-register a handler for every known
+// event type; each MessageEvent's \`data\` is the full JSON
+// payload, no SSE-frame parsing needed.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StreamEvent } from '../api'
@@ -67,39 +82,45 @@ interface Props {
   onFinal?: (result: string | null, error: string | null) => void
 }
 
-function parseFrames(raw: string): StreamEvent[] {
-  const out: StreamEvent[] = []
-  let cur: Partial<StreamEvent> = {}
-  let dataBuf = ''
-  let curType = ''
-  for (const line of raw.split(String.fromCharCode(10))) {
-    if (line.startsWith(':')) continue
-    if (line.startsWith('event:')) {
-      curType = line.slice(6).trim()
-      cur.type = curType as StreamEvent['type']
-    } else if (line.startsWith('data:')) {
-      dataBuf += line.slice(5).trim()
-    } else if (line === '') {
-      if (curType && dataBuf) {
-        try {
-          const data = JSON.parse(dataBuf)
-          out.push({ ...cur, ...data, type: curType as StreamEvent['type'] } as StreamEvent)
-        } catch {
-          /* malformed, skip */
-        }
-      }
-      cur = {}
-      dataBuf = ''
-      curType = ''
-    }
+// Decision 0030: every event type the BE can emit (runs.py EVT_*
+// constants). We register a single addEventListener per type so
+// every named SSE frame reaches the dispatch loop. Keep this in
+// sync with smolcode/src/smolcode/web/runs.py EVT_* constants.
+const KNOWN_EVENT_TYPES: StreamEvent['type'][] = [
+  'run.started',
+  'run.ended',
+  'plan.step',
+  'step.action',
+  'step.final_answer',
+  'approval.requested',
+  'approval.decided',
+  'diff.proposed',
+  'diff.resolved',
+  'error',
+  'subagent.started',
+  'subagent.ended',
+  // Phase 2 (decision 0025 sec 6.4): pause/resume lifecycle.
+  'run.paused',
+  'run.resumed',
+  // SSE close-frame emitted by the BE when the run ends.
+  'end',
+]
+
+function parseEventData(type: StreamEvent['type'], dataStr: string): StreamEvent | null {
+  if (!dataStr) return null
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(dataStr)
+  } catch {
+    // Malformed JSON; drop the frame rather than crash the SPA.
+    return null
   }
-  return out
+  return { ...data, type } as StreamEvent
 }
 
 export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal }: Props) {
   const [events, setEvents] = useState<StreamEvent[]>([])
   const [status, setStatus] = useState<string>('connecting')
-  const bufRef = useRef<string>('')
   const esRef = useRef<EventSource | null>(null)
   // Phase 0 (decision 0025, FE-3): the sub-agent group structure is
   // derived from the events list on every render. Cheap (linear in
@@ -109,55 +130,58 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
   useEffect(() => {
     setEvents([])
     setStatus('connecting')
-    bufRef.current = ''
     const url = '/api/runs/' + encodeURIComponent(runId) + '/events'
     const es = new EventSource(url)
     esRef.current = es
 
-    const handler = (ev: MessageEvent) => {
-      bufRef.current += ev.data + '\n'
-      const idx = bufRef.current.indexOf('\n')
-      if (idx >= 0) {
-        const complete = bufRef.current.slice(0, idx + 2)
-        bufRef.current = bufRef.current.slice(idx + 2)
-        const parsed = parseFrames(complete)
-        for (const e of parsed) {
-          setEvents((prev) => [...prev, e])
-          if (e.type === 'approval.requested' && onApprovalRequest) {
-            onApprovalRequest(
-              String(e.decision_id || ''),
-              String(e.tool || ''),
-              e.args || {},
-              String(e.summary || ''),
-            )
-          }
-          if (e.type === 'diff.proposed' && onDiffProposed) {
-            onDiffProposed(
-              String(e.decision_id || ''),
-              String(e.tool || ''),
-              e.args || {},
-              String(e.summary || ''),
-              String(e.path || ''),
-              String(e.rel_path || ''),
-              String(e.before || ''),
-              String(e.after || ''),
-              String(e.raw_diff || ''),
-              e.hunks || [],
-              e.stats || null,
-            )
-          }
-          if (e.type === 'run.ended' && onFinal) {
-            onFinal(e.result ?? null, e.error ?? null)
-            setStatus(String(e.status || 'done'))
-          }
-          if (e.type === 'end') {
-            setStatus(String(e.status || status))
-            es.close()
-          }
-        }
+    // Decision 0030: one dispatcher shared by every typed handler.
+    // Each MessageEvent already represents a single complete SSE
+    // frame -- its \`data\` is the JSON payload the BE encoded, no
+    // SSE-frame parsing needed here.
+    const dispatch = (type: StreamEvent['type']) => (ev: MessageEvent) => {
+      const evt = parseEventData(type, ev.data)
+      if (!evt) return
+      setEvents((prev) => [...prev, evt])
+      if (type === 'approval.requested' && onApprovalRequest) {
+        onApprovalRequest(
+          String(evt.decision_id || ''),
+          String(evt.tool || ''),
+          evt.args || {},
+          String(evt.summary || ''),
+        )
+      }
+      if (type === 'diff.proposed' && onDiffProposed) {
+        onDiffProposed(
+          String(evt.decision_id || ''),
+          String(evt.tool || ''),
+          evt.args || {},
+          String(evt.summary || ''),
+          String(evt.path || ''),
+          String(evt.rel_path || ''),
+          String(evt.before || ''),
+          String(evt.after || ''),
+          String(evt.raw_diff || ''),
+          evt.hunks || [],
+          evt.stats || null,
+        )
+      }
+      if (type === 'run.ended' && onFinal) {
+        onFinal(evt.result ?? null, evt.error ?? null)
+        setStatus(String(evt.status || 'done'))
+      }
+      if (type === 'end') {
+        setStatus(String(evt.status || status))
+        es.close()
       }
     }
-    es.onmessage = handler
+
+    // Register a typed handler for every known BE event type. The
+    // browser will only dispatch a named event to its matching
+    // listener -- there is no catch-all. Unknown future types are
+    // silently dropped (which matches pre-fix behavior).
+    for (const t of KNOWN_EVENT_TYPES) {
+      es.addEventListener(t, dispatch(t))
+    }
     es.onerror = () => {
       if (es.readyState === EventSource.CLOSED) {
         setStatus('closed')
