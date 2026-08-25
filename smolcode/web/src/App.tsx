@@ -3,6 +3,18 @@
 // Left pane (Plan): RunComposer + upload zone + uploads + allowlist + run history
 // Center pane (Stream): live event stream for the active run + stop button
 // Right pane (Inspector): active run summary + tier policy cards
+//
+// v1.9.x (decision 0025 FE-5/6/7/8/9 + PW-4):
+//   - Mounts the Phase-3 keyboard router (lib/keyboard.ts) on mount.
+//   - Renders <Dashboard> as a modal overlay triggered by a header
+//     button (FE-1 + FE-8).
+//   - Tracks auto-approve-active flag client-side (Set<runId>) and
+//     renders <AutoApproveBanner> when active for the current run
+//     (FE-6 / B10).
+//   - Renders <RunActions> (Retry / Re-run / Export) in the stream
+//     header when the active run is terminal (FE-7 / B4 + B5 + B7).
+//   - Forwards onAutoApproveToggle to <ApprovalModal> so the modal can
+//     report auto-approve flips to the parent.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { TierBadge } from './components/TierBadge'
@@ -22,6 +34,11 @@ import { SessionsPane } from './components/SessionsPane'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { QueuePane } from './components/QueuePane'
 import { FilePreview } from './components/FilePreview'
+// v1.9.x: new components
+import { Dashboard } from './components/Dashboard'
+import { AutoApproveBanner } from './components/AutoApproveBanner'
+import { RunActions } from './components/RunActions'
+import { installKeyboardRouter } from './lib/keyboard'
 import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
 import {
@@ -30,6 +47,7 @@ import {
   listUploads,
   listRuns,
   postApproval,
+  postStop,
   type ConfigResponse,
   type ProviderInfo,
   type UploadMetadata,
@@ -57,16 +75,7 @@ function App() {
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [storedKeyValue, setStoredKeyValue] = useState<string | null>(null)
 
-  // M12.5 (mobile): inspector pane visibility toggle. Persisted to
-  // localStorage so the user's choice survives reloads. Default `false`
-  // on narrow viewports (the inspector is hidden by default; the user
-  // taps the toggle to reveal it). The initial value is read from
-  // localStorage via the lazy `useState` initializer — runs ONCE on
-  // mount, no useEffect needed for the read. SSR-safe via the standard
-  // `typeof window` guard. The persist-back useEffect does NOT call
-  // setState (just localStorage.setItem) so it does not raise the
-  // `set-state-in-effect` oxlint warning that the M12.2 baseline
-  // already has 3 of in sibling components.
+  // M12.5 (mobile): inspector pane visibility toggle.
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return false
@@ -78,10 +87,7 @@ function App() {
     }
   })
 
-  // Phase 1 (decision 0025 §6.3): active project + chat session. Both
-  // hoisted to App so the SessionsPane, ProjectSwitcher, RunComposer,
-  // and every list-fetching callback can stay in sync. Persisted to
-  // localStorage so reloads restore the user's selection.
+  // Phase 1 (decision 0025 §6.3): active project + chat session.
   const [activeProject, setActiveProjectRaw] = useState<string | null>(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return null
@@ -93,12 +99,10 @@ function App() {
     }
   })
   // Phase 2 (decision 0025 §6.4): the path of the file currently shown
-  // in the <FilePreview> pane. null when no file is selected. Clicking
-  // a file in the WorkspaceTree sets this; the pane renders inline
-  // below the Inspector.
+  // in the <FilePreview> pane.
   const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null)
   // Phase 2: bump to force the QueuePane to re-fetch after a new run
-  // starts (the auto-enqueue path on POST /api/runs).
+  // starts.
   const [queueRefreshTrigger, setQueueRefreshTrigger] = useState<number>(0)
   const setActiveProject = (p: string | null) => {
     setActiveProjectRaw(p)
@@ -113,6 +117,17 @@ function App() {
   }
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [projectRefreshTrigger, setProjectRefreshTrigger] = useState<number>(0)
+
+  // v1.9.x (FE-8): Dashboard overlay open/close.
+  const [dashboardOpen, setDashboardOpen] = useState<boolean>(false)
+  // v1.9.x (FE-6 / B10): track which run has auto-approve active
+  // client-side so the AutoApproveBanner can show. We use a Set keyed
+  // by runId so a rerun/retry on the same id resets cleanly when
+  // activeRunId changes.
+  const [autoApproveRunIds, setAutoApproveRunIds] = useState<Set<string>>(
+    () => new Set<string>(),
+  )
+
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return
@@ -124,10 +139,6 @@ function App() {
     }
   }, [inspectorOpen])
 
-  // M15.3 (decision 0019): matchMedia-driven inspector breakpoint.
-  // Replaces the static @media (max-width: 900px) CSS rule from M12.5
-  // so the breakpoint respects OS zoom + Windows display scaling.
-  // Defaults to false (desktop) when matchMedia is unavailable.
   const isMobile = useMediaQuery('(max-width: 900px)')
 
   const refreshUploads = useCallback(async () => {
@@ -143,12 +154,6 @@ function App() {
     try {
       const r = await listRuns()
       setRuns(r.runs)
-      // Phase 0 (decision 0025, B9 fix): the previous implementation
-      // kept stale activeRun state when the active run was removed
-      // server-side (RunManager purged it after the window of history).
-      // We now CLEAR activeRun when the active id is no longer in the
-      // list -- a graceful "run is gone" UX instead of a 404 explosion
-      // in the Inspector.
       const active = r.runs.find((x) => x.id === activeRunId) ?? null
       setActiveRun(active)
     } catch {
@@ -161,11 +166,6 @@ function App() {
       try {
         const c = await getConfig()
         setConfig(c)
-        // M12 (decision 0015): on reload, prefer the user's last-used
-        // model when the last providerId matches the server default. If
-        // the user had picked a different provider last time, that
-        // selection is restored later in the providers-list effect below
-        // (where we have the catalog to validate against).
         const last = loadLast()
         const restoredProvider = c.provider
         const restoredModel =
@@ -182,8 +182,6 @@ function App() {
     })()
   }, [refreshUploads, refreshRuns])
 
-  // Load the provider catalog once. If config arrived before this resolves,
-  // match the initial selection against the list to grab its full info.
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -191,8 +189,6 @@ function App() {
         const r = await listProviders()
         if (cancelled) return
         setProviders(r.providers)
-        // M12: if the user picked a different provider last session,
-        // restore it now that we have the catalog to validate against.
         const last = loadLast()
         if (last && last.providerId.length > 0) {
           const info = r.providers.find((p) => p.id === last.providerId)
@@ -204,12 +200,9 @@ function App() {
           }
         }
       } catch (e) {
-        // Don't blow up the app if the catalog endpoint fails — just leave
-        // the header provider/model label blank.
         if (!cancelled) {
           setProviders([])
         }
-        // Surface via setError so users see it once on first load.
         setError((e as Error).message)
       }
     })()
@@ -218,7 +211,6 @@ function App() {
     }
   }, [])
 
-  // Whenever the selection changes, re-read the localStorage key for it.
   useEffect(() => {
     if (!selectedProviderId) {
       setStoredKeyValue(null)
@@ -227,7 +219,6 @@ function App() {
     setStoredKeyValue(getKey(selectedProviderId))
   }, [selectedProviderId])
 
-  // Poll run history every 5s to keep the list fresh (cheap; loopback).
   useEffect(() => {
     const id = window.setInterval(() => {
       void refreshRuns()
@@ -235,19 +226,41 @@ function App() {
     return () => window.clearInterval(id)
   }, [refreshRuns])
 
-  // Phase 1 (decision 0025 §6.3): refetch the sessions + uploads +
-  // workspace tree whenever the active project changes. Each list
-  // owns its own re-fetch on project-change so we don't need a
-  // central fan-out here. The SessionsPane re-fetches via its
-  // internal useEffect when `project` changes; WorkspaceTree + uploads
-  // re-fetch when refreshUploads / Inspector re-renders with the new
-  // project prop.
   useEffect(() => {
     void refreshUploads()
-    // Also bump the project refresh trigger so children that key off
-    // it (ProjectSwitcher dropdown) reload their options.
     setProjectRefreshTrigger((n) => n + 1)
   }, [activeProject, refreshUploads])
+
+  // v1.9.x (FE-8): mount the Phase-3 keyboard router on app startup.
+  // Handlers wire the global shortcuts (Cmd/Ctrl+Enter submit, Cmd/Ctrl+.
+  // stop, Cmd/Ctrl+K palette, Cmd/Ctrl+/ help) to actual UI actions.
+  // The submit handler clicks the first non-disabled composer submit
+  // button; the stop handler POSTs /api/runs/{id}/stop directly.
+  // palette + help open the Dashboard modal in v1.9.x (full palette UI
+  // is a future feature).
+  useEffect(() => {
+    return installKeyboardRouter({
+      submit: () => {
+        const btn = document.querySelector<HTMLButtonElement>(
+          '.plan-task .btn-primary:not([disabled])',
+        )
+        btn?.click()
+      },
+      stop: () => {
+        if (activeRunId) {
+          void postStop(activeRunId).catch(() => {
+            /* surfaced via the stream */
+          })
+        }
+      },
+      palette: () => {
+        setDashboardOpen(true)
+      },
+      help: () => {
+        setDashboardOpen(true)
+      },
+    })
+  }, [activeRunId])
 
   const selectedProvider: ProviderInfo | null = useMemo(() => {
     if (!selectedProviderId) return null
@@ -257,7 +270,6 @@ function App() {
   const handleProviderChange = (providerId: string, defaultModel: string) => {
     setSelectedProviderId(providerId)
     setSelectedModel(defaultModel)
-    // M12 (decision 0015): persist for cross-reload restore.
     saveLast(providerId, defaultModel)
   }
 
@@ -269,9 +281,6 @@ function App() {
     setActiveRunId(runId)
     setActiveRun(null)
     void refreshRuns()
-    // Phase 2: bump so the QueuePane immediately re-fetches; the new
-    // run may have been auto-queued (when an active run was in
-    // flight) and we want it visible without waiting for the 5s poll.
     setQueueRefreshTrigger((n) => n + 1)
   }
 
@@ -306,9 +315,6 @@ function App() {
       hunks: Array.isArray(hunks) ? (hunks as PendingApproval['hunks']) : undefined,
       stats: (stats && typeof stats === 'object') ? (stats as PendingApproval['stats']) : undefined,
     })
-    // Phase 0 (decision 0025, B11): bump the tree refresh trigger so
-    // the Inspector's WorkspaceTree re-fetches on this event instead
-    // of waiting for its 10s poll.
     setTreeRefreshTrigger((n) => n + 1)
     void refreshRuns()
   }
@@ -328,6 +334,35 @@ function App() {
     }
   }
 
+  // v1.9.x (FE-6 / B10): ApprovalModal reports auto-approve flips.
+  const onAutoApproveToggle = (active: boolean) => {
+    if (!activeRunId) return
+    setAutoApproveRunIds((prev) => {
+      const next = new Set(prev)
+      if (active) next.add(activeRunId)
+      else next.delete(activeRunId)
+      return next
+    })
+  }
+
+  // v1.9.x (FE-6): banner Disable also clears the flag.
+  const onAutoApproveDisable = () => {
+    onAutoApproveToggle(false)
+  }
+
+  // v1.9.x (FE-6): clear flag when active run changes (rerun / retry /
+  // new run). Otherwise stale flag from a previous run would persist.
+  useEffect(() => {
+    if (activeRun && (activeRun.status === 'done' || activeRun.status === 'error' || activeRun.status === 'stopped')) {
+      setAutoApproveRunIds((prev) => {
+        if (!prev.has(activeRun.id)) return prev
+        const next = new Set(prev)
+        next.delete(activeRun.id)
+        return next
+      })
+    }
+  }, [activeRun?.id, activeRun?.status])
+
   if (error) {
     return (
       <div className="error-screen">
@@ -345,8 +380,6 @@ function App() {
   }
 
   const tierNames = config.tiers.map((t) => t.name)
-  // The header dropdown lists tiers supported by the web API.
-  // full_access is intentionally omitted (the API rejects it; decision 0012).
   const switcherTiers = tierNames.filter((t) => t !== 'full_access')
   const runTerminal =
     activeRun !== null &&
@@ -363,15 +396,20 @@ function App() {
           className="inspector-toggle btn btn-secondary"
           aria-expanded={inspectorOpen}
           aria-controls="inspector-pane"
-          // M15.3 (decision 0019): JS-driven visibility so the toggle
-          // only appears when the matchMedia breakpoint is active.
-          // Replaces the CSS .inspector-toggle { display: none } +
-          // @media (max-width: 900px) { .inspector-toggle { display: inline-flex } }
-          // pair, which did not respond to OS zoom changes.
           style={{ display: isMobile ? 'inline-flex' : 'none' }}
           onClick={() => setInspectorOpen((v) => !v)}
         >
           {inspectorOpen ? 'Inspector ▴' : 'Inspector ▾'}
+        </button>
+        {/* v1.9.x (FE-8): Dashboard launcher */}
+        <button
+          type="button"
+          className="btn btn-secondary dashboard-open"
+          aria-expanded={dashboardOpen}
+          aria-controls="dashboard-overlay"
+          onClick={() => setDashboardOpen((v) => !v)}
+        >
+          {dashboardOpen ? 'Dashboard ▴' : 'Dashboard ▾'}
         </button>
         <div className="ws" title={config.workspace}>
           {config.workspace.split(/[\\/]/).slice(-2).join('/')}
@@ -473,8 +511,19 @@ function App() {
         <main className="pane stream">
           <div className="stream-header">
             <h3>Execution stream</h3>
+            {/* v1.9.x (FE-7): in-flight StopButton OR terminal RunActions */}
             {activeRunId && !runTerminal && <StopButton runId={activeRunId} onStopped={() => void refreshRuns()} />}
+            {activeRunId && runTerminal && (
+              <RunActions
+                runId={activeRunId}
+                onRestart={(resp) => onSubmitted(resp.run_id)}
+              />
+            )}
           </div>
+          {/* v1.9.x (FE-6): mid-run banner above the event stream */}
+          {activeRunId && autoApproveRunIds.has(activeRunId) && (
+            <AutoApproveBanner runId={activeRunId} onDisable={onAutoApproveDisable} />
+          )}
           {activeRunId ? (
             <EventStream
               runId={activeRunId}
@@ -490,9 +539,6 @@ function App() {
         <aside
           id="inspector-pane"
           className="pane inspector"
-          // M15.3 (decision 0019): JS-driven visibility. On desktop
-          // (isMobile=false) the inspector is always visible. On mobile
-          // it follows `inspectorOpen` (localStorage-persisted).
           style={{ display: isMobile && !inspectorOpen ? 'none' : 'block' }}
         >
           <h3>Inspector</h3>
@@ -514,7 +560,36 @@ function App() {
         />
       )}
 
-      <ApprovalModal pending={pending} onDecide={onDecide} />
+      <ApprovalModal
+        pending={pending}
+        onDecide={onDecide}
+        onAutoApproveToggle={onAutoApproveToggle}
+      />
+
+      {/* v1.9.x (FE-8): Dashboard modal overlay */}
+      {dashboardOpen && (
+        <div
+          id="dashboard-overlay"
+          className="dashboard-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Dashboard"
+        >
+          <div className="dashboard-overlay-card">
+            <div className="dashboard-overlay-head">
+              <h2>Dashboard</h2>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setDashboardOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <Dashboard />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

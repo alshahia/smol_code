@@ -3,9 +3,18 @@
 // summary, args, and three buttons: Approve, Deny, Approve for rest of
 // run (auto).
 //
-// M10: when ``kind === 'diff'`` the modal renders a DiffViewer with
-// the proposed before/after content, plus an inline editor that lets
-// the user rewrite the proposed content (sent as ``edited_after``).
+// M10: when the kind field equals 'diff' the modal renders a
+// DiffViewer with the proposed before/after content plus an inline
+// editor that lets the user rewrite the proposed content (sent as
+// edited_after).
+//
+// v1.9.x (FE-6, B10): the modal additionally accepts an optional
+// onAutoApproveToggle callback. It is called with true when the
+// user clicks the 'no more prompts this run' button so the parent
+// can render a mid-run 'Auto-approve is ON' banner with a Disable
+// button. Disabling the underlying server-side flag requires a
+// followup endpoint; the client-side toggle only manages the
+// visible banner.
 
 import { useState } from 'react'
 import { DiffViewer } from './DiffViewer'
@@ -32,9 +41,15 @@ export interface PendingApproval {
 interface Props {
   pending: PendingApproval | null
   onDecide: (approved: boolean, reason: string, editedAfter: string | null) => void
+  /**
+   * v1.9.x (FE-6): invoked with true when the user clicks the
+   * 'no more prompts this run' button. The parent uses this to
+   * render the mid-run auto-approve banner.
+   */
+  onAutoApproveToggle?: (active: boolean) => void
 }
 
-export function ApprovalModal({ pending, onDecide }: Props) {
+export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props) {
   const [editedAfter, setEditedAfter] = useState<string | null>(null)
   if (!pending) return null
   const isDiff = pending.kind === 'diff'
@@ -46,6 +61,15 @@ export function ApprovalModal({ pending, onDecide }: Props) {
     }
   })()
   const effectiveAfter = editedAfter !== null ? editedAfter : (pending.after ?? '')
+  function approve(auto: boolean): void {
+    onDecide(true, auto ? 'auto-approve' : 'user-approved', editedAfter)
+    if (auto) onAutoApproveToggle?.(true)
+    setEditedAfter(null)
+  }
+  function deny(): void {
+    onDecide(false, 'user-denied', null)
+    setEditedAfter(null)
+  }
   return (
     <div className="approval-modal" role="dialog" aria-modal="true">
       <div className={'approval-card ' + (isDiff ? 'approval-card-wide' : '')}>
@@ -81,15 +105,15 @@ export function ApprovalModal({ pending, onDecide }: Props) {
           </div>
         ) : null}
         <div className="approval-actions">
-          <button className="btn btn-primary" onClick={() => { onDecide(true, 'user-approved', editedAfter); setEditedAfter(null) }}>
+          <button className="btn btn-primary" onClick={() => approve(false)}>
             {editedAfter !== null ? 'Apply + Approve' : 'Approve'}
           </button>
-          <button className="btn btn-danger" onClick={() => { onDecide(false, 'user-denied', null); setEditedAfter(null) }}>
+          <button className="btn btn-danger" onClick={deny}>
             Deny
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => { onDecide(true, 'auto-approve', editedAfter); setEditedAfter(null) }}
+            onClick={() => approve(true)}
           >
             Approve (no more prompts this run)
           </button>
