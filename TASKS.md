@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-08-25 (decision 0029 session, post 0028 ship)
+**Date:** 2026-08-26 (decision 0030 session, post 0029 ship)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -8,23 +8,24 @@ this file. The three stay in sync; this file is the readable summary.
 
 ---
 
-## 1. Current state (2026-08-25, end of decision 0029 session)
+## 1. Current state (2026-08-26, end of decision 0030 session)
 
 | Item | Status | Reference |
 |---|---|---|
-| HEAD | `TBD` (decision 0029 ship, 2 commits) | `git log -1` |
+| HEAD | `TBD` (decision 0030 ship, 2 commits) | `git log -1` |
 | Branch | `main`, ahead of `origin/main` by 0 (pushed) | `git status -sb` |
-| Pytest (BE, Python 3.12) | **1159 PASS / 0 FAIL / 5 SKIP** (unchanged — decision 0029 is FE-only) | `uv sync --locked --extra web && pytest src/smolcode/tests` |
-| Vitest (FE) | **64 PASS / 0 FAIL** (33 Phase 3 + 22 v1.9.x + 9 decision 0028; unchanged) | `pnpm test` from `smolcode/web/` |
-| pnpm build | **259.92 KB JS / 78.36 KB gzip** (under 400 KB target; +1.91 / +0.64 KB vs decision 0028 — bundle noise, e2e files not bundled) | `pnpm build` |
-| Playwright e2e | **34 PASS / 5 SKIP / 0 FAIL** (39 total: 3 smoke + 12 new spec files, 5 SSE-skipped due to EventStream bug, 1 pre-existing skip) | `pnpm test:e2e` (vite on :5173; BE mocked via page.route) |
+| Pytest (BE, Python 3.12) | **1159 PASS / 0 FAIL / 5 SKIP** (unchanged — decision 0030 is FE-only) | `uv sync --locked --extra web && pytest src/smolcode/tests` |
+| Vitest (FE) | **74 PASS / 0 FAIL** (33 Phase 3 + 22 v1.9.x + 9 decision 0028 + 10 decision 0030) | `pnpm test` from `smolcode/web/` |
+| pnpm build | **259.81 KB JS / 78.29 KB gzip** (under 400 KB target; -0.11 / -0.07 KB vs decision 0029 — net code simplification from removing the buffer + parseFrames machinery) | `pnpm build` |
+| Playwright e2e | **38 PASS / 1 SKIP / 0 FAIL** (39 total: 3 smoke + 12 new spec files; all 5 previously SSE-skipped tests now PASS; 1 pre-existing skip) | `pnpm test:e2e` (vite on :5173; BE mocked via page.route) |
 | Ruff check | 0 errors | `ruff check src tests` |
 | Ruff format | clean | `ruff format --check src` (101 files) |
 | Coverage | 82.33% (>=80% gate PASS) | pytest-cov |
 | uv.lock | `smolagents==1.26.0` from PyPI (was `1.27.0.dev0` from `../smolagents`) | `uv lock --check` |
 | FastAPI pin | `>=0.115,<0.137` (regression boundary = 0.137.0) | `pyproject.toml` |
-| Working tree | **decision 0029 in progress** (2 commits pending: code+tests+doc, TASKS.md) | `git status` |
-| Decision 0029 | applied (commits pending — 2-commit pattern matching 0027/0028) | `docs/decisions/0029-full-playwright-e2e-suite.md` |
+| Working tree | **decision 0030 in progress** (2 commits pending: code+tests+doc, TASKS.md) | `git status` |
+| Decision 0030 | applied (commits pending — 2-commit pattern matching 0027/0028/0029) | `docs/decisions/0030-fix-eventstream-sse-dispatch.md` |
+| Decision 0029 | shipped (commits `1c75cb4` + `4121b30`) | `docs/decisions/0029-full-playwright-e2e-suite.md` |
 | Decision 0028 | shipped (commits `240b25d` + `e72a07b`) | `docs/decisions/0028-per-subagent-cost-aggregation.md` |
 | Decision 0027 | shipped (commits `ba64f2d` + `ee2fd3b`) | `docs/decisions/0027-server-side-auto-approve-off.md` |
 
@@ -97,8 +98,10 @@ tests exist for CI environments with the tools available.
 | `e72a07b` | 2026-08-25 | **decision 0028 docs**: TASKS.md update for decision 0028 | - |
 | `TBD-0029-code` | 2026-08-25 | **decision 0029**: full Playwright e2e suite (13 files, +2270/-0) — `_helpers.ts` + 12 spec files; 39 e2e tests (34 pass + 5 SSE-skip) | +2270 |
 | `TBD-0029-docs` | 2026-08-25 | **decision 0029 docs**: TASKS.md update for decision 0029 | - |
+| `TBD-0030-code` | 2026-08-26 | **decision 0030**: fix EventStream.tsx SSE dispatch (6 files, +335/-50) — replaced `onmessage+parseFrames` buffer with per-type `addEventListener`; unblocks 5 e2e tests + fixes real production bug where approval modal never opens | +335 |
+| `TBD-0030-docs` | 2026-08-26 | **decision 0030 docs**: TASKS.md update for decision 0030 | - |
 
-All fourteen recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
+All sixteen recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 ---
 
@@ -235,9 +238,9 @@ Result: **1159 PASS / 0 FAIL / 5 SKIP** (1144 + 15 new). FE 64/64
 only (Settings.cost_rates plumbing deferred); no cache_hit
 attribution (no per-event cache_hit counter exists today).
 
-### 3.7 Decision 0029 — Full Playwright e2e suite (applied, 2 commits pending)
+### 3.7 Decision 0029 — Full Playwright e2e suite (shipped, commits `1c75cb4` + `4121b30`)
 
-**Owner:** applied 2026-08-25.
+**Owner:** shipped 2026-08-25.
 **Source:** `docs/decisions/0029-full-playwright-e2e-suite.md`.
 **Purpose:** close v1.9.x followup #4 — expand the 3-test smoke into a
 full e2e suite covering "submit task + wait for done + dashboard +
@@ -262,10 +265,10 @@ Key changes:
   queue (3), sessions (2), upload (3) = 36 tests, all pass.
 - 5 SSE-dependent tests marked `test.skip` with TODO notes (3 in
   `approval.spec.ts` + 2 in `auto-approve.spec.ts`) due to a real
-  bug in `EventStream.tsx` (see §4 followup + decision doc §6.1).
+  bug in `EventStream.tsx` (resolved in decision 0030).
 - The original 3-test `smoke.spec.ts` kept as-is (still 2 pass + 1 skip).
 
-Result: **34 PASS / 0 FAIL / 6 SKIP** (39 total e2e tests). FE vitest
+Result: **34 PASS / 0 FAIL / 5 SKIP** (39 total e2e tests). FE vitest
 64/64 unchanged (decision 0029 is test-only, no production code
 changes). `pnpm build` 259.92 KB / 78.36 KB gzip (+1.91 KB / +0.64 KB;
 e2e files not bundled — just bundle noise from re-emit). `tsc -b`
@@ -283,11 +286,73 @@ not in the new e2e files).
 
 **Limitations documented in §6 of the decision doc:**
 - 5 tests skipped due to `EventStream.tsx` SSE dispatch bug (real
-  production bug, not test-only).
+  production bug, not test-only) — **fixed in decision 0030**.
 - RunHistory click does not immediately update Inspector (UX papercut;
   works around via submit pattern).
 - Only chromium tested (firefox/webkit installed but unused).
 - No multi-browser CI matrix yet.
+
+### 3.8 Decision 0030 — Fix EventStream.tsx SSE dispatch (applied, 2 commits pending)
+
+**Owner:** applied 2026-08-26.
+**Source:** `docs/decisions/0030-fix-eventstream-sse-dispatch.md`.
+**Purpose:** close the v1.9.x "Fix EventStream SSE dispatch" followup
+introduced in decision 0029 §6.1. The bug was real (the approval
+modal never opens in production either, because the browser EventSource
+never delivers named events to `onmessage`), so this is a production
+fix, not a test-only change. The 5 e2e tests that were skipped in
+0029 (3 in `approval.spec.ts` + 2 in `auto-approve.spec.ts`) now pass.
+
+Key changes:
+
+- `smolcode/web/src/components/EventStream.tsx`: replaced the
+  `es.onmessage + bufferRef + parseFrames` pipeline with one
+  `addEventListener(<type>, handler)` per known BE event type. The
+  browser EventSource spec has no wildcard, so we pre-register a
+  handler for every `EVT_*` constant in `runs.py`.
+- `smolcode/web/src/api.ts`: added `'run.paused'` and `'run.resumed'`
+  to the `StreamEvent['type']` union (additive — BE has emitted them
+  since decision 0025, the union just omitted them).
+- `smolcode/web/src/__tests__/EventStream.test.tsx` (NEW, 10 tests):
+  vitest coverage that mocks EventSource and verifies (a) every
+  known type gets an `addEventListener` registration, (b) named
+  handlers fire correctly with the right parent callback, (c)
+  malformed JSON is dropped silently, (d) the EventSource is closed
+  on unmount + on `end` frame, (e) a new EventSource is created when
+  `runId` changes.
+- `smolcode/web/e2e/_helpers.ts`: `mockSSE` now sets the SSE
+  `event:` line so the mock matches the real BE format; the previous
+  workaround (omit `event:`, embed `type` in data) is no longer
+  needed. Also fixed the `mockBackend` approval regex from
+  `/api/runs/{id}/approvals$` (plural) to `/api/runs/{id}/approval$`
+  (singular) to match the actual `postApproval` URL the SPA issues.
+- `smolcode/web/e2e/approval.spec.ts` + `auto-approve.spec.ts`:
+  un-skipped all 5 tests and fixed the data-payload field name from
+  `decisionId` (camelCase) to `decision_id` (snake_case, matching
+  `agent_runner.py:377`).
+
+Result: **38 PASS / 0 FAIL / 1 SKIP** (39 total e2e tests; was 34/5/0;
++5 SSE tests recovered). FE vitest 74/74 (was 64/64; +10 new). `pnpm
+build` 259.81 KB / 78.29 KB gzip (slightly smaller — net code
+simplification from removing the buffer + parseFrames machinery).
+`tsc -b` clean. `pnpm lint` 12 warnings, 0 errors (all pre-existing
+in `src/`, 0 in new code).
+
+**Tradeoff considered and rejected** (decision doc §2.2): switching to
+`fetch + ReadableStream + custom SSE parser` would catch every event
+regardless of type but gives up EventSource auto-reconnect and adds
+more surface for bugs. The chosen approach (typed `addEventListener`)
+keeps the BE/FE contract explicit and requires only a one-line
+add to the `KNOWN_EVENT_TYPES` array when a new BE event type lands.
+
+**Limitations documented in §7 of the decision doc:**
+- Unknown BE event types are silently dropped (same as pre-fix;
+  matches behavior of the old `parseFrames`).
+- RunHistory click → no immediate Inspector update (UX papercut;
+  not introduced here; already worked around via submit pattern in
+  0029).
+- Multi-browser Playwright matrix still pending (0029 limitation;
+  out of scope for 0030).
 
 ---
 
@@ -299,7 +364,7 @@ not in the new e2e files).
 | Per-provider usage caps ("stop at $1") | Phase 3 sec 8 / decision 0025 sec 10.5 | 2-3d | v1.9.x |
 | ~~Per-subagent cost aggregation (currently shows tier/duration only)~~ DONE (decision 0028) | Phase 3 followup #3 | 0.5d | shipped |
 | ~~Full Playwright e2e suite (submit task + wait for done + dashboard + retry + export)~~ DONE (decision 0029, 34 pass + 5 SSE-skip) | Phase 3 followup #4 | 1d | shipped |
-| Fix EventStream.tsx SSE dispatch (add addEventListener for each event type, OR process default events with `type` in the data; unblocks 5 e2e tests + fixes a real production bug where the approval modal never opens) | decision 0029 §6.1 | 0.25d | v1.9.x |
+| ~~Fix EventStream.tsx SSE dispatch (add addEventListener for each event type, OR process default events with `type` in the data; unblocks 5 e2e tests + fixes a real production bug where the approval modal never opens)~~ DONE (decision 0030, 5 SSE tests recovered + 10 new vitest tests) | decision 0029 §6.1 | 0.25d | shipped |
 | Prompt library | decision 0025 sec 8 | 2d | v1.9.x |
 | Cross-project session search | Phase 1 Known limitations | 1d | low |
 | Auto-migrate orphaned sessions on project rename | Phase 1 Known limitations | 0.5d | low |
@@ -320,7 +385,7 @@ not in the new e2e files).
 |---|---|---|
 | **Docker daemon not reachable** (pipe `dockerDesktopLinuxEngine` missing in this env) | Docker Desktop not running | `pytest -m docker` deselected. Docker syntax + `iptables-init.sh` lint-checked by standalone CI; live execution requires a Docker-equipped runner. **NOT a code blocker** — smolcode's security model assumes a real Docker boundary; substituting a non-Docker executor would weaken it. |
 | **`shellcheck` not on PATH** | shellcheck not installed | `pytest -m shellcheck` deselected. Same as above — runs in CI, not here. |
-| **Decision 0029 TASKS.md update pending** | Sequential commit | Decision 0029 code+tests+doc landed (1 commit, 2 pending); this TASKS.md update is the second commit (matches 0026 + 0027 + 0028 pattern). Validation already passed (Playwright 34/5/0; vitest 64/64; build 259.92 KB). |
+| **Decision 0030 TASKS.md update pending** | Sequential commit | Decision 0030 code+tests+doc landed (1 commit, 2 pending); this TASKS.md update is the second commit (matches 0026 + 0027 + 0028 + 0029 pattern). Validation already passed (Playwright 38/1/0; vitest 74/74; build 259.81 KB). |
 | **No git push to `origin/main`** | RESOLVED 2026-08-24 (user fixed GitHub credential) | All ten recent commits visible on `origin/main` via `git ls-remote`. |
 
 ---
@@ -329,8 +394,9 @@ not in the new e2e files).
 
 | Decision | Status | Title |
 |---|---|---|
+| **0030** | **applied (commits pending, 2-commit pattern)** | **Fix EventStream.tsx SSE dispatch (closes decision 0029 §6.1 followup; also a real production bug). Replaced `es.onmessage + parseFrames` with one `addEventListener(<type>, handler)` per known BE event type; added `run.paused` + `run.resumed` to `StreamEvent['type']` union. NEW `__tests__/EventStream.test.tsx` (10 vitest cases). Un-skipped 5 e2e tests (3 approval + 2 auto-approve). e2e: 38/1/0 (was 34/5/0). vitest: 74/74 (was 64/64). build 259.81 KB / 78.29 KB gzip (slightly smaller). tsc + lint clean.** |
+| **0029** | **shipped (commits `1c75cb4` + `4121b30`)** | **Full Playwright e2e suite (closes v1.9.x followup #4). 12 new spec files (shell, keyboard, composer, dashboard, inspector, run-actions, run-history, queue, sessions, upload + 2 SSE-skipped) + `_helpers.ts` with `mockBackend` / `mockSSE` / factory functions. 39 e2e tests: 34 pass + 5 SSE-skip + 1 pre-existing skip. BE 1159/0/5 unchanged; vitest 64/64 unchanged; build 259.92 KB / 78.36 KB gzip. tsc + lint clean.** |
 | **0027** | **shipped (commits `ba64f2d` + `ee2fd3b`)** | **Server-side auto-approve OFF endpoint (closes FE-6 partial). `POST /api/runs/{id}/auto-approve {enabled: bool}` flips `session.auto_approve_destructive` atomically. FE `<AutoApproveBanner>` Disable + `<ApprovalModal>` auto-approve both reach the BE. 6 new BE tests; 1144 PASS / 0 FAIL / 5 SKIP.** |
-| **0029** | **applied (commits pending, 2-commit pattern)** | **Full Playwright e2e suite (closes v1.9.x followup #4). 12 new spec files (shell, keyboard, composer, dashboard, inspector, run-actions, run-history, queue, sessions, upload + 2 SSE-skipped) + `_helpers.ts` with `mockBackend` / `mockSSE` / factory functions. 39 e2e tests: 34 pass + 5 SSE-skip + 1 pre-existing skip. BE 1159/0/5 unchanged; vitest 64/64 unchanged; build 259.92 KB / 78.36 KB gzip. tsc + lint clean.** |
 | **0028** | **shipped (commits `240b25d` + `e72a07b`)** | **Per-sub-agent cost aggregation (closes v1.9.x followup #3). `<SubAgentList>` finally wired into Inspector + per-row `<CostBadge>` + token counts + "Sub-agents total" chip. BE: `Run.active_subagent_id` + token attribution in `publish` + `cost_usd` derived in `summary_dict` via `cost_for`. Pydantic `SubAgentSummary` gains `specialist` (gap fix) + `tokens_in/out` + `cost_usd`. 15 new BE tests + 9 new FE tests; 1159 PASS / 0 FAIL / 5 SKIP.** |
 | **0026** | **shipped (commits `620e322` + `9c1024a`)** | **Local Python/Frontend/Docker validation cleanup: `smolagents>=1.26.0,<1.27` PyPI pin, `fastapi>=0.115,<0.137` pin, `ModelListResponse.models: list[str]`, ruff drift fixes, `test_checkpoint.py` temp-isolation fix. 51 BE failures → 0 failures + 5 expected skips.** |
 | 0025 | phase-3-shipped (FE wire-up complete via v1.9.x commit `bec3ce9`) | Web UI/UX review + roadmap to v1.8 (+ v1.9.x FE followups) |
@@ -365,6 +431,7 @@ not in the new e2e files).
 - **Decision 0027 BE additions:** `POST /api/runs/{id}/auto-approve` endpoint + `SessionState.run_id` field + `set_auto_approve` / `get_auto_approve` helpers. See `docs/decisions/0027-server-side-auto-approve-off.md` §3 for the design rationale + §7 for the file-by-file spec.
 - **Decision 0028 additions:** `Run.active_subagent_id` (new field), per-sub-agent token attribution in `Run.publish`, `cost_usd` derivation in `Run.summary_dict`, `<SubAgentList>` wired into `<Inspector>`. See `docs/decisions/0028-per-subagent-cost-aggregation.md` §3 + §4 for the design rationale + file-by-file spec.
 - **Decision 0029 additions:** `smolcode/web/e2e/_helpers.ts` (mockBackend + mockSSE + factories) + 12 new spec files. Playwright 1.62.1 + chromium 1.62.1 (already installed in `$env:LOCALAPPDATA\ms-playwright\chromium-1234`). The 5 SSE-skipped tests share the same `EventStream.tsx` bug as production (see §6.1 of the decision doc + the new "Fix EventStream SSE dispatch" followup in §4). The `_helpers.ts` pattern (route mocking + factory functions) is reusable when wiring CI.
+- **Decision 0030 fix:** `EventStream.tsx` now registers one `addEventListener(<type>, ...)` per BE event type (runs.py EVT_* constants). The browser EventSource spec has no wildcard listener, so pre-registration is the only option. `KNOWN_EVENT_TYPES` in EventStream.tsx + `StreamEvent['type']` in api.ts must be kept in sync with the BE — if a new BE event type is added without a FE bump, it is silently dropped (same as pre-fix behavior). 10 new vitest cases in `EventStream.test.tsx` lock down the dispatch contract.
 
 ---
 
@@ -372,22 +439,22 @@ not in the new e2e files).
 
 If this file is the only thing the next session reads, do this:
 
-1. `git log --oneline -10` - confirm HEAD is the decision 0029 code+tests+doc commit or later.
-2. `git status -sb` - **expect only TASKS.md modified (decision 0029 docs commit pending)**.
-3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0029 - log 0028 ship + 0029 status`. Suggested split (matches 0026 + 0027 + 0028 pattern): (a) code + tests + decision doc; (b) TASKS.md. Both already done — this is the second commit.
+1. `git log --oneline -10` - confirm HEAD is the decision 0030 code+tests+doc commit or later.
+2. `git status -sb` - **expect only TASKS.md modified (decision 0030 docs commit pending)**.
+3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0030 - log 0029 ship + 0030 status`. Suggested split (matches 0026 + 0027 + 0028 + 0029 pattern): (a) code + tests + decision doc; (b) TASKS.md. Both already done — this is the second commit.
 4. **Or: work on remaining DEFERRED items** in §4. Recommended priority order:
    - ~~Per-subagent cost aggregation~~ DONE (decision 0028, commits `240b25d` + `e72a07b`)
-   - ~~Full Playwright e2e suite~~ DONE (decision 0029, 34/5/0)
-   - **Fix EventStream.tsx SSE dispatch** (0.25d, unblocks 5 e2e tests + fixes real production bug — recommended next)
-   - Drag-and-drop queue reorder (1d)
+   - ~~Full Playwright e2e suite~~ DONE (decision 0029, commits `1c75cb4` + `4121b30`)
+   - ~~Fix EventStream.tsx SSE dispatch~~ DONE (decision 0030, 38/1/0 + 74 vitest)
+   - **Drag-and-drop queue reorder** (1d, decision 0025 §8) — recommended next
    - Per-provider usage caps (2-3d)
    - IPv6 iptables enforcement (1d, decision 0021)
-   - Multi-browser Playwright matrix (0.25d, firefox + webkit once 0029 lands)
+   - Multi-browser Playwright matrix (0.25d, firefox + webkit now that the suite is green)
 5. **Or: open v2.0** scope planning (Monaco editor, multi-project workspaces, etc.) once v1.9.x followups are triaged.
 
 ---
 
 ## 9. Open questions for the user (if any)
 
-- **Decision 0029 commit granularity:** I committed as 2 commits (matching 0026 + 0027 + 0028 pattern). If you'd prefer a single squashed commit, the rewrite is `git reset --soft e72a07b && git commit --amend` + force-push. Just flag and I'll redo.
-- **Next v1.9.x followup after 0029:** my recommendation is the small "Fix EventStream.tsx SSE dispatch" item (0.25d, unblocks 5 e2e tests + fixes a real production bug where the approval modal never opens). After that: drag-and-drop queue reorder (1d), per-provider usage caps (2-3d), or multi-browser Playwright matrix (0.25d). Your call.
+- **Decision 0030 commit granularity:** I committed as 2 commits (matching 0026 + 0027 + 0028 + 0029 pattern). If you'd prefer a single squashed commit, the rewrite is `git reset --soft 4121b30~ && git commit --amend` + force-push. Just flag and I'll redo.
+- **Next v1.9.x followup after 0030:** my recommendation is the drag-and-drop queue reorder (1d, lowest-risk UX win). After that: per-provider usage caps (2-3d) or multi-browser Playwright matrix (0.25d — very cheap now that the suite is healthy). Your call.
