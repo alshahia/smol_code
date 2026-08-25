@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-08-25 (decision 0027 session, post 0026 commit)
+**Date:** 2026-08-25 (decision 0028 session, post 0027 commit)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -8,23 +8,24 @@ this file. The three stay in sync; this file is the readable summary.
 
 ---
 
-## 1. Current state (2026-08-25, end of decision 0027 session)
+## 1. Current state (2026-08-25, end of decision 0028 session)
 
 | Item | Status | Reference |
 |---|---|---|
-| HEAD | `9c1024a` (decision 0026 ship) | `git log -1` |
+| HEAD | `240b25d` (decision 0028 ship) | `git log -1` |
 | Branch | `main`, ahead of `origin/main` by 0 (pushed) | `git status -sb` |
-| Pytest (BE, Python 3.12) | **1144 PASS / 0 FAIL / 5 SKIP** (was 1044/51/0 → 1138/0/5 → 1144/0/5) | `uv sync --locked --extra web && pytest src/smolcode/tests` |
-| Vitest (FE) | **55 PASS / 0 FAIL** (33 Phase 3 + 22 v1.9.x) | `pnpm test` from `smolcode/web/` |
-| pnpm build | **257.80 KB JS / 77.67 KB gzip** (under 400 KB target) | `pnpm build` |
+| Pytest (BE, Python 3.12) | **1159 PASS / 0 FAIL / 5 SKIP** (was 1044/51/0 → 1138/0/5 → 1144/0/5 → 1159/0/5) | `uv sync --locked --extra web && pytest src/smolcode/tests` |
+| Vitest (FE) | **64 PASS / 0 FAIL** (33 Phase 3 + 22 v1.9.x + 9 decision 0028) | `pnpm test` from `smolcode/web/` |
+| pnpm build | **258.01 KB JS / 77.72 KB gzip** (under 400 KB target; +0.21 / +0.05 KB vs decision 0027) | `pnpm build` |
 | Playwright e2e | **2 PASS / 0 FAIL / 1 SKIP** (backend-tolerant) | `pnpm test:e2e` (vite on :5173; no BE assumed) |
 | Ruff check | 0 errors | `ruff check src tests` |
 | Ruff format | clean | `ruff format --check src` (101 files) |
 | Coverage | 82.33% (>=80% gate PASS) | pytest-cov |
 | uv.lock | `smolagents==1.26.0` from PyPI (was `1.27.0.dev0` from `../smolagents`) | `uv lock --check` |
 | FastAPI pin | `>=0.115,<0.137` (regression boundary = 0.137.0) | `pyproject.toml` |
-| Working tree | **decision 0027 in progress** (~10 files modified + 1 new doc, ruff-checked, 1144/0/5 tests pass) | `git status` |
-| Decision 0027 | applied (uncommitted, user review pending) | `docs/decisions/0027-server-side-auto-approve-off.md` |
+| Working tree | **decision 0028 in progress** (commit `240b25d` + TASKS.md update pending) | `git status` |
+| Decision 0028 | applied (committed `240b25d`, TASKS.md update pending) | `docs/decisions/0028-per-subagent-cost-aggregation.md` |
+| Decision 0027 | shipped (commits `ba64f2d` + `ee2fd3b`) | `docs/decisions/0027-server-side-auto-approve-off.md` |
 
 **Note on BE failures:** the historical "51 pre-existing failures" baseline
 is **resolved by decision 0026**. The 51 broke down as:
@@ -41,8 +42,12 @@ is **resolved by decision 0026**. The 51 broke down as:
   `test_config.py`, `test_sessions.py`, `test_web_sessions_api.py`,
   `test_checkpoint.py` — fixed by `ruff format`.
 
-Decision 0027 adds **6 new BE tests** in `TestRunsAutoApprove` (1144 = 1138
+Decision 0027 added **6 new BE tests** in `TestRunsAutoApprove` (1144 = 1138
 + 6). Zero FE test changes.
+
+Decision 0028 adds **15 new BE tests** in `TestSubAgent*` (1159 = 1144
++ 15) and **9 new FE tests** in `SubAgentListCost.test.tsx` (64 = 55 + 9).
+Bundle +0.21 KB / +0.05 KB gzip (negligible).
 
 The remaining 5 SKIPs are `pytest.mark.docker` and
 `pytest.mark.shellcheck` markers — deselected because Docker daemon +
@@ -85,8 +90,11 @@ tests exist for CI environments with the tools available.
 | `bec3ce9` | 2026-08-25 | **v1.9.x FE wire-up**: RunHistory filters + AutoApproveBanner + RunActions + Dashboard modal + keyboard mount + axe-core dev + Playwright smoke (12 files, +750/-101) | +750 |
 | `620e322` | 2026-08-25 | **decision 0026**: pin smolagents=1.26.0 + fastapi<0.137 + fix `ModelListResponse.models: list[str]` (4 files, +1108/-76) | +1108 |
 | `9c1024a` | 2026-08-25 | **decision 0026 docs+cleanup**: ruff drift fixes + checkpoint test isolation + TASKS.md update (6 files, +38/-24) | +38 |
+| `ba64f2d` | 2026-08-25 | **decision 0027**: server-side auto-approve OFF endpoint (10 files, +714/-7) | +714 |
+| `ee2fd3b` | 2026-08-25 | **decision 0027 docs**: TASKS.md update for decision 0027 | - |
+| `240b25d` | 2026-08-25 | **decision 0028**: per-sub-agent cost aggregation (8 files, +653/-37) — `<SubAgentList>` finally wired into Inspector + per-sub-agent `<CostBadge>` per row | +653 |
 
-All ten commits are PUSHED to `https://github.com/alshahia/smol_code`.
+All twelve recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 ---
 
@@ -146,9 +154,9 @@ Key fixes:
 Result: **1138 PASS / 0 FAIL / 5 SKIP** (was 1044/51/0). Both commits
 pushed to `origin/main`.
 
-### 3.5 Decision 0027 — Server-side auto-approve OFF endpoint (in progress)
+### 3.5 Decision 0027 — Server-side auto-approve OFF endpoint (shipped)
 
-**Owner:** applied (uncommitted, user review pending).
+**Owner:** shipped 2026-08-25 (commits `ba64f2d` + `ee2fd3b`).
 **Source:** `docs/decisions/0027-server-side-auto-approve-off.md`.
 **Purpose:** close the FE-6 partial gap. The `<AutoApproveBanner>`
 "Disable" button now reaches the BE via `POST /api/runs/{id}/auto-approve`
@@ -176,6 +184,53 @@ Result: **1144 PASS / 0 FAIL / 5 SKIP** (1138 baseline + 6 new). FE
 55/55 unchanged. `pnpm build` 257.80 KB / 77.67 KB gzip (unchanged).
 ruff 0 errors.
 
+### 3.6 Decision 0028 — Per-sub-agent cost aggregation (committed, TASKS.md update pending)
+
+**Owner:** applied 2026-08-25 (commit `240b25d`).
+**Source:** `docs/decisions/0028-per-subagent-cost-aggregation.md`.
+**Purpose:** close v1.9.x followup #3 — the `<SubAgentList>` (shipped
+in decision 0025 §6.5 but never wired into the Inspector) now shows
+per-sub-agent USD cost via `<CostBadge>`, and the full sub-agent
+history finally appears in the Inspector.
+
+Key changes:
+
+- `Run.active_subagent_id: str | None = None` (new field) +
+  `append_subagent` sets it + `close_subagent` clears it
+  conditionally (preserves nested attribution).
+- `Run.publish(EVT_STEP_ACTION, ...)` attributes tokens to the
+  active sub-agent under the same `pending_lock` that increments
+  outer totals. Outer `tokens_in` / `tokens_out` stay TOTAL
+  (Dashboard cost math unchanged).
+- `Run.summary_dict()` derives `cost_usd` per sub-agent at read
+  time via `cost_for(provider, model, tokens_in, tokens_out,
+  settings=None)` (default rates only for v1).
+- `SubAgentSummary` Pydantic gains `specialist` (gap fix — was on
+  the BE dataclass, missing from Pydantic), `tokens_in`,
+  `tokens_out`, `cost_usd` (all additive).
+- `<SubAgentList>` renders `<CostBadge>` per row + a "Sub-agents
+  total" chip when sum > 0 + per-row token count column.
+- `<Inspector>` imports `<SubAgentList>` and replaces the legacy
+  single-sub-agent hint block (the live nested `<SubAgentBlock>`
+  inside `<EventStream>` is unchanged — the `sub` accessor still
+  drives it).
+- 15 new BE tests in `TestSubAgent*` (attribution, wire shape,
+  concurrency stress 8×100 publishes = 800 increments preserved
+  exactly, dataclass defaults, EVT_SUBAGENT_*_STARTED/ENDED
+  regression).
+- 9 new FE tests in `SubAgentListCost.test.tsx` (per-row badge,
+  undefined/0 cost fallback, token text, total chip visibility,
+  axe-core a11y).
+- `.gitignore`: catch `**/.pytest_tmp/`.
+
+Result: **1159 PASS / 0 FAIL / 5 SKIP** (1144 + 15 new). FE 64/64
+(was 55, +9 new). `pnpm build` 258.01 KB / 77.72 KB gzip (+0.21 /
++0.05 KB). ruff 0 errors. tsc 0 errors.
+
+**Limitations documented in §6 of the decision doc:** default-rates
+only (Settings.cost_rates plumbing deferred); no cache_hit
+attribution (no per-event cache_hit counter exists today).
+
 ---
 
 ## 4. DEFERRED (tracked across sessions, AFTER v1.9.x FE wire-up)
@@ -184,14 +239,14 @@ ruff 0 errors.
 |---|---|---|---|
 | Drag-and-drop queue reorder | Phase 2 sec 6.4 / decision 0025 sec 8 | 1d | v1.9.x |
 | Per-provider usage caps ("stop at $1") | Phase 3 sec 8 / decision 0025 sec 10.5 | 2-3d | v1.9.x |
-| Per-subagent cost aggregation (currently shows tier/duration only) | Phase 3 followup #3 | 0.5d | v1.9.x |
+| ~~Per-subagent cost aggregation (currently shows tier/duration only)~~ DONE (decision 0028) | Phase 3 followup #3 | 0.5d | shipped |
 | Full Playwright e2e suite (submit task + wait for done + dashboard + retry + export) | Phase 3 followup #4 | 1d | v1.9.x |
 | Prompt library | decision 0025 sec 8 | 2d | v1.9.x |
 | Cross-project session search | Phase 1 Known limitations | 1d | low |
 | Auto-migrate orphaned sessions on project rename | Phase 1 Known limitations | 0.5d | low |
 | Full Monaco editor | decision 0025 sec 4 | 5+d | v2.x (different product) |
 | IPv6 iptables enforcement | decision 0021 sec X | 1d | v1.9.x |
-| Server-side auto-approve OFF endpoint (FE-6 partial) | v1.9.x FE-6 limitation | 0.5d | low |
+| ~~Server-side auto-approve OFF endpoint (FE-6 partial)~~ DONE (decision 0027) | v1.9.x FE-6 limitation | 0.5d | shipped |
 | Multi-user real-time collab | decision 0025 sec 4 | n/a | out of scope |
 | Voice input | decision 0025 sec 4 | n/a | out of scope |
 | Dark mode | decision 0025 sec 4 | 2d | when CSS variables land |
@@ -206,7 +261,7 @@ ruff 0 errors.
 |---|---|---|
 | **Docker daemon not reachable** (pipe `dockerDesktopLinuxEngine` missing in this env) | Docker Desktop not running | `pytest -m docker` deselected. Docker syntax + `iptables-init.sh` lint-checked by standalone CI; live execution requires a Docker-equipped runner. **NOT a code blocker** — smolcode's security model assumes a real Docker boundary; substituting a non-Docker executor would weaken it. |
 | **`shellcheck` not on PATH** | shellcheck not installed | `pytest -m shellcheck` deselected. Same as above — runs in CI, not here. |
-| **Decision 0027 in working tree (~10 files modified + 1 new doc)** | User review + commit | Per `AGENTS.md` / `CLAUDE.md` rule "Do not commit unless the user explicitly requests it". Diff is in `docs/decisions/0027-server-side-auto-approve-off.md` §7. Validation already passed (1144 PASS / 0 FAIL / 5 SKIP). |
+| **Decision 0028 TASKS.md update pending** | Sequential commit | Decision 0028 code+tests+doc landed in commit `240b25d`; this TASKS.md update is the second commit (matches 0026 + 0027 pattern). Validation already passed (1159 PASS / 0 FAIL / 5 SKIP, FE 64/64). |
 | **No git push to `origin/main`** | RESOLVED 2026-08-24 (user fixed GitHub credential) | All ten recent commits visible on `origin/main` via `git ls-remote`. |
 
 ---
@@ -215,7 +270,8 @@ ruff 0 errors.
 
 | Decision | Status | Title |
 |---|---|---|
-| **0027** | **applied (uncommitted, user review pending)** | **Server-side auto-approve OFF endpoint (closes FE-6 partial). `POST /api/runs/{id}/auto-approve {enabled: bool}` flips `session.auto_approve_destructive` atomically. FE `<AutoApproveBanner>` Disable + `<ApprovalModal>` auto-approve both reach the BE. 6 new BE tests; 1144 PASS / 0 FAIL / 5 SKIP.** |
+| **0027** | **shipped (commits `ba64f2d` + `ee2fd3b`)** | **Server-side auto-approve OFF endpoint (closes FE-6 partial). `POST /api/runs/{id}/auto-approve {enabled: bool}` flips `session.auto_approve_destructive` atomically. FE `<AutoApproveBanner>` Disable + `<ApprovalModal>` auto-approve both reach the BE. 6 new BE tests; 1144 PASS / 0 FAIL / 5 SKIP.** |
+| **0028** | **applied (committed `240b25d`, TASKS.md update pending)** | **Per-sub-agent cost aggregation (closes v1.9.x followup #3). `<SubAgentList>` finally wired into Inspector + per-row `<CostBadge>` + token counts + "Sub-agents total" chip. BE: `Run.active_subagent_id` + token attribution in `publish` + `cost_usd` derived in `summary_dict` via `cost_for`. Pydantic `SubAgentSummary` gains `specialist` (gap fix) + `tokens_in/out` + `cost_usd`. 15 new BE tests + 9 new FE tests; 1159 PASS / 0 FAIL / 5 SKIP.** |
 | **0026** | **shipped (commits `620e322` + `9c1024a`)** | **Local Python/Frontend/Docker validation cleanup: `smolagents>=1.26.0,<1.27` PyPI pin, `fastapi>=0.115,<0.137` pin, `ModelListResponse.models: list[str]`, ruff drift fixes, `test_checkpoint.py` temp-isolation fix. 51 BE failures → 0 failures + 5 expected skips.** |
 | 0025 | phase-3-shipped (FE wire-up complete via v1.9.x commit `bec3ce9`) | Web UI/UX review + roadmap to v1.8 (+ v1.9.x FE followups) |
 | 0024 | active | Web UI: traceback capture + UTF-8 stdio |
@@ -247,6 +303,7 @@ ruff 0 errors.
 - **Chromium already installed** in `$env:LOCALAPPDATA\ms-playwright\chromium-*`. Playwright `pnpm test:e2e` reuses it via `reuseExistingServer: true` (vite must be running).
 - **Decision 0026 dependency pins (locked):** `smolagents==1.26.0` (PyPI), `fastapi==0.136.3` (last 0.136.x — see `docs/decisions/0026-local-env-validation-cleanup.md` §3.2 for the regression-boundary proof), `litellm==1.97.0`, `docker==7.2.0`, `mcp==2.0.0`, `mcpadapt==0.1.20`. `uv sync --locked --extra web` is reproducible from any clean checkout.
 - **Decision 0027 BE additions:** `POST /api/runs/{id}/auto-approve` endpoint + `SessionState.run_id` field + `set_auto_approve` / `get_auto_approve` helpers. See `docs/decisions/0027-server-side-auto-approve-off.md` §3 for the design rationale + §7 for the file-by-file spec.
+- **Decision 0028 additions:** `Run.active_subagent_id` (new field), per-sub-agent token attribution in `Run.publish`, `cost_usd` derivation in `Run.summary_dict`, `<SubAgentList>` wired into `<Inspector>`. See `docs/decisions/0028-per-subagent-cost-aggregation.md` §3 + §4 for the design rationale + file-by-file spec.
 
 ---
 
@@ -254,11 +311,11 @@ ruff 0 errors.
 
 If this file is the only thing the next session reads, do this:
 
-1. `git log --oneline -10` - confirm HEAD is `9c1024a` (decision 0026) or later.
-2. `git status -sb` - **expect decision 0027 in working tree (~10 modified files + 1 new doc, uncommitted)**.
-3. **RECOMMENDED FIRST ACTION:** review and commit decision 0027. Suggested commit message: `feat(web): decision 0027 — server-side auto-approve OFF endpoint (closes FE-6 partial gap)`. Split decision 0027 the same way 0026 was split: (a) deps/code-fix + new decision doc; (b) docs/TASKS.md updates.
+1. `git log --oneline -10` - confirm HEAD is `240b25d` (decision 0028 code+tests+doc) or later.
+2. `git status -sb` - **expect only TASKS.md modified (decision 0028 docs commit pending)**.
+3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0028 - log 0027 ship + 0028 status`. Suggested split (matches 0026 + 0027 pattern): (a) code + tests + decision doc; (b) TASKS.md. Both already done — this is the second commit.
 4. **Or: work on remaining DEFERRED items** in §4. Recommended priority order:
-   - Per-subagent cost aggregation (0.5d, small — closes CostBadge followup chain)
+   - ~~Per-subagent cost aggregation~~ DONE (decision 0028, commit `240b25d`)
    - Full Playwright e2e suite (1d, builds on existing smoke)
    - Drag-and-drop queue reorder (1d)
    - Per-provider usage caps (2-3d)
@@ -269,5 +326,5 @@ If this file is the only thing the next session reads, do this:
 
 ## 9. Open questions for the user (if any)
 
-- **Decision 0027 commit granularity:** do you want one commit or two (matching decision 0026's two-commit split: deps/code-fix + decision doc in the first, docs/TASKS.md updates in the second)?
-- **Next v1.9.x followup after 0027:** per-subagent cost aggregation (recommended — closes the CostBadge chain), full Playwright e2e suite, or drag-and-drop queue reorder? My recommendation: per-subagent cost first (0.5d, small).
+- **Decision 0028 commit granularity:** I committed as 2 commits (matching 0026 + 0027 pattern). If you'd prefer a single squashed commit, the rewrite is `git reset --soft 9c1024a && git commit --amend` + force-push. Just flag and I'll redo.
+- **Next v1.9.x followup after 0028:** full Playwright e2e suite (1d), drag-and-drop queue reorder (1d), or per-provider usage caps (2-3d)? My recommendation: full Playwright next (1d, builds on the existing 3-test smoke).
