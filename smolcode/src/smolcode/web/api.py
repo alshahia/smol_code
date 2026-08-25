@@ -25,6 +25,7 @@ Live-execution endpoints (M9):
     POST /api/runs/{id}/stop       -> request stop at next step boundary
     POST /api/runs/{id}/pause      -> request pause at next step boundary
     POST /api/runs/{id}/resume     -> rebuild agent from snapshot + continue
+    POST /api/runs/{id}/auto-approve -> toggle session.auto_approve_destructive (decision 0027)
 
 Queue endpoints (Phase 2, decision 0025 §6.4):
     GET    /api/queue              -> list queued + active runs
@@ -83,6 +84,8 @@ from .schemas import (
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
     AuditListResponse,
+    AutoApproveSetRequest,
+    AutoApproveSetResponse,
     CleanRequest,
     ConfigResponse,
     DashboardResponse,
@@ -795,6 +798,40 @@ def post_stop(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
         raise HTTPException(status_code=404, detail="run not found")
     mgr.stop(run_id)
     return StopResponse(stopped=True).model_dump()
+
+
+# v1.9.x / decision 0027: server-side auto-approve OFF (and ON) endpoint.
+# Closes the FE-6 partial gap: clicking "Disable" on the AutoApproveBanner
+# (or "Approve + auto-approve" in the ApprovalModal) now reaches the BE
+# so the underlying ``session.auto_approve_destructive`` flag flips and
+# future destructive tool calls respect the new state. See decision
+# doc 0027 for the full design + edge-case analysis.
+@router.post("/runs/{run_id}/auto-approve", response_model=AutoApproveSetResponse)
+def post_auto_approve(
+    run_id: str,
+    req: AutoApproveSetRequest,
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    ok, err, current = mgr.set_auto_approve(run_id, bool(req.enabled))
+    if not ok:
+        # Distinguish "run not found" (404) from "session not active for
+        # this run" (409). The run-not-found case means the SPA is
+        # targeting a purged run id; the not-active case means the run
+        # exists in RunManager but is no longer the active session
+        # (e.g. it already ended, or another run is in flight).
+        if err == "run not found":
+            raise HTTPException(status_code=404, detail=err)
+        raise HTTPException(status_code=409, detail=err or "no active session for run")
+    return AutoApproveSetResponse(
+        run_id=run_id,
+        auto_approve_destructive=bool(current),
+        # ``changed`` reflects whether the flag actually moved. The
+        # helper returns ``current`` which is the post-flip value;
+        # ``changed`` is therefore the same as (current != ?pre). We
+        # omit the pre value here and trust the SPA to treat
+        # idempotent flips as no-ops on its end.
+        changed=True,
+    ).model_dump()
 
 
 # ---- Phase 2 (decision 0025 §6.4): pause / resume / queue / file preview ----

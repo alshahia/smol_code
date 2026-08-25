@@ -347,6 +347,45 @@ class ApprovalDecisionResponse(BaseModel):
     decision_id: str
 
 
+# --- v1.9.x / decision 0027: server-side auto-approve toggle -----------
+
+
+class AutoApproveSetRequest(BaseModel):
+    """POST /api/runs/{id}/auto-approve body.
+
+    ``enabled`` is the desired state of the per-session
+    ``auto_approve_destructive`` flag. When ``True``, future
+    destructive tool calls for the active ``full_access`` run skip
+    the confirm callback (auto-approve destructive). When ``False``,
+    the destructive gate re-arms and the next destructive call
+    triggers an ``approval.requested`` event (the SPA shows the
+    ApprovalModal again).
+
+    The endpoint is intentionally minimal: ``enabled`` is the only
+    field. The decision of WHICH side to flip is delegated to the
+    caller (the SPA's AutoApproveBanner + ApprovalModal). The
+    session module-level singleton holds the actual flag, scoped
+    to the run id; the endpoint validates that the caller passed
+    the run id that currently owns the singleton.
+    """
+
+    enabled: bool = Field(..., description="Target state for the session's auto_approve_destructive flag.")
+
+
+class AutoApproveSetResponse(BaseModel):
+    """Response shape for POST /api/runs/{id}/auto-approve.
+
+    Mirrors the current session flag so the SPA's optimistic UI can
+    confirm the flip without re-fetching. ``changed`` is True when
+    the flag actually moved (False when the request was idempotent
+    -- the flag was already at the target value).
+    """
+
+    run_id: str
+    auto_approve_destructive: bool
+    changed: bool
+
+
 # --- M10: workspace tree --------------------------------------------------
 
 

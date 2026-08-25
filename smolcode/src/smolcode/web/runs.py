@@ -804,6 +804,28 @@ class RunManager:
         run.stop_flag.set()
         return True
 
+    # v1.9.x / decision 0027: server-side auto-approve OFF endpoint.
+    # Returns ``(ok, error)``; ``ok=False`` with a reason means the
+    # endpoint should respond 409 (no active session for this run).
+    # On success, the session's ``auto_approve_destructive`` flag is
+    # flipped; the next destructive gate call (shell.py / git.py
+    # forward()) sees the new value through ``current_session()``.
+    def set_auto_approve(self, run_id, enabled):
+        from ..session import get_auto_approve as _get, set_auto_approve as _set
+
+        # 404 first so a stale run id (run already ended + purged)
+        # returns the same status as POST /stop etc.
+        run = self.get(run_id)
+        if run is None:
+            return False, "run not found", None
+        # ``_set`` validates run_id against the active session.
+        ok, err = _set(run_id, enabled)
+        if not ok:
+            return False, err, None
+        # Read back so the caller (API layer) can return the new state
+        # in the response body (helpful for the SPA's optimistic UI).
+        return True, None, _get(run_id)
+
     # Phase 2 (decision 0025 §6.4): pause / resume. ``pause_run`` sets
     # the run's ``pause_flag``; the step callback raises
     # ``_PauseRequested`` on the next step boundary (in

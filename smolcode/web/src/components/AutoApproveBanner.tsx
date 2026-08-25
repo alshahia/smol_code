@@ -1,8 +1,10 @@
-// v1.9.x (decision 0025 sec 3.10 / B10): mid-run "Auto-approve is ON" banner
-// shown while a run has auto-approve-destructive enabled. Clicking
-// Disable lets the user turn the indicator off client-side; the
-// backend's per-session state continues to auto-approve future prompts
-// (full BE disabling requires a followup endpoint).
+// v1.9.x (decision 0025 sec 3.10 / B10 + decision 0027): mid-run
+// "Auto-approve is ON" banner shown while a run has
+// auto-approve-destructive enabled. Clicking Disable now reaches
+// the BE via POST /api/runs/{id}/auto-approve (decision 0027) so
+// the underlying session flag flips too -- future destructive
+// prompts re-arm the ApprovalModal instead of being silently
+// auto-approved.
 
 import React from 'react'
 

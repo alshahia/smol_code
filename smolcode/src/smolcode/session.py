@@ -83,6 +83,15 @@ class SessionState:
     # exactly as before (CLI / tests without a web session).
     diff_callback: DiffCallback | None = None
     auto_approve_diff: bool = False  # flipped by auto_approve_now=True in DiffDecision
+    # v1.9.x / decision 0027: the run id this session belongs to.
+    # ``None`` for CLI sessions (no run id) and for the default
+    # SessionState returned by current_session() when no session is
+    # installed. The web's POST /api/runs/{id}/auto-approve endpoint
+    # uses this to validate that the caller is targeting the run that
+    # currently owns the singleton (RunManager only allows one active
+    # run, but the endpoint is called over HTTP and may target a
+    # stale id).
+    run_id: str | None = None
 
 
 _session: SessionState | None = None
@@ -124,6 +133,62 @@ def _ensure_default_session():
             _session = SessionState()
 
 
+def set_auto_approve(run_id, enabled):
+    """Flip the active session's ``auto_approve_destructive`` flag.
+
+    Decision 0027: server-side auto-approve OFF endpoint. The web
+    SPA's <AutoApproveBanner> calls this when the user clicks
+    "Disable" so the underlying session stops auto-approving future
+    destructive prompts. Also used by the ON path: when the user
+    clicks "Approve + auto-approve" in the ApprovalModal, the FE
+    mirrors that flip here so the BE's destructive gate sees it.
+
+    Validation: the caller MUST pass the run id that owns the
+    current session. Returns ``(ok, error)``:
+
+    - ``(False, "no active session")`` when ``set_session(None)`` was
+      called (run already ended) or no session was ever installed.
+    - ``(False, "session is for a different run")`` when the active
+      session's ``run_id`` does not match ``run_id`` (the FE called
+      against a stale run id).
+    - ``(True, None)`` on success.
+
+    The flag flip is atomic under ``_session_lock`` so a concurrent
+    tool forward() reading ``current_session().auto_approve_destructive``
+    sees a consistent value (Lock held only for the assignment).
+    """
+    global _session
+    with _session_lock:
+        s = _session
+        if s is None:
+            return False, "no active session"
+        if s.run_id is not None and s.run_id != run_id:
+            return False, "session is for a different run"
+        # When the session has no run_id (CLI), trust the caller and
+        # flip unconditionally. CLI tests install SessionState() with
+        # run_id=None.
+        s.auto_approve_destructive = bool(enabled)
+    return True, None
+
+
+def get_auto_approve(run_id):
+    """Return the active session's ``auto_approve_destructive`` flag.
+
+    Returns ``None`` when no active session is installed OR when the
+    active session's ``run_id`` does not match ``run_id``. Returns
+    the boolean flag value on a match (or on a session with no
+    run_id, e.g. CLI). Used by the FE to refresh the banner state
+    on page reload / cross-run navigation.
+    """
+    with _session_lock:
+        s = _session
+        if s is None:
+            return None
+        if s.run_id is not None and s.run_id != run_id:
+            return None
+        return bool(s.auto_approve_destructive)
+
+
 __all__ = [
     "DestructiveCallback",
     "DestructiveDecision",
@@ -133,6 +198,10 @@ __all__ = [
     "current_session",
     "get_session",
     "set_session",
+    # v1.9.x / decision 0027: server-side auto-approve toggle helpers
+    # used by POST /api/runs/{id}/auto-approve.
+    "set_auto_approve",
+    "get_auto_approve",
     # Phase 1 (decision 0025 §6.3): chat-session storage helpers.
     "resolve_project_root",
     "session_dir_for",

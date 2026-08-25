@@ -372,6 +372,33 @@ export async function postStop(runId: string): Promise<{ stopped: boolean }> {
   )
 }
 
+// v1.9.x / decision 0027: server-side auto-approve toggle.
+// Flips the active session's auto_approve_destructive flag so the
+// destructive gate (shell.py / git.py forward() in the BE) sees the
+// new value. Called from:
+// - AutoApproveBanner "Disable" button (enabled=false)
+// - ApprovalModal "Approve + auto-approve" button (enabled=true)
+// 404 when the run is not in the manager; 409 when the run is
+// inactive (no session currently owns the singleton).
+export interface AutoApproveSetResponse {
+  run_id: string
+  auto_approve_destructive: boolean
+  changed: boolean
+}
+
+export async function postAutoApprove(
+  runId: string,
+  enabled: boolean,
+): Promise<AutoApproveSetResponse> {
+  return jsonOrThrow(
+    await fetch("/api/runs/" + encodeURIComponent(runId) + "/auto-approve", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
+  )
+}
+
 // --- Phase 2 (decision 0025 §6.4): pause / resume / queue / file preview ----
 
 export interface QueueEntry {

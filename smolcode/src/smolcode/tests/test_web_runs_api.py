@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 
 import pytest
@@ -315,6 +316,178 @@ class TestRunsApprovalEditedAfter:
             "resolved": False,
             "decision_id": "unknown-decision",
         }
+
+
+# ---- v1.9.x / decision 0027: server-side auto-approve toggle ----------
+
+
+class TestRunsAutoApprove:
+    def test_auto_approve_unknown_run_returns_404(self, client):
+        r = client.post(
+            "/api/runs/no-such-run/auto-approve",
+            json={"enabled": False},
+        )
+        assert r.status_code == 404
+
+    def test_auto_approve_rejects_missing_body(self, client):
+        """Pydantic v2 returns 422 for missing required fields. Empty
+        body is also 422 (the ``enabled`` field has no default)."""
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        run_id = rr.json()["run_id"]
+        r = client.post("/api/runs/" + run_id + "/auto-approve", json={})
+        assert r.status_code == 422
+
+    def test_auto_approve_rejects_nonboolean_body(self, client):
+        """``enabled`` must be bool-coercible. Pydantic v2 lenient
+        coerces ``"yes"`` / ``"true"`` / ``1`` to True (documented
+        behavior); an array value is unambiguously NOT a bool."""
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        run_id = rr.json()["run_id"]
+        r = client.post(
+            "/api/runs/" + run_id + "/auto-approve", json={"enabled": [1, 2, 3]}
+        )
+        assert r.status_code == 422
+
+    def test_auto_approve_returns_409_when_session_not_yet_active(self, client):
+        """The stub agent runs synchronously inside the request
+        handler so by the time the test issues POST /auto-approve the
+        agent thread has already torn down the session. The endpoint
+        returns 409 with detail='no active session'.
+
+        We assert the *shape* of the 409 (NOT the exact text, which
+        may evolve) so the test does not couple to internal wording.
+        """
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        run_id = rr.json()["run_id"]
+        # Let the stub finish so the session is cleared.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            r = client.get("/api/runs/" + run_id)
+            if r.json()["status"] in ("done", "error", "stopped"):
+                break
+            time.sleep(0.05)
+        r = client.post(
+            "/api/runs/" + run_id + "/auto-approve", json={"enabled": True}
+        )
+        assert r.status_code == 409
+        assert "session" in r.json()["detail"].lower()
+
+    def test_auto_approve_flips_session_flag_while_run_active(self, client, monkeypatch):
+        """Drive the endpoint DURING the run by monkeypatching the
+        stub agent to block on a threading.Event so the session stays
+        installed; the test flips the flag via POST /auto-approve and
+        asserts ``session.auto_approve_destructive`` matches. Then
+        it releases the agent and asserts the response body shape.
+        """
+        from smolagents import CodeAgent
+        from smolcode.models import _StubLiteLLMModel
+        from smolcode.tools import build_tools
+        from smolcode.web import agent_runner as ar
+        from smolcode.web import create_app
+
+        # Build a NEW client (not the shared fixture) so we can wire
+        # a blocking stub without affecting other tests.
+        for k in list(os.environ):
+            if k.startswith("SMOLCODE_"):
+                monkeypatch.delenv(k, raising=False)
+        import tempfile
+
+        workspace = tempfile.mkdtemp(prefix="smolcode-autoapprove-")
+        monkeypatch.setenv("SMOLCODE_WORKSPACE", workspace)
+        monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")
+        monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
+        monkeypatch.setenv("SMOLCODE_LOG_LEVEL", "WARNING")
+
+        proceed = threading.Event()
+        run_started = threading.Event()
+
+        class _BlockingStub(CodeAgent):
+            def __init__(self, _run):
+                self.tools = []
+                self.model = _StubLiteLLMModel()
+                self.max_steps = 4
+                self.step_callbacks = type("CB", (), {"register": lambda self, cls, cb: None})()
+
+            def run(self, task):
+                run_started.set()
+                # Park here so the session stays installed while the
+                # test fires POST /auto-approve against it.
+                proceed.wait(timeout=10)
+                return "stub-final-answer"
+
+            def cleanup(self):
+                pass
+
+        # Patch the build helper so the agent we get back is our blocker.
+        monkeypatch.setattr(ar, "_build_agent_for_run", lambda run, settings: _BlockingStub(run))
+        app = create_app()
+        with TestClient(app) as c:
+            rr = c.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+            assert rr.status_code == 201
+            run_id = rr.json()["run_id"]
+            # Wait until the blocking stub is parked.
+            assert run_started.wait(timeout=5), "agent did not start"
+
+            from smolcode.session import get_session
+
+            # Sanity: session is installed and belongs to this run.
+            sess_before = get_session()
+            assert sess_before is not None
+            assert sess_before.run_id == run_id
+            assert sess_before.auto_approve_destructive is False
+
+            # Flip ON.
+            r = c.post(
+                "/api/runs/" + run_id + "/auto-approve",
+                json={"enabled": True},
+            )
+            assert r.status_code == 200
+            assert r.json() == {
+                "run_id": run_id,
+                "auto_approve_destructive": True,
+                "changed": True,
+            }
+            # Confirm the singleton actually moved.
+            sess_after_on = get_session()
+            assert sess_after_on.auto_approve_destructive is True
+
+            # Flip OFF.
+            r = c.post(
+                "/api/runs/" + run_id + "/auto-approve",
+                json={"enabled": False},
+            )
+            assert r.status_code == 200
+            assert r.json()["auto_approve_destructive"] is False
+            sess_after_off = get_session()
+            assert sess_after_off.auto_approve_destructive is False
+
+            # Release the blocked agent so the test fixture can tear
+            # down cleanly.
+            proceed.set()
+
+    def test_auto_approve_rejects_wrong_run_id(self, client, monkeypatch):
+        """Two concurrent runs: a POST against run A while run B owns
+        the session must return 409. RunManager prevents concurrent
+        starts so we drive this by holding run B in a blocking stub
+        then issuing POST against a different run id (which doesn't
+        exist in the manager)."""
+        rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
+        assert rr.status_code == 201
+        # Stub agent finishes synchronously, so the session is gone.
+        # Calling against the (already-finished) run id should 409
+        # because there's no active session for it.
+        run_id = rr.json()["run_id"]
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            r = client.get("/api/runs/" + run_id)
+            if r.json()["status"] in ("done", "error", "stopped"):
+                break
+            time.sleep(0.05)
+        # Session cleared -> 409 (vs 404 because the run record is still there).
+        r = client.post(
+            "/api/runs/" + run_id + "/auto-approve", json={"enabled": True}
+        )
+        assert r.status_code == 409
 
 
 # ---- M10: Workspace tree endpoint --------------------------------------

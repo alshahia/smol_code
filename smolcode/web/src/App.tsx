@@ -47,6 +47,7 @@ import {
   listUploads,
   listRuns,
   postApproval,
+  postAutoApprove,
   postStop,
   type ConfigResponse,
   type ProviderInfo,
@@ -334,7 +335,14 @@ function App() {
     }
   }
 
-  // v1.9.x (FE-6 / B10): ApprovalModal reports auto-approve flips.
+  // v1.9.x (FE-6 / B10) + decision 0027: ApprovalModal reports
+  // auto-approve flips; the FE clears/sets the client-side flag AND
+  // POSTs to /api/runs/{id}/auto-approve so the BE's destructive gate
+  // sees the same state on the next tool call. We best-effort the
+  // POST: a stale run id (run already ended) returns 404/409, which
+  // we silently swallow since the client-side state is the source
+  // of truth for the banner. The next page reload will resync via
+  // the session's actual flag.
   const onAutoApproveToggle = (active: boolean) => {
     if (!activeRunId) return
     setAutoApproveRunIds((prev) => {
@@ -343,9 +351,13 @@ function App() {
       else next.delete(activeRunId)
       return next
     })
+    void postAutoApprove(activeRunId, active).catch(() => {
+      /* surfaced via the stream on the next destructive prompt */
+    })
   }
 
-  // v1.9.x (FE-6): banner Disable also clears the flag.
+  // v1.9.x (FE-6): banner Disable also clears the flag (delegates to
+  // the toggle above so the BE POST happens through one code path).
   const onAutoApproveDisable = () => {
     onAutoApproveToggle(false)
   }

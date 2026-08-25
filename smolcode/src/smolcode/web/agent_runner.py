@@ -603,12 +603,19 @@ def run_in_thread(run, settings):
     import os as _os
 
     diff_gate_on = _os.environ.get("SMOLCODE_WEB_DIFF_GATE", "1") != "0"
+    # v1.9.x / decision 0027: tag the session with the run id so
+    # POST /api/runs/{id}/auto-approve can validate that the caller
+    # is targeting THIS run's session (vs a stale id from the SPA's
+    # in-memory state). RunManager only allows one active run at a
+    # time, so the session singleton is unambiguous while a run is
+    # in flight.
     session = SessionState(
         tier=run.tier,
         auto_approve_destructive=False,
         confirm_callback=_build_confirm_callback(run, destructive_timeout),
         audit_sink=run.audit_sink,
         diff_callback=_build_diff_callback(run, destructive_timeout) if diff_gate_on else None,
+        run_id=run.id,
     )
     set_session(session)
 
