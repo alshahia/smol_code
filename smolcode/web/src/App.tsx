@@ -16,7 +16,7 @@
 //   - Forwards onAutoApproveToggle to <ApprovalModal> so the modal can
 //     report auto-approve flips to the parent.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TierBadge } from './components/TierBadge'
 import { TierSwitcher } from './components/TierSwitcher'
 import { UploadDropZone } from './components/UploadDropZone'
@@ -62,6 +62,14 @@ function App() {
   const [uploads, setUploads] = useState<UploadMetadata[]>([])
   const [tier, setTier] = useState<string>('restricted')
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  // Decision 0033: ref mirror of activeRunId so the global keyboard
+  // router (installed once, never re-installed) reads the live value at
+  // fire-time. Closes a webkit-only race where Ctrl+. fired in the
+  // window between setActiveRunId and the next useEffect commit.
+  const activeRunIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeRunIdRef.current = activeRunId
+  }, [activeRunId])
   const [activeRun, setActiveRun] = useState<RunSummary | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [pending, setPending] = useState<PendingApproval | null>(null)
@@ -249,8 +257,11 @@ function App() {
         btn?.click()
       },
       stop: () => {
-        if (activeRunId) {
-          void postStop(activeRunId).catch(() => {
+        // Read the ref so we always use the latest activeRunId, not the
+        // one captured when the router was installed (decision 0033).
+        const id = activeRunIdRef.current
+        if (id) {
+          void postStop(id).catch(() => {
             /* surfaced via the stream */
           })
         }
@@ -262,7 +273,9 @@ function App() {
         setDashboardOpen(true)
       },
     })
-  }, [activeRunId])
+    // No deps: the stop handler reads activeRunId via the ref (decision
+    // 0033) so re-installing on every activeRunId change is wasted work.
+  }, [])
 
   const selectedProvider: ProviderInfo | null = useMemo(() => {
     if (!selectedProviderId) return null

@@ -23,6 +23,12 @@ test('Ctrl+. posts /api/runs/{id}/stop when a run is active', async ({ page }) =
   await expect
     .poll(() => captured.find((c) => c.method === 'POST' && c.url.endsWith('/api/runs')), { timeout: 5000 })
     .toBeTruthy()
+  // Click on body so focus is on <body> (not the textarea) when the
+  // keydown fires. Decision 0033: webkit keeps focus on the textarea
+  // after the Run click (chromium / firefox move focus to <body>), so
+  // without this the editable-target check in lib/keyboard.ts blocks
+  // Ctrl+. from firing postStop.
+  await page.locator('body').click()
   await page.keyboard.press('Control+.')
   await expect
     .poll(() => captured.find((c) => /\/api\/runs\/[^/]+\/stop$/.test(c.url) && c.method === 'POST'), { timeout: 5000 })
