@@ -8,23 +8,24 @@ this file. The three stay in sync; this file is the readable summary.
 
 ---
 
-## 1. Current state (2026-08-26, end of decision 0032 session)
+## 1. Current state (2026-08-26, end of decision 0033 session)
 
 | Item | Status | Reference |
 |---|---|---|
-| HEAD | `TBD` (decision 0032 ship, 2 commits pending — branch `feat/decision-0032` already pushed at `3fdd831`) | `git log -1` |
-| Branch | `feat/decision-0032` (working tree); `main` is at `ba2c107` | `git status -sb` |
-| Pytest (BE, Python 3.12) | **1210 PASS / 0 FAIL / 5 SKIP** (was 1177; +33 new BE tests: 8 `TestParseCostCaps` + 4 `TestSettingsCostCaps` + 6 `TestCostCapTracker` + 4 `TestRunStartCapEnforcement` + 8 `TestCostCapsAPI` + 3 cost_usd in `TestByProviderCost`) | `uv run --frozen pytest src/smolcode/tests` |
-| Vitest (FE) | **93 PASS / 0 FAIL** (was 84; +9 new tests: 7 `UsageLimitsPanel` + 2 cost-cap cases in `Dashboard.test.tsx`) | `pnpm exec vitest run` from `smolcode/web/` |
-| pnpm build | **267.61 KB JS / 80.31 KB gzip** (was 262.49 / 79.16; +5.12 / +1.15 KB for usage-limits panel + cap column + CSS) | `pnpm build` |
-| Playwright e2e | **47 PASS / 1 SKIP / 0 FAIL** (was 43/1/0; +4 new usage-limits tests in `usage-limits.spec.ts`) | `pnpm exec playwright test` (vite on :5173; BE mocked via page.route) |
+| HEAD | `3bedacc` (decision 0033 shipped via branch `feat/decision-0033` fast-forwarded into `main`) | `git log -1` |
+| Branch | `main` (clean); `feat/decision-0033` retained on origin (`3bedacc`) for history | `git status -sb` |
+| Pytest (BE, Python 3.12) | **1218 PASS / 0 FAIL / 5 SKIP** (unchanged from 0032; 0033 touched FE only) | `uv run --frozen pytest src/smolcode/tests` |
+| Vitest (FE) | **93 PASS / 0 FAIL** (unchanged from 0032; the ref-based fix in `App.tsx` keeps existing tests green) | `pnpm exec vitest run` from `smolcode/web/` |
+| pnpm build | **267.69 KB JS / 80.34 KB gzip** (was 267.61 / 80.31; +0.08 / +0.03 KB for `useRef` + docstring) | `pnpm build` |
+| Playwright e2e | **141 PASS / 3 SKIP / 0 FAIL** (3 projects: chromium 47/1/0 + firefox 47/1/0 + webkit 47/1/0; same 47 tests × 3 browsers) | `pnpm exec playwright test` (vite on :5173; BE mocked via page.route) |
 | Ruff check | 0 errors | `ruff check src tests` |
 | Ruff format | 0 drift | `ruff format --check src` |
 | Coverage | >=80% gate PASS | pytest-cov |
 | uv.lock | unchanged (no new deps) | `uv lock --check` |
 | FastAPI pin | `>=0.115,<0.137` (unchanged) | `pyproject.toml` |
-| Working tree | decision 0032 code+tests+doc on `feat/decision-0032`; TASKS.md pending (this commit, then merge to main) | `git status` |
-| Decision 0032 | applied (branch pushed, 2-commit pattern matching 0026-0031 — this is the TASKS.md half) | `docs/decisions/0032-cost-caps.md` |
+| Working tree | clean on `main` at `3bedacc`; `feat/decision-0033` retained on origin | `git status` |
+| Decision 0033 | shipped (commits `3bedacc` code+tests+doc on `feat/decision-0033`, FF into `main`; this TASKS.md update is the second commit) | `docs/decisions/0033-multi-browser-playwright.md` |
+| Decision 0032 | shipped (commits `3fdd831` code+tests+doc + `5976a36` TASKS.md) | `docs/decisions/0032-cost-caps.md` |
 | Decision 0031 | shipped (commits `97bf127` + `ba2c107`) | `docs/decisions/0031-queue-reorder.md` |
 | Decision 0030 | shipped (commits `ddd3485` + `abd252e`) | `docs/decisions/0030-fix-eventstream-sse-dispatch.md` |
 | Decision 0029 | shipped (commits `1c75cb4` + `4121b30`) | `docs/decisions/0029-full-playwright-e2e-suite.md` |
@@ -109,8 +110,9 @@ tests exist for CI environments with the tools available.
 | `97bf127` | 2026-08-29 | **decision 0031**: drag-and-drop queue reorder (actual commit hash; supersedes the `TBD-0031-code` row above) | +1080 |
 | `ba2c107` | 2026-08-29 | **decision 0031 docs**: TASKS.md update for decision 0031 - log 0030 ship + 0031 status (actual hash; supersedes `TBD-0031-docs`) | - |
 | `3fdd831` | 2026-08-26 | **decision 0032 (branch `feat/decision-0032`)**: per-provider usage caps (22 files, +2056/-39) — `CostCapTracker` + `Settings.cost_caps` env + two-layer enforcement (Layer A `cost_cap_reached:` -> 429; Layer B `_StopRequested` -> `stopped`) + `GET/PUT /api/cost-caps` + `<UsageLimitsPanel>` + Dashboard cost-cap column; closes v1.9.x followup from decision 0025 §10.5; 36 new BE tests + 9 new vitest + 4 new e2e | +2056 |
+| `3bedacc` | 2026-08-26 | **decision 0033 (branch `feat/decision-0033`)**: multi-browser Playwright matrix (4 files, +154/-5) — adds `projects: [chromium, firefox, webkit]` to `playwright.config.ts`; same 47 tests × 3 browsers = 141 pass / 3 skip. Also fixed a webkit-only race in App.tsx where the global keyboard router's stop handler captured a stale `activeRunId`; mirror via `activeRunIdRef` so the handler reads live state. Keyboard.spec.ts bumped to click `<body>` before `Ctrl+.` (webkit keeps focus on the textarea after the Run click; chromium / firefox move focus to body). Closes v1.9.x followup 'Multi-browser Playwright matrix' (0.25d). No new tests, no new helpers, no new deps. | +154 |
 
-All eighteen recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
+All twenty recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
 
 ---
 
@@ -474,6 +476,7 @@ runs). Touch support is deferred (see §7 of the decision doc).
 | ~~Per-subagent cost aggregation (currently shows tier/duration only)~~ DONE (decision 0028) | Phase 3 followup #3 | 0.5d | shipped |
 | ~~Full Playwright e2e suite (submit task + wait for done + dashboard + retry + export)~~ DONE (decision 0029, 34 pass + 5 SSE-skip) | Phase 3 followup #4 | 1d | shipped |
 | ~~Fix EventStream.tsx SSE dispatch (add addEventListener for each event type, OR process default events with `type` in the data; unblocks 5 e2e tests + fixes a real production bug where the approval modal never opens)~~ DONE (decision 0030, 5 SSE tests recovered + 10 new vitest tests) | decision 0029 §6.1 | 0.25d | shipped |
+| ~~Multi-browser Playwright matrix (firefox + webkit)~~ DONE (decision 0033, 141/3/0 across 3 projects) | TASKS.md §4 v1.9.x followup | 0.25d | shipped |
 | Prompt library | decision 0025 sec 8 | 2d | v1.9.x |
 | Cross-project session search | Phase 1 Known limitations | 1d | low |
 | Auto-migrate orphaned sessions on project rename | Phase 1 Known limitations | 0.5d | low |
@@ -503,7 +506,8 @@ runs). Touch support is deferred (see §7 of the decision doc).
 
 | Decision | Status | Title |
 |---|---|---|
-| **0032** | **applied (branch `feat/decision-0032` @ `3fdd831`; TASKS.md commit pending — this is it)** | **Per-provider usage caps ("stop at $1", closes v1.9.x followup from decision 0025 §10.5). New `CostCapTracker` (web/cost_caps.py, thread-safe) + `Settings.cost_caps` (env `SMOLCODE_COST_CAPS=JSON`). Two-layer enforcement: Layer A rejects new runs whose today-spend >= cap (HTTP 429, reason prefix `cost_cap_reached:`); Layer B raises `_StopRequested(cost_cap_exceeded:<provider>:<cost>:<cap>)` mid-run so the run ends `stopped` not `error`. New `GET /api/cost-caps` + `PUT /api/cost-caps` endpoints (no auth, env defaults preserved across restarts). SPA: `<UsageLimitsPanel>` mounted under `<Dashboard>` (5th stat card `Cost today`, per-provider `Today / Cap` column with `<progress>` + `.over-cap` row class). NEW `test_cost_caps.py` (30 BE tests across 5 classes) + `UsageLimitsPanel.test.tsx` (7 vitest) + `usage-limits.spec.ts` (4 e2e). pytest: 1210/0/5 (was 1177/0/5; +33 new). vitest: 93/93 (was 84/84; +9 new). e2e: 47/1/0 (was 43/1/0; +4 new). build 267.61 KB / 80.31 KB gzip (was 262.49 / 79.16; +5.12 / +1.15 KB). tsc + lint + ruff format all clean. No new deps.** |
+| **0033** | **shipped (commits `3bedacc` code+tests+doc on `feat/decision-0033` FF into `main`; TASKS.md commit pending — this is it)** | **Multi-browser Playwright matrix (closes v1.9.x followup 'Multi-browser Playwright matrix', 0.25d). Adds `projects: [chromium, firefox, webkit]` to `playwright.config.ts` so the same 47 e2e tests run on all 3 engines (141 pass + 3 skip = 47 each). Discovered + fixed a webkit-only race in App.tsx: the global keyboard router's stop handler captured a stale `activeRunId` in its closure between `setActiveRunId` and the next useEffect commit; mirror via `activeRunIdRef` (live read at fire-time) so the handler is always current. Bumped keyboard.spec.ts to `body.click()` before `Ctrl+.` (webkit keeps focus on the textarea after the Run click; chromium / firefox move focus to body). No new tests, no new helpers, no new deps. pytest: 1218/0/5 (unchanged). vitest: 93/93 (unchanged). e2e: 141/3/0 (was 47/1/0 on chromium only; now 47 × 3 browsers). build 267.69 KB / 80.34 KB gzip (was 267.61 / 80.31; +0.08 / +0.03 KB for the ref + docstring). tsc + oxlint + ruff format all clean. Playwright 1.48 + firefox-1538 + webkit-2336 downloaded to `%LOCALAPPDATA%\ms-playwright\`.** |
+| **0032** | **shipped (commits `3fdd831` + `5976a36`)** | **Per-provider usage caps ("stop at $1", closes v1.9.x followup from decision 0025 §10.5). New `CostCapTracker` (web/cost_caps.py, thread-safe) + `Settings.cost_caps` (env `SMOLCODE_COST_CAPS=JSON`). Two-layer enforcement: Layer A rejects new runs whose today-spend >= cap (HTTP 429, reason prefix `cost_cap_reached:`); Layer B raises `_StopRequested(cost_cap_exceeded:<provider>:<cost>:<cap>)` mid-run so the run ends `stopped` not `error`. New `GET /api/cost-caps` + `PUT /api/cost-caps` endpoints (no auth, env defaults preserved across restarts). SPA: `<UsageLimitsPanel>` mounted under `<Dashboard>` (5th stat card `Cost today`, per-provider `Today / Cap` column with `<progress>` + `.over-cap` row class). NEW `test_cost_caps.py` (30 BE tests across 5 classes) + `UsageLimitsPanel.test.tsx` (7 vitest) + `usage-limits.spec.ts` (4 e2e). pytest: 1210/0/5 (was 1177/0/5; +33 new). vitest: 93/93 (was 84/84; +9 new). e2e: 47/1/0 (was 43/1/0; +4 new). build 267.61 KB / 80.31 KB gzip (was 262.49 / 79.16; +5.12 / +1.15 KB). tsc + lint + ruff format all clean. No new deps.** |
 | **0031** | **shipped (commits `97bf127` + `ba2c107`)** | **Drag-and-drop queue reorder (closes v1.9.x followup #1, decision 0025 §8 / §10.3). New `RunManager.move_queue` + `PATCH /api/queue/{id}` + HTML5 DnD + keyboard ↑/↓ buttons in `<QueuePane>`. Caught + fixed a deadlock in the no-op branch via the unit test for the same-position move. NEW `TestMoveQueue` (11 BE) + `TestRunsQueueMove` (7 BE) + `QueuePane.test.tsx` (10 vitest) + `queue-reorder.spec.ts` (5 e2e). e2e: 43/1/0 (was 38/1/0). vitest: 84/84 (was 74/74). pytest: 1177/0/5 (was 1159/0/5; +18 new). build 262.49 KB / 79.16 KB gzip (was 259.81 / 78.29; +0.57 / +1.00 KB). tsc + lint clean (12 warnings / 0 errors, all pre-existing). No new deps.** |
 | **0030** | **shipped (commits `ddd3485` + `abd252e`)** | **Fix EventStream.tsx SSE dispatch (closes decision 0029 §6.1 followup; also a real production bug). Replaced `es.onmessage + parseFrames` with one `addEventListener(<type>, handler)` per known BE event type; added `run.paused` + `run.resumed` to `StreamEvent['type']` union. NEW `__tests__/EventStream.test.tsx` (10 vitest cases). Un-skipped 5 e2e tests (3 approval + 2 auto-approve). e2e: 38/1/0 (was 34/5/0). vitest: 74/74 (was 64/64). build 259.81 KB / 78.29 KB gzip (slightly smaller). tsc + lint clean.** |
 | **0029** | **shipped (commits `1c75cb4` + `4121b30`)** | **Full Playwright e2e suite (closes v1.9.x followup #4). 12 new spec files (shell, keyboard, composer, dashboard, inspector, run-actions, run-history, queue, sessions, upload + 2 SSE-skipped) + `_helpers.ts` with `mockBackend` / `mockSSE` / factory functions. 39 e2e tests: 34 pass + 5 SSE-skip + 1 pre-existing skip. BE 1159/0/5 unchanged; vitest 64/64 unchanged; build 259.92 KB / 78.36 KB gzip. tsc + lint clean.** |
@@ -544,6 +548,8 @@ runs). Touch support is deferred (see §7 of the decision doc).
 - **Decision 0029 additions:** `smolcode/web/e2e/_helpers.ts` (mockBackend + mockSSE + factories) + 12 new spec files. Playwright 1.62.1 + chromium 1.62.1 (already installed in `$env:LOCALAPPDATA\ms-playwright\chromium-1234`). The 5 SSE-skipped tests share the same `EventStream.tsx` bug as production (see §6.1 of the decision doc + the new "Fix EventStream SSE dispatch" followup in §4). The `_helpers.ts` pattern (route mocking + factory functions) is reusable when wiring CI.
 - **Decision 0030 fix:** `EventStream.tsx` now registers one `addEventListener(<type>, ...)` per BE event type (runs.py EVT_* constants). The browser EventSource spec has no wildcard listener, so pre-registration is the only option. `KNOWN_EVENT_TYPES` in EventStream.tsx + `StreamEvent['type']` in api.ts must be kept in sync with the BE — if a new BE event type is added without a FE bump, it is silently dropped (same as pre-fix behavior). 10 new vitest cases in `EventStream.test.tsx` lock down the dispatch contract.
 - **Decision 0031 additions:** `RunManager.move_queue(run_id, new_position)` (runs.py:1073-1106) is the queue reorder primitive. 1-based position clamped to `[1, len]`]` (no 422 on stale FE state). Bool subclass of int is explicitly rejected. The no-op branch (`target_0based == cur_idx`) calls `_refresh_queue_positions()` OUTSIDE the lock — first version called it inside and deadlocked (`threading.Lock` is not reentrant). The unit test `test_move_to_same_position_is_noop` caught it (10s timeout) before it could ship. `<QueuePane>` rewrite (FE: 84 vitest pass) adds HTML5 drag-and-drop with row-midpoint "above/below" drop indicator + keyboard ↑/↓ buttons (`aria-label="Move {task} up/down"`). `refresh()` no longer calls `setErr(null)` so transient PATCH failures don't flash the error banner away. New CSS in `index.css` adds `.queue-pane` + `.queue-row` + `.queue-list` + `.active-row` rules (these classes existed in `QueuePane.tsx` since Phase 2 but had no matching styles) plus `.dragging` / `.drag-over-above` / `.drag-over-below` states. `_helpers.ts` PATCH branch + `move_queue_response` + `delays.move_queue` so e2e can drive success / failure paths. Queue.spec.ts Cancel selector tightened to `getByRole('button', { name: /^Cancel$/ })` after the broad `.queue-row button` selector broke when each row gained 3 buttons (move-up, move-down, cancel).
+- **Decision 0032 additions:** `CostCapTracker` (web/cost_caps.py) is a single-class thread-safe tracker; `Settings.cost_caps` is loaded from `SMOLCODE_COST_CAPS=JSON` and threaded through `__init__`, `with_executor`, `with_overrides`, `as_dict`. Reason prefix mapping is enforced in `agent_runner.py` step callback (`"cost_cap_exceeded:..."` -> `_StopRequested` -> `stopped` status) and in `runs.py` `start_or_enqueue_run` (`"cost_cap_reached:..."` -> `HTTPException(429)`). Run+start vs resumed+active: `resume_active_agent` does NOT receive the tracker, so the per-step cap check is skipped on the resumed leg of a paused run (per-day cap at original run-start still holds). See `docs/decisions/0032-cost-caps.md` §3 + §7 for the full design.
+- **Decision 0033 additions:** `playwright.config.ts` now declares `projects: [chromium, firefox, webkit]` using `devices` from `@playwright/test`. No per-project overrides beyond the device so failures are attributable to the engine, not config drift. `pnpm exec playwright test` runs all three sequentially (`workers: 1, fullyParallel: false`); `--project=<name>` runs one. firefox-1538 (153.0) and webkit-2336 (26.5) downloaded to `%LOCALAPPDATA%\ms-playwright\` (~150 MiB, ~2 min on first install). The `App.tsx` keyboard router now reads `activeRunId` via `activeRunIdRef.current` so the global listener is installed ONCE (mount-only, `useEffect(..., [])`) instead of reinstalled on every `setActiveRunId`. This closes a webkit-only race where `Ctrl+.` could fire between the old listener's tear-down and the new one's install — the old closure captured `activeRunId === null` and returned early. `keyboard.spec.ts` also bumped to `body.click()` before `Ctrl+.` (webkit keeps focus on the textarea after the Run click; chromium / firefox move focus to body). See `docs/decisions/0033-multi-browser-playwright.md` for the bug writeup + file-by-file spec.
 
 ---
 
@@ -551,16 +557,16 @@ runs). Touch support is deferred (see §7 of the decision doc).
 
 If this file is the only thing the next session reads, do this:
 
-1. `git log --oneline -10` - confirm HEAD is the decision 0032 code+tests+doc commit or later (or that `feat/decision-0032` is checked out / merged).
-2. `git status -sb` - **expect TASKS.md modified (decision 0032 docs commit pending)**.
-3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0032 - log 0031 ship + 0032 status`. Then merge `feat/decision-0032` to `main` so the two-commit pattern (code+tests+doc on branch, TASKS.md on main) lands atomically. The code+tests+doc half already lives at `feat/decision-0032 @ 3fdd831` (pushed).
+1. `git log --oneline -10` - confirm HEAD is `3bedacc` or later (decision 0033 code+tests+doc + this TASKS.md update on `main`).
+2. `git status -sb` - expect `main` clean; `feat/decision-0033` retained on origin (`3bedacc`) for history.
+3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0033 - log 0032 ship + 0033 status`. The code+tests+doc half already lives at `feat/decision-0033 @ 3bedacc` (FF'd into `main`).
 4. **Or: work on remaining DEFERRED items** in §4. Recommended priority order:
    - ~~Per-subagent cost aggregation~~ DONE (decision 0028, commits `240b25d` + `e72a07b`)
    - ~~Full Playwright e2e suite~~ DONE (decision 0029, commits `1c75cb4` + `4121b30`)
    - ~~Fix EventStream.tsx SSE dispatch~~ DONE (decision 0030, 38/1/0 + 74 vitest)
    - ~~Drag-and-drop queue reorder~~ DONE (decision 0031, 43/1/0 + 84 vitest + 1177/0/5 pytest)
    - ~~Per-provider usage caps~~ DONE (decision 0032, 47/1/0 + 93 vitest + 1210/0/5 pytest)
-   - Multi-browser Playwright matrix (0.25d, firefox + webkit now that the suite is green)
+   - ~~Multi-browser Playwright matrix~~ DONE (decision 0033, 141/3/0 + 93 vitest + 1218/0/5 pytest)
    - IPv6 iptables enforcement (1d, decision 0021)
    - Prompt library (2d, decision 0025 §8)
 5. **Or: open v2.0** scope planning (Monaco editor, multi-project workspaces, etc.) once v1.9.x followups are triaged.
@@ -569,7 +575,8 @@ If this file is the only thing the next session reads, do this:
 
 ## 9. Open questions for the user (if any)
 
-- **Decision 0032 merge path:** branch `feat/decision-0032 @ 3fdd831` is pushed with the code+tests+doc commit. This TASKS.md commit completes the 2-commit pattern on `main`. If you'd prefer the squash-into-one-commit style, `git reset --soft HEAD && git commit --amend` on main after fast-forward. Just flag and I'll redo.
-- **Decision 0032 known limitation to flag:** the per-step check in `_make_step_callback` is skipped on the resumed leg of a paused run (`resume_active_agent` does not receive the tracker). Per-day check at original run-start still holds, so a paused + resumed run cannot push the day-cap past where it started. Documented in `0032-cost-caps.md` §3 + §7.
-- **Next v1.9.x followup after 0032:** my recommendation is the multi-browser Playwright matrix (0.25d) — cheap now that the e2e suite is at 47 tests. After that: IPv6 iptables enforcement (1d, decision 0021) or the prompt library (2d, decision 0025 §8). Your call.
+- **Decision 0033 merge path:** branch `feat/decision-0033 @ 3bedacc` is FF'd into `main` with the code+tests+doc commit. This TASKS.md commit completes the 2-commit pattern on `main`. If you'd prefer the squash-into-one-commit style, `git reset --soft HEAD && git commit --amend` on main after fast-forward. Just flag and I'll redo.
+- **Decision 0033 known limitation to flag:** the 3 browsers run sequentially (`workers: 1, fullyParallel: false`), so the full multi-browser run is ~6 min. Per-project workers would cut that ~3 min but would mix logs across projects. Defer until CI is wired and the tradeoff matters.
+- **Branch housekeeping:** `feat/decision-0032` (origin @ `3fdd831`) and `feat/decision-0033` (origin @ `3bedacc`) are both retained on origin, merged into main via fast-forward. Drop with `git push origin --delete feat/decision-0032 feat/decision-0033 ; git branch -d feat/decision-0032 feat/decision-0033` if you want them cleaned up. Just flag and I'll do it.
+- **Next v1.9.x followup after 0033:** my recommendation is IPv6 iptables enforcement (1d, decision 0021) — defense-in-depth for elevated-tier network isolation, and the only remaining 1-day followup. After that: prompt library (2d, decision 0025 §8). Your call.
 - **Ruff drift cleanup:** the 3 pre-existing ruff-format issues in `test_web_runs_api.py:382-386` from prior decisions were folded into decision 0032's `ruff format` run (now zero drift). The I001+F401 in the same file remains. Trivial to fix in a one-line followup commit; flag if you want it now or batched with the next decision.
