@@ -1,6 +1,6 @@
 # Incident note — working-tree revert during Phase 0 validation (2026-08-26)
 
-**Status:** resolved-for-reapply · **Severity:** data-loss event (uncommitted work only; no committed history affected)
+**Status:** root-caused & closed · **Severity:** data-loss event (recovered; no committed history affected)
 
 ## What happened
 At ~13:48:01 (+0300), while the full pytest suite ran in the background, every
@@ -25,6 +25,31 @@ The revert window overlaps a full-suite pytest run. A causal link is considered
 unlikely (no code path reaches the parent repo) but cannot be fully excluded
 until the suite is rerun under observation. If an editor session discarded
 changes around 13:48, that explains the event entirely.
+
+## Resolution (same day, later)
+Root cause found while recovering the review reports: an external **
+`smolcode-checkpoint`** tool (14 occurrences in `git stash list`, dating back to
+2026-08-25) periodically runs `git stash push --include-untracked`. The 13:48
+stash (`stash@{0}` = `40ca0a6`, message
+`smolcode-checkpoint-2026-08-26T10:48:01Z-12988`) did exactly that:
+- The reflog line `reset: moving to HEAD` is the reset `git stash push`
+  performs internally — matching timestamp to the second.
+- Tracked Phase-0 edits went into the stash worktree commit; the eight untracked
+  review/plan documents went into its third parent `4571f7c`
+  (`untracked files on main`). Only the tracked half was ever restored by hand;
+  the documents sat in the stash until recovery.
+- `checkpoint.py` in this repo was correctly exonerated — the culprit is an
+  editor/tool-side auto-checkpoint feature.
+
+**Recovery:** all eight files restored byte-for-byte via
+`git checkout 4571f7c -- docs/reviews/2026-08-26-full-app-review/` and committed.
+The stash itself is left untouched (it also holds the superseded first-draft
+edits; dropping stashes is destructive and unnecessary now).
+
+**Standing risk:** the checkpoint tool can swallow untracked work at any moment.
+Mitigation going forward: keep uncommitted-work windows short; commit validated
+increments promptly; treat sudden "empty tree" during long test runs as this
+tool firing, not as code misbehaving.
 
 ## Consequence for the plan
 - Full-suite validation deferred until the Phase-0 change set is committed or
