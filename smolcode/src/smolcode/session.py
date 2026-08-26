@@ -26,6 +26,7 @@ import os
 import re
 import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -124,6 +125,24 @@ def current_session():
     return s
 
 
+@contextmanager
+def session_scope(state):
+    """Install ``state`` for the duration of a ``with`` block, then restore.
+
+    Phase 1 (C1): orchestrator delegations use this to give each sub-agent
+    run its OWN SessionState (correct effective tier + inherited confirm
+    callback / audit sink) without leaking it past the delegation. The
+    previous session object - possibly None - is restored afterwards, so
+    nested delegations compose correctly.
+    """
+    prev = get_session()
+    set_session(state)
+    try:
+        yield state
+    finally:
+        set_session(prev)
+
+
 def _ensure_default_session():
     """Internal: install a default session if none exists. Used by
     host tools that want to be safe even if main() never ran."""
@@ -202,6 +221,8 @@ __all__ = [
     # used by POST /api/runs/{id}/auto-approve.
     "set_auto_approve",
     "get_auto_approve",
+    # Phase 1 (C1): scoped installation for orchestrator delegations.
+    "session_scope",
     # Phase 1 (decision 0025 §6.3): chat-session storage helpers.
     "resolve_project_root",
     "session_dir_for",

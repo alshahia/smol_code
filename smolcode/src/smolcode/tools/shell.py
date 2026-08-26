@@ -37,6 +37,10 @@ class _RunTool(Tool):
     output_type = "string"
     allowlist = ""  # pipe-separated, overridden per-build by build_shell_tools
     cwd = ""  # overridden per-build
+    # Phase 1 (C1): the EXECUTING tool's effective tier, bound per build.
+    # The destructive gate keys on this - never on the ambient session's
+    # tier, which under the orchestrator describes a different agent.
+    tier_name = ""
 
     def __init__(self):
         super().__init__()
@@ -65,18 +69,25 @@ class _RunTool(Tool):
         if basename not in allowed:
             raise PermissionError("command " + repr(basename) + " not in allowlist " + repr(allowed))
 
-        # M4.x: per-tool destructive gate for full_access.
-        # Imports are absolute (not relative) so the emitted source
-        # survives smolagents' instance_to_source hoist into the
-        # remote Docker container, where the parent package IS
-        # importable on PYTHONPATH.
+        # M4.x / Phase 1 (C1): per-tool destructive gate. The gate fires
+        # on is_destructive() REGARDLESS of the ambient session tier; the
+        # tool's OWN (bound) tier decides prompt vs auto-deny. Imports are
+        # absolute (not relative) so the emitted source survives
+        # smolagents' instance_to_source hoist into the remote Docker
+        # container, where the parent package IS importable on PYTHONPATH.
         from smolcode.destructive import destructive_reason, is_destructive
         from smolcode.session import current_session
 
-        sess = current_session()
-        if sess.tier == "full_access" and not sess.auto_approve_destructive:
-            rk = {"cmd": cmd, "args": list(args)}
-            if is_destructive("run", rk):
+        rk = {"cmd": cmd, "args": list(args)}
+        if is_destructive("run", rk):
+            sess = current_session()
+            if self.tier_name == "restricted":
+                # Restricted may auto-deny instead of prompting: its
+                # allowlist has no legitimate destructive surface.
+                raise PermissionError(
+                    "destructive run denied at restricted tier: " + (destructive_reason("run", rk) or "")
+                )
+            if not sess.auto_approve_destructive:
                 summary = destructive_reason("run", rk) or ""
                 if sess.confirm_callback is None:
                     raise PermissionError("destructive run denied: no confirm session")
@@ -111,8 +122,8 @@ class _RunTool(Tool):
         return chr(10).join(out_parts)
 
 
-def build_shell_tools(command_policy):
-    """Return the run Tool bound to command_policy.allowlist."""
+def build_shell_tools(command_policy, tier_name=""):
+    """Return the run Tool bound to command_policy.allowlist + tier name."""
     allowlist = "|".join(command_policy.allowlist) if command_policy.allowlist else ""
-    cls = bind_attrs(_RunTool, {"allowlist": allowlist})
+    cls = bind_attrs(_RunTool, {"allowlist": allowlist, "tier_name": str(tier_name or "")})
     return [cls()]

@@ -71,8 +71,10 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
     # build_fs_tools' signature, so callers without M8 settings still work.
     uploads_dir_str = str(getattr(settings, "uploads_dir", "")) if getattr(settings, "uploads_dir", None) else ""
     tools.extend(build_fs_tools(workspace, tier=tier, uploads_dir=uploads_dir_str))
-    tools.extend(build_shell_tools(command_policy))
-    tools.extend(build_git_tools(command_policy, cwd=workspace))
+    # Phase 1 (C1): bind the tier's NAME so each tool's destructive gate
+    # keys on its own effective tier rather than on the ambient session.
+    tools.extend(build_shell_tools(command_policy, tier_name=tier.name))
+    tools.extend(build_git_tools(command_policy, cwd=workspace, tier_name=tier.name))
     if mcp_configs:
         tools.extend(build_mcp_tools(tier, mcp_configs))
     return tools

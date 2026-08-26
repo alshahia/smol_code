@@ -466,6 +466,77 @@ def _build_confirm_callback(run, timeout_s):
     return _cb
 
 
+def _build_full_access_gate(run, timeout_s):
+    """Phase 1 (C1): per-run confirmation for full_access DELEGATIONS.
+
+    Mirrors ``_build_confirm_callback``'s decision-modal flow but for the
+    orchestrator's lazy gate: the first do_full_task / full_access-
+    specialist delegation opens a PendingDecision (tool=
+    "full_access_delegation"), publishes approval.requested, and blocks.
+    An approval is memoized for the rest of the run; a denial raises so
+    the delegation aborts (the orchestrator may route elsewhere).
+    """
+
+    state = {"confirmed": False}
+
+    def _gate():
+        if state["confirmed"]:
+            return
+        if run.stop_flag.is_set():
+            raise PermissionError("full_access delegation refused: run stopped")
+        run.status = STATUS_AWAITING_APPROVAL
+        d = run.open_decision(
+            tool="full_access_delegation",
+            args={},
+            summary="Confirm full-access delegation (orchestrator)?",
+            tier="full_access",
+        )
+        run.publish(
+            EVT_APPROVAL_REQUESTED,
+            {
+                "decision_id": d.id,
+                "tool": "full_access_delegation",
+                "args": {},
+                "summary": "Confirm full-access delegation (orchestrator)?",
+                "tier": "full_access",
+                "ts": _time_now_iso(),
+                "timeout_s": float(timeout_s),
+            },
+        )
+        decided = d.event.wait(timeout=timeout_s)
+        run.status = STATUS_RUNNING
+        if not decided:
+            d.resolve(approved=False, edited_args=None, reason="timeout")
+            reason = "timeout"
+        else:
+            reason = d.reason or "user"
+        approved = bool(decided and d.approved)
+        run.publish(
+            EVT_APPROVAL_DECIDED,
+            {
+                "decision_id": d.id,
+                "approved": approved,
+                "reason": reason,
+                "ts": _time_now_iso(),
+            },
+        )
+        if run.audit_sink is not None:
+            try:
+                run.audit_sink.record(
+                    "full_access_confirmed" if approved else "full_access_denied",
+                    via="orchestrator-delegation",
+                    reason=reason,
+                    run_id=run.id,
+                )
+            except Exception:
+                pass
+        if not approved:
+            raise PermissionError("full_access delegation not confirmed (" + reason + ")")
+        state["confirmed"] = True
+
+    return _gate
+
+
 def _rel_path(run, abs_path):
     """Workspace-relative path for ``abs_path`` (best effort)."""
     if not isinstance(abs_path, str) or not abs_path:
@@ -611,7 +682,17 @@ def _build_agent_for_run(run, settings):
     if run.tier == "orchestrator":
         # Phase 0 (decision 0025): pass the outer Run so the orchestrator
         # tools can publish subagent.started / subagent.ended events.
-        return build_orchestrator_agent(settings, model, audit_sink=run.audit_sink, outer_run=run)
+        # Phase 1 (C1): arm the per-run full-access delegation gate so
+        # do_full_task / full_access specialists hit the approval modal.
+        from ..confirm import resolve_destructive_timeout_s as _rdt
+
+        return build_orchestrator_agent(
+            settings,
+            model,
+            audit_sink=run.audit_sink,
+            outer_run=run,
+            full_access_gate=_build_full_access_gate(run, _rdt()),
+        )
     if run.tier == "restricted":
         return build_restricted_agent(settings, model)
     if run.tier == "elevated":

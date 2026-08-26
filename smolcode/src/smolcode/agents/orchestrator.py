@@ -65,7 +65,7 @@ You have three sub-agents and {specialist_count} specialist(s) available:
 
 - do_restricted_task(task) -- workspace-bound, read-mostly tools, no network. Use this for everyday coding tasks (write code, run tests, fix bugs, refactor).
 - do_elevated_task(task) -- adds pip/npm/curl/jq/make, more stdlib imports. Use this when the task needs to install a package, run a build, or talk to a known local host.
-- do_full_task(task) -- opt-in powerful tier with full command allowlist (ssh, docker, kubectl, terraform, aws, gcloud, az) and open network. Use this only when the task explicitly needs infra/cloud operations. The user has already been prompted once for full_access at run start, but per-tool destructive ops (git push, aws destroy, rm -rf, etc.) will still prompt again.
+- do_full_task(task) -- opt-in powerful tier with full command allowlist (ssh, docker, kubectl, terraform, aws, gcloud, az) and open network. Use this only when the task explicitly needs infra/cloud operations. The operator confirms the FIRST full-access delegation of this run (a y/N prompt appears then); per-tool destructive ops (git push, aws destroy, rm -rf, etc.) still prompt separately unless auto-approve is on.
 {specialist_block}
 Rules:
 1. If unsure which tier to pick, default to restricted. It is always safe.
@@ -101,7 +101,7 @@ def _render_specialist_block(specialists):
     return "\n".join(lines) + "\n"
 
 
-def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_run=None):
+def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_run=None, full_access_gate=None):
     """Build one do_<tier>_task Tool instance with settings + model bound.
 
     Returns a NEW smolagents Tool subclass instance. The forward() method
@@ -115,6 +115,11 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
     a "delegated to X tier" hint. The events fire even when the
     inner agent raises (started always fires; ended fires with
     status="error" inside the except block).
+
+    Phase 1 (C1): ``full_access_gate`` is a zero-arg callable supplied by
+    the host plane (CLI prompt / web approval modal). It is invoked once
+    per run before the FIRST full_access delegation; a denial aborts the
+    delegation and None means fail-closed refusal.
     """
     tier_obj = settings.tiers[tier_name]
 
@@ -156,6 +161,9 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
             self._audit_sink = audit_sink
             # Phase 0 (decision 0025): outer Run for sub-agent events.
             self._outer_run = outer_run
+            # Phase 1 (C1): lazy full-access confirmation state.
+            self._full_access_gate = full_access_gate
+            self._full_access_confirmed = False
             from ..web.runs import EVT_SUBAGENT_ENDED, EVT_SUBAGENT_STARTED
 
             self._EVT_SUBAGENT_STARTED = EVT_SUBAGENT_STARTED
@@ -163,6 +171,19 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
             import uuid as _uuid
 
             self._uuid = _uuid
+
+        def _require_full_access_confirmation(self):
+            """Phase 1 (C1): fail-closed full-access confirmation, once/run."""
+            if self._tier_name != "full_access" or self._full_access_confirmed:
+                return
+            if self._full_access_gate is None:
+                raise PermissionError(
+                    "do_"
+                    + self._tier_name
+                    + "_task refused: no full-access confirmation gate configured for this plane"
+                )
+            self._full_access_gate()
+            self._full_access_confirmed = True
 
         def forward(self, task: str) -> str:
             if not isinstance(task, str) or not task.strip():
@@ -198,12 +219,36 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
                 self._tier_name,
                 len(task),
             )
+            # Phase 1 (C1): full_access delegations require the per-run
+            # confirmation supplied by the host plane, BEFORE any tokens.
+            if self._tier_name == "full_access":
+                self._require_full_access_confirmation()
+            # Phase 1 (C1): child execution context. The sub-run sees its
+            # OWN tier (so shell/git destructive gates fire correctly)
+            # plus the parent's confirm callback / diff gate; audit sink
+            # prefers the orchestrator-level one. Restored on exit.
+            from ..session import SessionState, get_session, session_scope
+
+            parent = get_session()
+            child = SessionState(
+                tier=self._tier_name,
+                auto_approve_destructive=bool(parent.auto_approve_destructive) if parent is not None else False,
+                confirm_callback=parent.confirm_callback if parent is not None else None,
+                audit_sink=(
+                    self._audit_sink
+                    if self._audit_sink is not None
+                    else (parent.audit_sink if parent is not None else None)
+                ),
+                diff_callback=parent.diff_callback if parent is not None else None,
+                auto_approve_diff=bool(parent.auto_approve_diff) if parent is not None else False,
+            )
             agent = make_agent(self._tier, self._settings, self._model)
             status = "ok"
             err_kind = ""
             err_msg = ""
             try:
-                answer = agent.run(task)
+                with session_scope(child):
+                    answer = agent.run(task)
             except Exception as e:
                 status = "error"
                 err_kind = type(e).__name__
@@ -272,7 +317,7 @@ def _build_delegation_tool(tier_name, settings, model, audit_sink=None, outer_ru
     return _Delegate()
 
 
-def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_run=None):
+def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_run=None, full_access_gate=None):
     """Build the do_specialist(name, task) tool.
 
     Resolves the specialist by name (bundled + user-installed), then
@@ -282,6 +327,9 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
     Phase 0 (decision 0025): when ``outer_run`` is supplied, the tool
     publishes subagent.started / subagent.ended events around the
     inner agent.run() (mirroring _build_delegation_tool).
+
+    Phase 1 (C1): delegating to a full_access-tier specialist goes
+    through the same per-run confirmation gate as do_full_task.
     """
     catalog = {s.name: s for s in specialists}
 
@@ -315,6 +363,9 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
             self._audit_sink = audit_sink
             # Phase 0 (decision 0025): outer Run for sub-agent events.
             self._outer_run = outer_run
+            # Phase 1 (C1): lazy full-access confirmation state.
+            self._full_access_gate = full_access_gate
+            self._full_access_confirmed = False
             from ..web.runs import EVT_SUBAGENT_ENDED, EVT_SUBAGENT_STARTED
 
             self._EVT_SUBAGENT_STARTED = EVT_SUBAGENT_STARTED
@@ -340,6 +391,31 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
                 len(task),
             )
             tier_obj = self._settings.tiers[spec.tier]
+            # Phase 1 (C1): full_access specialists need the per-run
+            # confirmation too, BEFORE the sub-agent is built.
+            if spec.tier == "full_access" and not self._full_access_confirmed:
+                if self._full_access_gate is None:
+                    raise PermissionError(
+                        "do_specialist refused: no full-access confirmation gate configured for this plane"
+                    )
+                self._full_access_gate()
+                self._full_access_confirmed = True
+            # Phase 1 (C1): child execution context (mirrors _Delegate).
+            from ..session import SessionState, get_session, session_scope
+
+            parent = get_session()
+            child = SessionState(
+                tier=spec.tier,
+                auto_approve_destructive=bool(parent.auto_approve_destructive) if parent is not None else False,
+                confirm_callback=parent.confirm_callback if parent is not None else None,
+                audit_sink=(
+                    self._audit_sink
+                    if self._audit_sink is not None
+                    else (parent.audit_sink if parent is not None else None)
+                ),
+                diff_callback=parent.diff_callback if parent is not None else None,
+                auto_approve_diff=bool(parent.auto_approve_diff) if parent is not None else False,
+            )
             agent = _build_specialist_agent(
                 spec,
                 tier_obj,
@@ -376,7 +452,8 @@ def _build_specialist_tool(settings, model, specialists, audit_sink=None, outer_
             err_kind = ""
             err_msg = ""
             try:
-                answer = agent.run(task)
+                with session_scope(child):
+                    answer = agent.run(task)
             except Exception as e:
                 status = "error"
                 err_kind = type(e).__name__
@@ -496,6 +573,7 @@ def build_orchestrator_agent(
     audit_sink=None,
     specialists=None,
     outer_run=None,
+    full_access_gate=None,
 ):
     """Build the orchestrator CodeAgent.
 
@@ -508,6 +586,11 @@ def build_orchestrator_agent(
     Specialists are loaded from ~/.smolcode/specialists.toml (D10) +
     the bundled deploy_staging. Pass specialists=... to override
     (used by tests).
+
+    Phase 1 (C1): ``full_access_gate`` is the host plane's per-run
+    confirmation for full_access delegations (CLI y/N prompt / web
+    approval modal). None = fail-closed: any do_full_task or
+    full_access-specialist delegation raises PermissionError.
 
     The orchestrator uses the RESTRICTED tier's max_steps as a ceiling
     for its own reasoning. Override with max_steps if needed.
@@ -539,12 +622,42 @@ def build_orchestrator_agent(
                 + ")"
             )
     tools = [
-        _build_delegation_tool("restricted", settings, model, audit_sink=audit_sink, outer_run=outer_run),
-        _build_delegation_tool("elevated", settings, model, audit_sink=audit_sink, outer_run=outer_run),
-        _build_delegation_tool("full_access", settings, model, audit_sink=audit_sink, outer_run=outer_run),
+        _build_delegation_tool(
+            "restricted",
+            settings,
+            model,
+            audit_sink=audit_sink,
+            outer_run=outer_run,
+            full_access_gate=full_access_gate,
+        ),
+        _build_delegation_tool(
+            "elevated",
+            settings,
+            model,
+            audit_sink=audit_sink,
+            outer_run=outer_run,
+            full_access_gate=full_access_gate,
+        ),
+        _build_delegation_tool(
+            "full_access",
+            settings,
+            model,
+            audit_sink=audit_sink,
+            outer_run=outer_run,
+            full_access_gate=full_access_gate,
+        ),
     ]
     if specialists:
-        tools.append(_build_specialist_tool(settings, model, specialists, audit_sink=audit_sink, outer_run=outer_run))
+        tools.append(
+            _build_specialist_tool(
+                settings,
+                model,
+                specialists,
+                audit_sink=audit_sink,
+                outer_run=outer_run,
+                full_access_gate=full_access_gate,
+            )
+        )
     prompt = ORCHESTRATOR_PROMPT_TEMPLATE.format(
         specialist_count=len(specialists),
         specialist_block=_render_specialist_block(specialists),

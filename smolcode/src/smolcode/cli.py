@@ -207,10 +207,15 @@ def main(argv=None):
 
     # M4: full_access confirmation prompt (30s hard y/N, configurable).
     # Fires BEFORE the agent is built so a denial never spends tokens.
-    # M5 (D11): when --orchestrator is set, the orchestrator decides the
-    # tier; the user has already opted in by passing --orchestrator. Skip
-    # the full_access prompt in that case. Sub-agents still hit the M4.x
-    # per-tool destructive gate when they call git_push / etc.
+    #
+    # Phase 1 (C1 fix): --orchestrator no longer skips full-access
+    # confirmation on the strength of a false premise ("sub-agents still
+    # hit the per-tool destructive gate anyway" - they did not: that gate
+    # keyed on the ambient session tier, which under the orchestrator is
+    # NOT full_access). Instead the CLI arms a LAZY gate below: the first
+    # do_full_task / do_specialist(full_access) delegation prompts once
+    # (y/N), checkpoints the workspace, and records the approval; later
+    # delegations in this process reuse it.
     if args.tier == "full_access" and not orchestrator_mode:
         try:
             timeout_s = resolve_timeout_s(args.confirm_timeout)
@@ -248,8 +253,33 @@ def main(argv=None):
             print(f"audit sink init failed: {e}", file=sys.stderr)
             return 5
 
+    # Phase 1 (C1): lazy per-process full-access gate for --orchestrator.
+    # Defined here so the closure sees the audit sink built above; invoked
+    # by the delegation tools at first full_access use.
     if orchestrator_mode:
-        agent = factory(settings, model, max_steps=args.max_steps, audit_sink=audit)
+
+        def _orchestrator_full_access_gate():
+            try:
+                confirm_full_access(timeout_s=resolve_timeout_s(args.confirm_timeout))
+            except ConfirmationDenied:
+                raise
+            if not args.no_checkpoint:
+                cp = create_checkpoint(settings.workspace)
+                print(format_checkpoint_message(cp), file=sys.stderr)
+            if audit is not None:
+                try:
+                    audit.record("full_access_confirmed", via="orchestrator-delegation")
+                except Exception:
+                    pass
+
+        orchestrator_gate = _orchestrator_full_access_gate
+        agent = factory(
+            settings,
+            model,
+            max_steps=args.max_steps,
+            audit_sink=audit,
+            full_access_gate=orchestrator_gate,
+        )
     else:
         agent = factory(settings, model, max_steps=args.max_steps)
 
@@ -261,8 +291,16 @@ def main(argv=None):
         os.environ["SMOLCODE_MCP_CONFIG"] = str(args.mcp_config)
         # Rebuild the agent so build_tools picks up the env var.
         # M5: pass audit_sink for orchestrator mode (sub-agent events).
+        # Phase 1 (C1): the lazy full-access gate survives the rebuild -
+        # its approval state lives on the closure, not the tool instance.
         if orchestrator_mode:
-            agent = factory(settings, model, max_steps=args.max_steps, audit_sink=audit)
+            agent = factory(
+                settings,
+                model,
+                max_steps=args.max_steps,
+                audit_sink=audit,
+                full_access_gate=orchestrator_gate,
+            )
         else:
             agent = factory(settings, model, max_steps=args.max_steps)
 

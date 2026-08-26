@@ -349,6 +349,8 @@ class _GitPushTool(Tool):
     output_type = "string"
     allowlist = ""
     cwd = ""
+    # Phase 1 (C1): the EXECUTING tool's effective tier (bound per build).
+    tier_name = ""
 
     def __init__(self):
         super().__init__()
@@ -359,17 +361,22 @@ class _GitPushTool(Tool):
 
         from smolcode.destructive import destructive_reason, is_destructive
 
-        # M4.x: per-tool destructive gate for full_access.
-        # Imports are absolute (not relative) so the emitted source
-        # survives smolagents' instance_to_source hoist into the
-        # remote Docker container, where the parent package IS
-        # importable on PYTHONPATH.
+        # M4.x / Phase 1 (C1): per-tool destructive gate. Fires on
+        # is_destructive() regardless of the ambient session tier; the
+        # tool's OWN bound tier decides prompt vs auto-deny. Imports are
+        # absolute (not relative) so the emitted source survives
+        # smolagents' instance_to_source hoist into the remote Docker
+        # container, where the parent package IS importable on PYTHONPATH.
         from smolcode.session import current_session
 
-        sess = current_session()
-        if sess.tier == "full_access" and not sess.auto_approve_destructive:
-            kwargs = {"remote": remote, "branch": branch}
-            if is_destructive("git_push", kwargs):
+        kwargs = {"remote": remote, "branch": branch}
+        if is_destructive("git_push", kwargs):
+            sess = current_session()
+            if self.tier_name == "restricted":
+                raise PermissionError(
+                    "destructive git_push denied at restricted tier: " + (destructive_reason("git_push", kwargs) or "")
+                )
+            if not sess.auto_approve_destructive:
                 summary = destructive_reason("git_push", kwargs) or ""
                 if sess.confirm_callback is None:
                     raise PermissionError("destructive git_push denied: no confirm session")
@@ -620,14 +627,14 @@ _GIT_TOOL_CLASSES = [
 ]
 
 
-def build_git_tools(command_policy, cwd=None):
-    """Build git Tool wrappers, bound to command_policy.allowlist and cwd."""
+def build_git_tools(command_policy, cwd=None, tier_name=""):
+    """Build git Tool wrappers, bound to command_policy.allowlist, cwd + tier."""
     if command_policy is None:
         raise PermissionError("command_policy is required")
     allowlist = "|".join(command_policy.allowlist) if command_policy.allowlist else ""
     cwd_str = str(cwd) if cwd is not None else ""
     tools = []
     for cls in _GIT_TOOL_CLASSES:
-        bound = bind_attrs(cls, {"allowlist": allowlist, "cwd": cwd_str})
+        bound = bind_attrs(cls, {"allowlist": allowlist, "cwd": cwd_str, "tier_name": str(tier_name or "")})
         tools.append(bound())
     return tools

@@ -488,7 +488,7 @@ def test_cli_orchestrator_uses_orchestrator_factory(_isolate_env, monkeypatch):
     monkeypatch.setattr(_sys, "argv", ["smolcode", "--smoke", "--orchestrator", "--no-audit", "x"])
     captured = {}
 
-    def fake_build(settings, model, *, max_steps=None, audit_sink=None):
+    def fake_build(settings, model, *, max_steps=None, audit_sink=None, **kwargs):
         captured["called"] = True
 
         class _Stub(CodeAgent):
@@ -514,7 +514,7 @@ def test_cli_orchestrator_overrides_tier(_isolate_env, monkeypatch):
     )
     called = {"orch": 0, "full": 0}
 
-    def fake_orch(settings, model, *, max_steps=None, audit_sink=None):
+    def fake_orch(settings, model, *, max_steps=None, audit_sink=None, **kwargs):
         called["orch"] += 1
 
         class _Stub(CodeAgent):

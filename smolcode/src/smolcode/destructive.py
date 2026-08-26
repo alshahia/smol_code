@@ -211,6 +211,14 @@ def _is_destructive_run(kwargs):
     if cmd_norm in ("aws", "gcloud", "az") and args_str:
         return args_str[0].lower() in _DESTRUCTIVE_CLOUD_SUBCOMMANDS
 
+    # Phase 1 (C1): git subcommands through the generic run tool.
+    # Every tier allowlists bare "git", so run("git", ["push", ...]) was
+    # a silent remote-write path that bypassed both the classifier and
+    # (pre-fix) the tier gate. Err toward flagging: push mutates a
+    # remote, reset can discard history/worktree state.
+    if cmd_norm == "git" and args_str:
+        return args_str[0].lower() in ("push", "reset")
+
     return False
 
 
