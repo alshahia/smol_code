@@ -86,10 +86,9 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    # TODO(Phase 0 close-out): measure the real baseline with this exact
-    # invocation, pin --cov-fail-under to it (or 80 if it clears), then
-    # remove continue-on-error so the gate blocks regressions.
-    continue-on-error: true
+    # Baseline verified locally 2026-08-26: full suite exits 0 under
+    # --cov-fail-under=80 (1227 passed / 5 skipped), so 80 blocks
+    # regressions without blocking green builds.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
