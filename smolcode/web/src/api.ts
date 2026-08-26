@@ -762,6 +762,8 @@ export interface TokenSummary {
   input: number
   output: number
   total: number
+  /** Decision 0032: aggregated USD cost for the bucket. */
+  cost_usd: number
 }
 
 export interface DashboardResponse {
@@ -785,6 +787,37 @@ export interface CostBreakdown {
 
 export async function getDashboard(): Promise<DashboardResponse> {
   return jsonOrThrow(await fetch('/api/dashboard'))
+}
+
+// Decision 0032: per-provider usage caps.
+export interface CostCapEntry {
+  provider: string
+  cap_usd: number
+}
+export interface CostCapsState {
+  caps: CostCapEntry[]
+  defaults: CostCapEntry[]
+  providers: string[]
+  current_spend_usd: Record<string, number>
+}
+export interface CostCapsUpdateResponse extends CostCapsState {
+  updated_at: number
+}
+
+export async function getCostCaps(): Promise<CostCapsState> {
+  return jsonOrThrow(await fetch('/api/cost-caps'))
+}
+
+export async function putCostCaps(
+  caps: Record<string, number>,
+): Promise<CostCapsUpdateResponse> {
+  return jsonOrThrow(
+    await fetch('/api/cost-caps', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caps }),
+    }),
+  )
 }
 
 export async function retryRun(

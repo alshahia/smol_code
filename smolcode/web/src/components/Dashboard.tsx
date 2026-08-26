@@ -6,12 +6,13 @@
 
 import React, { useEffect, useState } from 'react'
 
-import { getDashboard, type DashboardResponse } from '../api'
+import { getCostCaps, getDashboard, type CostCapsState, type DashboardResponse } from '../api'
 
 const REFRESH_MS = 30000
 
 export function Dashboard(): React.JSX.Element {
   const [data, setData] = useState<DashboardResponse | null>(null)
+  const [caps, setCaps] = useState<CostCapsState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -19,9 +20,10 @@ export function Dashboard(): React.JSX.Element {
     let cancelled = false
     async function load(): Promise<void> {
       try {
-        const d = await getDashboard()
+        const [d, c] = await Promise.all([getDashboard(), getCostCaps().catch(() => null)])
         if (!cancelled) {
           setData(d)
+          setCaps(c)
           setError(null)
         }
       } catch (e) {
@@ -102,19 +104,42 @@ export function Dashboard(): React.JSX.Element {
         {Object.keys(data.by_provider).length === 0 ? (
           <p className="dashboard-empty">No runs yet today.</p>
         ) : (
-          <table className="dashboard-provider-table">
+          <table className="dashboard-provider-table" data-testid="dashboard-provider-table">
             <thead>
-              <tr><th>Provider</th><th>In</th><th>Out</th><th>Total</th></tr>
+              <tr><th>Provider</th><th>In</th><th>Out</th><th>Total</th><th>Cost</th><th>Today / Cap</th></tr>
             </thead>
             <tbody>
-              {Object.entries(data.by_provider).map(([prov, t]) => (
-                <tr key={prov}>
-                  <td>{prov}</td>
-                  <td>{t.input.toLocaleString()}</td>
-                  <td>{t.output.toLocaleString()}</td>
-                  <td>{t.total.toLocaleString()}</td>
-                </tr>
-              ))}
+              {Object.entries(data.by_provider).map(([prov, t]) => {
+                const cap = caps?.caps.find((c) => c.provider === prov)?.cap_usd ?? 0
+                const todayUsd = t.cost_usd
+                const pct = cap > 0 ? Math.min(100, Math.round((todayUsd / cap) * 100)) : 0
+                const over = cap > 0 && todayUsd >= cap
+                return (
+                  <tr
+                    key={prov}
+                    className={over ? 'dashboard-provider-row over-cap' : 'dashboard-provider-row'}
+                    data-testid={'dashboard-provider-row-' + prov}
+                  >
+                    <td>{prov}</td>
+                    <td>{t.input.toLocaleString()}</td>
+                    <td>{t.output.toLocaleString()}</td>
+                    <td>{t.total.toLocaleString()}</td>
+                    <td>{todayUsd > 0 ? '$' + todayUsd.toFixed(2) : '--'}</td>
+                    <td>
+                      {cap > 0 ? (
+                        <progress
+                          max={100}
+                          value={pct}
+                          aria-label={pct + '% of cap for ' + prov}
+                          data-testid={'dashboard-cap-progress-' + prov}
+                        />
+                      ) : (
+                        <span className="dashboard-no-cap">--</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

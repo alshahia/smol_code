@@ -30,6 +30,12 @@ class TokenSummary:
     input: int = 0
     output: int = 0
     total: int = 0
+    # Decision 0032: per-bucket USD cost accumulator. The dashboard
+    # computes this once (per provider / per global) via
+    # ``model_catalog.cost_for`` so the SPA can render the dollar
+    # figure alongside the token counts without re-deriving on the
+    # client. Zero when no rate is known for the provider/model pair.
+    cost_usd: float = 0.0
 
     @classmethod
     def from_tokens(cls, t) -> "TokenSummary":
@@ -82,9 +88,18 @@ def compute_dashboard(mgr, audit, settings: "Settings") -> DashboardResponse:
         input=sum(getattr(getattr(r, "tokens", None), "input", 0) or 0 for r in today),
         output=sum(getattr(getattr(r, "tokens", None), "output", 0) or 0 for r in today),
         total=sum(getattr(getattr(r, "tokens", None), "total", 0) or 0 for r in today),
+        # ``cost_usd`` is filled in AFTER the per-provider loop below so we
+        # can fold the (already-rounded) per-provider bucket totals into a
+        # single global figure. Filling it in here would double-count or
+        # diverge from ``cost_estimate_usd_today`` due to rounding order.
     )
 
     # Per-provider breakdown (only providers that appear in today).
+    # Decision 0032: also accumulate ``cost_usd`` per provider via
+    # ``cost_for`` so the SPA can render a per-row dollar figure
+    # alongside the token counts. Unknown provider/model returns
+    # 0.0 from ``cost_for`` so the accumulator stays at 0 -- matches
+    # the existing "unknown provider cost is zero" semantics.
     by_provider: dict[str, TokenSummary] = {}
     for r in today:
         prov = getattr(r, "provider", None)
@@ -95,6 +110,16 @@ def compute_dashboard(mgr, audit, settings: "Settings") -> DashboardResponse:
         cur.input += getattr(t, "input", 0) or 0
         cur.output += getattr(t, "output", 0) or 0
         cur.total += getattr(t, "total", 0) or 0
+        if t is not None:
+            cache_hit = getattr(t, "cache_hit", 0) or 0
+            cur.cost_usd += cost_for(
+                getattr(r, "provider", None),
+                getattr(r, "model", None),
+                getattr(t, "input", 0) or 0,
+                getattr(t, "output", 0) or 0,
+                cache_hit=cache_hit,
+                settings=settings,
+            )
         by_provider[prov] = cur
 
     sparkline = _sparkline_24h(today, now)
@@ -114,6 +139,21 @@ def compute_dashboard(mgr, audit, settings: "Settings") -> DashboardResponse:
             settings=settings,
         )
     cost = round(cost, 6)
+    # Per-provider costs were accumulated unrounded; round once at the
+    # end so the dashboard payload is stable across re-renders. Also
+    # fold the per-provider totals into ``tokens_today.cost_usd`` so the
+    # top-level summary carries the global USD figure alongside the
+    # token counts (single source of truth -- mirrors by_provider math).
+    for prov_name, cur in by_provider.items():
+        rounded = round(cur.cost_usd, 6)
+        by_provider[prov_name] = TokenSummary(
+            input=cur.input,
+            output=cur.output,
+            total=cur.total,
+            cost_usd=rounded,
+        )
+        tokens_today.cost_usd += rounded
+    tokens_today.cost_usd = round(tokens_today.cost_usd, 6)
 
     errors_today = 0
     try:

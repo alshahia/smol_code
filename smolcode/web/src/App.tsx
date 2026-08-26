@@ -36,6 +36,7 @@ import { QueuePane } from './components/QueuePane'
 import { FilePreview } from './components/FilePreview'
 // v1.9.x: new components
 import { Dashboard } from './components/Dashboard'
+import { UsageLimitsPanel } from './components/UsageLimitsPanel'
 import { AutoApproveBanner } from './components/AutoApproveBanner'
 import { RunActions } from './components/RunActions'
 import { installKeyboardRouter } from './lib/keyboard'
@@ -599,6 +600,8 @@ function App() {
               </button>
             </div>
             <Dashboard />
+            {/* decision 0032: per-provider usage caps */}
+            <UsageLimitsPanel />
           </div>
         </div>
       )}

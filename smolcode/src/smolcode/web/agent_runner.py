@@ -306,7 +306,7 @@ def _final_answer_step_payload(step):
     return out
 
 
-def _make_step_callback(run, agent_ref=None):
+def _make_step_callback(run, agent_ref=None, cost_cap_tracker=None, settings=None):
     """Build the per-step callback the smolagents runner invokes.
 
     ``agent_ref`` is an optional list-of-one mutable container. The
@@ -324,6 +324,13 @@ def _make_step_callback(run, agent_ref=None):
        outer ``run()`` call returns early. ``run_in_thread`` catches
        it, snapshots the agent one more time, flips ``status`` to
        ``STATUS_PAUSED``, and emits ``run.paused``.
+
+    Decision 0032 additions:
+    - ``cost_cap_tracker`` + ``settings``: when both are provided, the
+      callback computes the accumulated run-cost after each step and
+      raises ``_StopRequested(cost_cap_exceeded:...)`` once the
+      per-run cap is reached. ``settings`` is threaded through so
+      ``cost_for`` can apply per-provider overrides.
     """
 
     def _cb(step, **_kwargs):
@@ -341,6 +348,45 @@ def _make_step_callback(run, agent_ref=None):
             raise
         except Exception as e:
             _log.warning("step callback failed for run %s: %s", run.id, e)
+        # Decision 0032: per-step cap check. Only fires when both the
+        # tracker AND a settings object are wired (the runner thread
+        # does this for fresh starts; the legacy ``resume_active_agent``
+        # path leaves them None per the design spec). We compute the
+        # accumulated run-cost via ``cost_for`` against the run's
+        # effective provider/model and ``run.tokens_in/out``.
+        try:
+            if cost_cap_tracker is not None and settings is not None and getattr(run, "tokens", None) is not None:
+                cap = cost_cap_tracker.get_cap(run.provider or "")
+                if cap > 0:
+                    from ..model_catalog import cost_for
+
+                    run_cost = cost_for(
+                        run.provider or None,
+                        run.model or None,
+                        int(getattr(run, "tokens_in", 0) or 0),
+                        int(getattr(run, "tokens_out", 0) or 0),
+                        cache_hit=int(getattr(run.tokens, "cache_hit", 0) or 0),
+                        settings=settings,
+                    )
+                    if run_cost >= cap:
+                        # Format both sides with 4 decimal places to
+                        # match the cost_cap_reached reason string.
+                        reason = (
+                            "cost_cap_exceeded:"
+                            + str(run.provider or "")
+                            + ":"
+                            + format(run_cost, ".4f")
+                            + ":"
+                            + format(cap, ".4f")
+                        )
+                        raise _StopRequested(reason)
+        except _StopRequested:
+            raise
+        except Exception as e:
+            # Cap-check failures must NEVER wedge the runner thread;
+            # log + continue so a broken dashboard or settings still
+            # lets the agent finish its current step.
+            _log.warning("cost cap check failed for run %s: %s", run.id, e)
         # Phase 2: snapshot the agent's memory AFTER each step so a
         # pause can resume without losing state. Then check pause_flag
         # and raise if set -- this terminates agent.run() at the next
@@ -575,7 +621,11 @@ def _build_agent_for_run(run, settings):
     raise ValueError("unknown tier: " + str(run.tier))
 
 
-def run_in_thread(run, settings):
+def run_in_thread(run, settings, cost_cap_tracker=None):
+    # Decision 0032: optional ``cost_cap_tracker`` is consulted on
+    # EVERY step callback. ``None`` keeps the legacy behaviour
+    # (no per-step cap enforcement) -- the run-start check in
+    # ``RunManager.start_or_enqueue_run`` is the only enforcement.
     started = time.monotonic()
     run.status = STATUS_RUNNING
     run.publish(
@@ -671,7 +721,15 @@ def run_in_thread(run, settings):
     try:
         agent = _build_agent_for_run(run, settings)
         agent_ref[0] = agent
-        cb = _make_step_callback(run, agent_ref=agent_ref)
+        # Decision 0032: thread the cost-cap tracker + settings so the
+        # step callback can compute the per-run cost on every step and
+        # trip the gate as soon as the cap is reached.
+        cb = _make_step_callback(
+            run,
+            agent_ref=agent_ref,
+            cost_cap_tracker=cost_cap_tracker,
+            settings=settings,
+        )
         from smolagents.agents import ActionStep, FinalAnswerStep, PlanningStep
 
         # Decision 0024 (defensive): register all three step kinds in
@@ -976,6 +1034,14 @@ def _drain_queue_after_run(run):
     from . import deps as _deps
 
     settings = _deps.get_settings()
+    # Decision 0032: pull the cost-cap tracker off the run manager so
+    # queued runs (dequeued after the active run ends) get the same
+    # per-step cap enforcement as the initial start_run call.
+    # ``RunManager._cost_cap_tracker`` is set at construction time by
+    # ``create_app`` and is the SAME instance the API endpoint mutates
+    # via PUT /api/cost-caps -- so a PUT that lowers the cap during
+    # the active run takes effect on the next queued run too.
+    cost_cap_tracker = getattr(mgr, "_cost_cap_tracker", None)
     # Start the runner thread for the dequeued run.
     import threading as _threading
 
@@ -983,6 +1049,7 @@ def _drain_queue_after_run(run):
     target.thread = _threading.Thread(
         target=run_in_thread,
         args=(target, settings),
+        kwargs={"cost_cap_tracker": cost_cap_tracker},
         name="smolcode-run-" + target.id[:8],
         daemon=True,
     )

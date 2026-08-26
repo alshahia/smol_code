@@ -39,6 +39,10 @@ Provider / model catalog endpoints (M11, decision 0014):
     GET  /api/providers                          -> catalog (key_state + defaults)
     GET  /api/providers/{provider_id}/models     -> live /models list (1h TTL)
 
+Usage-cap endpoints (decision 0032):
+    GET  /api/cost-caps            -> current caps + defaults + today's spend
+    PUT  /api/cost-caps            -> replace live caps (validated against known providers)
+
 The /api/runs endpoint now accepts three optional fields:
 ``provider``, ``model``, ``keys`` (decision 0014). All are optional
 so existing callers stay backwards-compatible.
@@ -72,7 +76,9 @@ from ..session import (
     session_dir_for,
 )
 from ..uploads import UploadsStore
-from .deps import get_audit_sink, get_run_manager, get_settings, get_uploads_store
+from .cost_caps import CostCapTracker
+from .dashboard import compute_dashboard
+from .deps import get_audit_sink, get_cost_cap_tracker, get_run_manager, get_settings, get_uploads_store
 from .diffs import walk_tree
 from .keys import extract_keys
 from .runs import (
@@ -89,6 +95,9 @@ from .schemas import (
     AutoApproveSetResponse,
     CleanRequest,
     ConfigResponse,
+    CostCapsState,
+    CostCapsUpdateRequest,
+    CostCapsUpdateResponse,
     DashboardResponse,
     FileReadResponse,
     HealthResponse,
@@ -733,7 +742,16 @@ def start_run(
             project=req.project,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        # Decision 0032: cost-cap rejection carries a ``cost_cap_reached:``
+        # prefix so the SPA can surface the reason. The API layer maps
+        # this prefix to HTTP 429 (Too Many Requests -- semantically "the
+        # resource budget is exhausted, try again later / lift the cap").
+        # Other ValueErrors (task validation, unknown tier, unknown
+        # provider) keep their existing 400 mapping.
+        msg = str(e)
+        if msg.startswith("cost_cap_reached:"):
+            raise HTTPException(status_code=429, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
     return RunStartResponse(run_id=run_id, status=status).model_dump()
 
 
@@ -1386,3 +1404,100 @@ def _collect_env_keys() -> dict[str, str]:
     import os
 
     return {env: os.environ.get(env, "") for env in _PROVIDER_ENV_VARS if os.environ.get(env, "")}
+
+
+# ---- Decision 0032: per-provider usage caps ("stop at $1") ---------------
+
+
+def _known_providers() -> list[str]:
+    """Return the list of provider ids the BE accepts on PUT.
+
+    Built from ``model_catalog.PROVIDERS`` (the canonical catalog) plus
+    the BE's default fallback set. ``minimax`` is rejected -- the
+    canonical id is ``MiniMax`` (decision 0001) so we map any
+    lower-case variant in the validator.
+    """
+    from ..model_catalog import PROVIDERS
+
+    ids = sorted({p.id for p in PROVIDERS})
+    # Ensure the canonical defaults from Settings.provider are included
+    # even when model_catalog wasn't initialised yet (test fixtures).
+    for fallback in ("opencode-go", "MiniMax", "openai", "anthropic", "custom"):
+        if fallback not in ids:
+            ids.append(fallback)
+    return ids
+
+
+def _current_spend_per_provider(settings, mgr) -> dict[str, float]:
+    """Today's USD spend per provider, computed via the dashboard aggregator.
+
+    Used by GET /api/cost-caps to surface "you have spent $X of your $Y
+    cap today" without exposing the raw token buckets. Returns an
+    empty dict on dashboard failure (broken settings / empty run list)
+    so the SPA still renders a meaningful empty state.
+    """
+    audit_reader = SimpleNamespace(count_since=lambda t, level=None: _audit_count_since(None, t, level))
+    try:
+        dashboard = compute_dashboard(mgr, audit_reader, settings)
+    except Exception:
+        return {}
+    return {
+        prov: float(summary.cost_usd or 0.0)
+        for prov, summary in (dashboard.by_provider or {}).items()
+        if float(summary.cost_usd or 0.0) > 0
+    }
+
+
+@router.get("/cost-caps", response_model=CostCapsState)
+def get_cost_caps(
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+    tracker: CostCapTracker = Depends(get_cost_cap_tracker),
+) -> dict:
+    """Decision 0032: GET /api/cost-caps.
+
+    Returns the live cap state, the env-seeded defaults, the list of
+    provider ids the BE knows about (for the SPA's dropdown), and
+    today's per-provider USD spend so the SPA can render the
+    "spend / cap" gauge without a follow-up GET /api/dashboard.
+    """
+    state = tracker.get_state()
+    spend = _current_spend_per_provider(settings, mgr)
+    return CostCapsState(
+        caps=[{"provider": k, "cap_usd": v} for k, v in state["caps"].items()],
+        defaults=[{"provider": k, "cap_usd": v} for k, v in state["defaults"].items()],
+        providers=_known_providers(),
+        current_spend_usd=spend,
+    ).model_dump()
+
+
+@router.put("/cost-caps", response_model=CostCapsUpdateResponse)
+def put_cost_caps(
+    req: CostCapsUpdateRequest,
+    tracker: CostCapTracker = Depends(get_cost_cap_tracker),
+) -> dict:
+    """Decision 0032: PUT /api/cost-caps.
+
+    Replaces the live cap state with ``req.caps`` (after the tracker's
+    internal clean: bools rejected, non-numeric dropped, <= 0 dropped).
+    Unknown provider ids are rejected with HTTP 400 BEFORE touching
+    the tracker -- a typo in the SPA's provider switcher must not
+    silently disable enforcement. The canonical id is ``MiniMax``
+    (capital X); the alias ``minimax`` (any case) is rejected with
+    400 so the SPA can surface a clear "use MiniMax" hint.
+    """
+    known = set(_known_providers())
+    rejected_aliases = {"minimax", "MINIMAX", "minimax", "MiniMax-Go", "minimax-go"}
+    for prov in (req.caps or {}).keys():
+        if prov in rejected_aliases and prov != "MiniMax":
+            raise HTTPException(status_code=400, detail="unknown provider: " + prov)
+        if prov not in known:
+            raise HTTPException(status_code=400, detail="unknown provider: " + prov)
+    cleaned = tracker.update(req.caps or {})
+    state = tracker.get_state()
+    return CostCapsUpdateResponse(
+        caps=[{"provider": k, "cap_usd": v} for k, v in cleaned.items()],
+        defaults=[{"provider": k, "cap_usd": v} for k, v in state["defaults"].items()],
+        providers=_known_providers(),
+        updated_at=float(time.time()),
+    ).model_dump()

@@ -563,7 +563,12 @@ class DashboardResponse(BaseModel):
     token breakdown for the same window. ``sparkline`` is 24 integer
     buckets (oldest first; bucket 23 = current hour). ``cost_estimate_usd_today``
     uses ``model_catalog.cost_for()`` with optional override via
-    ``Settings.cost_rates`` (decision 0025 Q5)."""
+    ``Settings.cost_rates`` (decision 0025 Q5).
+
+    Decision 0032: ``TokenSummary.cost_usd`` is populated per bucket so the
+    SPA can render dollar figures alongside the per-provider token counts.
+    Additive; older SPA clients just see the new field and ignore it.
+    """
 
     runs_today: int = 0
     tokens_today: TokenSummary = Field(default_factory=TokenSummary)
@@ -572,3 +577,71 @@ class DashboardResponse(BaseModel):
     sparkline: list[int] = Field(default_factory=lambda: [0] * 24)
     cost_estimate_usd_today: float = 0.0
     generated_at: float = 0.0
+
+
+# --- Decision 0032: per-provider usage caps ("stop at $1") -------------------
+
+
+class CostCapEntry(BaseModel):
+    """One row of the cap state returned by GET /api/cost-caps.
+
+    Decision 0032: the SPA renders ``caps`` and ``defaults`` as two
+    side-by-side columns so the user can see what the env seeded vs
+    what they have overridden via PUT. ``cap_usd`` is a non-negative
+    float; values <= 0 are dropped upstream and never reach the wire.
+    """
+
+    provider: str
+    cap_usd: float
+
+
+class CostCapsState(BaseModel):
+    """Response shape for GET /api/cost-caps (decision 0032).
+
+    ``caps`` is the LIVE cap state (mutated by PUT). ``defaults`` is the
+    env-seeded baseline and never changes after server start.
+    ``providers`` is the list of provider ids the BE knows about
+    (mirrors ``Settings.provider`` plus the catalog); the SPA uses this
+    to render the dropdown of valid provider names for new caps.
+    ``current_spend_usd`` is a per-provider dollar total computed from
+    today's runs; populated only on GET (the PUT response omits it).
+    """
+
+    caps: list[CostCapEntry] = Field(default_factory=list)
+    defaults: list[CostCapEntry] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    current_spend_usd: dict[str, float] = Field(default_factory=dict)
+
+
+class CostCapsUpdateRequest(BaseModel):
+    """PUT /api/cost-caps body (decision 0032).
+
+    ``caps`` is the NEW live state. An empty dict clears all overrides
+    (caps reset to defaults). Keys MUST be a known provider id -- the
+    BE rejects unknown names with 400 so a typo in the SPA's provider
+    switcher cannot silently disable enforcement for an unmapped
+    provider. Values are coerced to float and dropped when <= 0 to
+    match the ``CostCapTracker.update`` cleaning rules.
+    """
+
+    caps: dict[str, float] = Field(
+        default_factory=dict,
+        description="Mapping of provider id -> cap USD. Empty -> clear all.",
+    )
+
+
+class CostCapsUpdateResponse(BaseModel):
+    """Response shape for PUT /api/cost-caps (decision 0032).
+
+    Extends ``CostCapsState`` with ``updated_at`` (epoch seconds) so the
+    SPA can optimistically bump a "last updated" chip without re-fetching.
+    ``current_spend_usd`` is OMITTED on PUT responses -- the SPA already
+    has the latest ``current_spend_usd`` from its most recent GET, and
+    folding it back here would mask the as-of-update spend (which is
+    what the cap check just consulted).
+    """
+
+    caps: list[CostCapEntry] = Field(default_factory=list)
+    defaults: list[CostCapEntry] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    updated_at: float = 0.0

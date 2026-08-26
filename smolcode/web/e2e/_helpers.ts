@@ -133,9 +133,9 @@ export interface MockAuditEntry {
 
 export interface MockDashboard {
   runs_today: number
-  tokens_today: { input: number; output: number; total: number }
+  tokens_today: { input: number; output: number; total: number; cost_usd?: number }
   errors_today: number
-  by_provider: Record<string, { input: number; output: number; total: number }>
+  by_provider: Record<string, { input: number; output: number; total: number; cost_usd: number }>
   sparkline: number[]
   cost_estimate_usd_today: number
   generated_at: number
@@ -219,7 +219,7 @@ export function defaultMockProviders(extra: MockProvider[] = []): MockProvider[]
 export function defaultMockDashboard(overrides: Partial<MockDashboard> = {}): MockDashboard {
   return {
     runs_today: 0,
-    tokens_today: { input: 0, output: 0, total: 0 },
+    tokens_today: { input: 0, output: 0, total: 0, cost_usd: 0 },
     errors_today: 0,
     by_provider: {},
     sparkline: Array(24).fill(0),
@@ -327,6 +327,21 @@ export interface BackendMock {
   auto_approve_response?: { enabled: boolean }
   cancel_queue_response?: { run_id: string; cancelled: boolean }
   move_queue_response?: { run_id: string; position: number; queue: MockQueueEntry[] }
+  /** decision 0032: GET /api/cost-caps mock body. */
+  cost_caps_response?: {
+    caps: Array<{ provider: string; cap_usd: number }>
+    defaults: Array<{ provider: string; cap_usd: number }>
+    providers: string[]
+    current_spend_usd: Record<string, number>
+  }
+  /** decision 0032: PUT /api/cost-caps mock body. */
+  cost_caps_put_response?: {
+    caps: Array<{ provider: string; cap_usd: number }>
+    defaults: Array<{ provider: string; cap_usd: number }>
+    providers: string[]
+    current_spend_usd: Record<string, number>
+    updated_at: number
+  }
   approval_response?: { decided: boolean }
   upload_response?: MockUpload
   delete_upload_response?: { deleted: string }
@@ -347,6 +362,7 @@ export interface BackendMock {
     approval?: number
     export?: number
     move_queue?: number
+    cost_caps?: number
   }
   /** Capture all POST/PUT/DELETE bodies for assertion. */
   capturedRequests?: { method: string; url: string; body?: string }[]
@@ -481,6 +497,22 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(opts.dashboard ?? defaultMockDashboard()),
+        })
+        return
+      }
+      // decision 0032: GET /api/cost-caps
+      if (pathname === '/api/cost-caps') {
+        await sleep(opts.delays?.cost_caps ?? 0)
+        const resp = opts.cost_caps_response ?? {
+          caps: [],
+          defaults: [],
+          providers: [],
+          current_spend_usd: {},
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(resp),
         })
         return
       }
@@ -635,6 +667,35 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(opts.delete_upload_response ?? { deleted: 'x' }),
+        })
+        return
+      }
+    }
+    if (method === 'PUT') {
+      // decision 0032: PUT /api/cost-caps replaces the caps registry
+      if (pathname === '/api/cost-caps') {
+        await sleep(opts.delays?.cost_caps ?? 0)
+        let parsed: { caps?: Record<string, number> } = {}
+        try {
+          parsed = body ? JSON.parse(body) : {}
+        } catch {
+          await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ detail: 'bad json' }) })
+          return
+        }
+        const capEntries = Object.entries(parsed.caps ?? {})
+          .filter(([, v]) => typeof v === 'number' && v > 0)
+          .map(([provider, v]) => ({ provider, cap_usd: v }))
+        const resp = opts.cost_caps_put_response ?? {
+          caps: capEntries,
+          defaults: capEntries,
+          providers: capEntries.map((c) => c.provider),
+          current_spend_usd: {},
+          updated_at: Math.floor(Date.now() / 1000),
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(resp),
         })
         return
       }

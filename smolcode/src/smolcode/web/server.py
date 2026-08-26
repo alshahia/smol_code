@@ -23,6 +23,7 @@ from ..audit import AuditSink
 from ..config import Settings, load_settings
 from ..uploads import DEFAULT_ALLOWED_MIME, DEFAULT_MAX_BYTES, UploadsStore
 from .api import router as api_router
+from .cost_caps import CostCapTracker
 from .runs import RunManager
 
 
@@ -52,14 +53,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         audit=audit,
     )
 
+    # Decision 0032: per-provider usage caps ("stop at $1"). Seeded
+    # from ``Settings.cost_caps`` (the SMOLCODE_COST_CAPS JSON env var)
+    # so an operator who configures caps at boot has them live WITHOUT
+    # a follow-up PUT. The tracker is shared with ``RunManager`` so the
+    # per-day run-start check can consult it without re-reading settings.
+    cost_cap_tracker = CostCapTracker(defaults=settings.cost_caps or {})
+
     # M9: run manager is shared across requests.
-    run_manager = RunManager()
+    run_manager = RunManager(cost_cap_tracker=cost_cap_tracker)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
         app.state.uploads_store = uploads_store
         app.state.audit_sink = audit
+        app.state.cost_cap_tracker = cost_cap_tracker
         app.state.run_manager = run_manager
         try:
             yield

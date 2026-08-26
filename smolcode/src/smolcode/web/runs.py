@@ -583,9 +583,74 @@ class Run:
 
 
 class RunManager:
-    def __init__(self):
+    def __init__(self, cost_cap_tracker=None):
+        # Decision 0032: optional cap tracker. When set, ``start_run`` /
+        # ``start_or_enqueue_run`` consults ``tracker.check_reached``
+        # against today's per-provider USD spend BEFORE spinning up the
+        # runner thread. ``None`` is allowed so existing call sites (and
+        # legacy tests) keep working -- it just disables enforcement.
+        self._cost_cap_tracker = cost_cap_tracker
         self._runs = {}
         self._lock = threading.Lock()
+
+    def _check_cost_cap_or_raise(self, settings, provider_override):
+        """Decision 0032: per-day USD cap enforcement at run-start.
+
+        Computes today's USD spend for the effective provider via
+        ``compute_dashboard`` (using a stub audit sink so the call
+        does not require a real audit reader), then asks the
+        ``CostCapTracker`` whether the per-provider cap has been
+        reached. On reached -> raise ``ValueError`` with the
+        ``cost_cap_reached:`` prefix; the API layer maps this prefix
+        to HTTP 429. When the tracker is missing or the effective
+        provider has no cap set, this is a silent no-op.
+
+        We use a fresh dashboard compute (rather than caching today
+        totals) so the cap reflects ``up to this instant`` -- a
+        concurrent in-flight run may have spent more since the last
+        GET /api/dashboard. The compute is cheap (sums today's
+        runs in-memory) and runs BEFORE any queueing / thread spin-up.
+        """
+        tracker = self._cost_cap_tracker
+        if tracker is None:
+            return
+        base_provider = getattr(settings, "provider", "") or ""
+        effective_provider = provider_override or base_provider
+        if not effective_provider:
+            return
+        if tracker.get_cap(effective_provider) <= 0:
+            return
+        # Late import: ``compute_dashboard`` pulls in model_catalog +
+        # dataclasses; we want the cheap cap check on the hot path
+        # to stay import-light when no cap is set (the get_cap() call
+        # above already early-returned in that case).
+        from .dashboard import compute_dashboard
+
+        class _StubAudit:
+            """Minimal audit stand-in: never counts anything.
+
+            ``compute_dashboard`` only reads ``count_since`` so a stub
+            returning 0 is sufficient. We avoid constructing a real
+            AuditSink because the run-start check runs on the API
+            request thread, before any runner thread is alive.
+            """
+
+            def count_since(self, _since_ts, level=None):
+                return 0
+
+        try:
+            dashboard = compute_dashboard(self, _StubAudit(), settings)
+            today_usd = dashboard.by_provider.get(effective_provider)
+            today_usd = today_usd.cost_usd if today_usd is not None else 0.0
+        except Exception:
+            # Dashboard failure (no settings, broken run history, ...)
+            # must NOT wedge a run-start. Fall through silently so the
+            # caller can still start the run; the per-step check will
+            # enforce the cap on the next action.
+            return
+        reached, reason = tracker.check_reached(effective_provider, today_usd)
+        if reached:
+            raise ValueError("cost_cap_reached: " + reason)
 
     def start_run(
         self,
@@ -706,7 +771,17 @@ class RunManager:
         ``(run_id, status)`` where ``status`` is ``"running"`` when
         the thread started immediately or ``"queued"`` when added to
         the FIFO queue.
+
+        Decision 0032: a per-day cap check runs FIRST (before the
+        queue-vs-immediate branching). When the effective provider's
+        today-spent USD is at or above its cap, raise ``ValueError``
+        with the ``cost_cap_reached:`` prefix so the API layer can map
+        it to HTTP 429. Empty caps + missing tracker are no-ops.
         """
+        # Decision 0032: per-day cap enforcement. Run BEFORE any
+        # queue / threading setup so a cap rejection never allocates a
+        # Run id or wakes the runner thread.
+        self._check_cost_cap_or_raise(settings, provider_override)
         if self.is_busy():
             # Validate the inputs FIRST (start_run would also validate).
             if not isinstance(task, str) or not task.strip():
@@ -1132,8 +1207,11 @@ class RunManager:
 _orig_runmanager_init = RunManager.__init__
 
 
-def _patched_runmanager_init(self):
-    _orig_runmanager_init(self)
+def _patched_runmanager_init(self, cost_cap_tracker=None):
+    # Decision 0032: thread the optional cost_cap_tracker through to the
+    # original init so callers (tests, CLI) can wire a custom tracker.
+    # None is the legacy default and disables enforcement.
+    _orig_runmanager_init(self, cost_cap_tracker=cost_cap_tracker)
     self._queue = []
     self._queue_lock = threading.Lock()
 

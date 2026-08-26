@@ -187,6 +187,11 @@ class Settings:
         # Loaded from SMOLCODE_COST_RATES (JSON env var). Empty dict means
         # "use model_catalog.DEFAULT_COST_RATES only".
         "cost_rates",
+        # Decision 0032: per-provider daily USD caps as {provider: usd_float}.
+        # Loaded from SMOLCODE_COST_CAPS (JSON env var). Empty dict means
+        # "no caps configured". Caps are mutable at runtime via
+        # PUT /api/cost-caps (the CostCapTracker owns the live state).
+        "cost_caps",
     )
 
     def __init__(
@@ -203,6 +208,7 @@ class Settings:
         upload_allowed_mime=None,
         projects=(),
         cost_rates=None,
+        cost_caps=None,
     ):
         self.workspace = Path(workspace)
         self.executor = executor
@@ -221,6 +227,10 @@ class Settings:
         self.projects = tuple(projects)
         # Phase 3: cost rates. ``None`` defaults to {} (use defaults only).
         self.cost_rates = dict(cost_rates) if cost_rates is not None else {}
+        # Decision 0032: per-provider USD caps. ``None`` defaults to {} (no caps).
+        # CostCapTracker.get_state() exposes ``defaults`` separately so the SPA
+        # can show the original caps even after a PUT clears them.
+        self.cost_caps = dict(cost_caps) if cost_caps is not None else {}
 
     def with_executor(self, executor):
         """Return a new Settings with the executor swapped."""
@@ -237,6 +247,7 @@ class Settings:
             upload_allowed_mime=self.upload_allowed_mime,
             projects=self.projects,
             cost_rates=self.cost_rates,
+            cost_caps=self.cost_caps,
         )
 
     def with_overrides(self, provider=None, model=None, litellm_proxy=None, workspace=None):
@@ -254,6 +265,7 @@ class Settings:
             upload_allowed_mime=self.upload_allowed_mime,
             projects=self.projects,
             cost_rates=self.cost_rates,
+            cost_caps=self.cost_caps,
         )
 
     def __repr__(self):
@@ -477,6 +489,40 @@ def _parse_cost_rates(raw):
     return parsed
 
 
+def _parse_cost_caps(raw):
+    """Parse the SMOLCODE_COST_CAPS JSON env var (decision 0032).
+
+    Shape: {"provider": usd_float} where each value is a non-negative
+    daily cap in USD. Empty -> {}. Invalid JSON, non-object shape,
+    negative numbers, non-numeric values, or bools -> ConfigError
+    (fail-closed). Strings that parse as floats via ``float(...)`` are
+    accepted (e.g. ``"1.5"`` -> ``1.5``) for parity with how
+    ``_parse_cost_rates`` treats numeric JSON values.
+    """
+    if not raw:
+        return {}
+    import json as _json
+
+    try:
+        parsed = _json.loads(raw)
+    except _json.JSONDecodeError as e:
+        raise ConfigError("SMOLCODE_COST_CAPS is not valid JSON: " + str(e)) from e
+    if not isinstance(parsed, dict):
+        raise ConfigError("SMOLCODE_COST_CAPS must be a JSON object")
+    out: dict = {}
+    for prov, cap in parsed.items():
+        if isinstance(cap, bool):
+            raise ConfigError("SMOLCODE_COST_CAPS[" + repr(prov) + "] must be numeric, got bool")
+        try:
+            value = float(cap)
+        except (TypeError, ValueError) as e:
+            raise ConfigError("SMOLCODE_COST_CAPS[" + repr(prov) + "] must be numeric, got " + repr(cap)) from e
+        if value < 0:
+            raise ConfigError("SMOLCODE_COST_CAPS[" + repr(prov) + "] must be >= 0, got " + repr(value))
+        out[str(prov)] = value
+    return out
+
+
 def _parse_projects(raw, workspace):
     if not raw:
         return ()
@@ -574,6 +620,7 @@ def load_settings(cli_overrides=None, dotenv_paths=None):
         upload_allowed_mime=upload_allowed_mime,
         projects=_parse_projects(os.environ.get("SMOLCODE_PROJECTS", ""), workspace),
         cost_rates=_parse_cost_rates(os.environ.get("SMOLCODE_COST_RATES", "")),
+        cost_caps=_parse_cost_caps(os.environ.get("SMOLCODE_COST_CAPS", "")),
     )
 
     if cli_overrides:
@@ -632,4 +679,8 @@ def as_dict(s):
     # are owned by model_catalog.DEFAULT_COST_RATES, not duplicated here).
     if s.cost_rates:
         out["cost_rates"] = s.cost_rates
+    # Decision 0032: per-provider daily USD caps. Always include the slot
+    # (even when empty) so callers can distinguish "no caps configured" from
+    # "caps config not present at all".
+    out["cost_caps"] = dict(s.cost_caps)
     return out

@@ -12,6 +12,7 @@ from fastapi import HTTPException, Request
 from ..audit import AuditSink
 from ..config import Settings
 from ..uploads import UploadsStore
+from .cost_caps import CostCapTracker
 from .runs import RunManager
 
 
@@ -55,3 +56,21 @@ def get_run_manager(request: Request) -> RunManager:
         mgr = RunManager()
         request.app.state.run_manager = mgr
     return mgr
+
+
+def get_cost_cap_tracker(request: Request) -> CostCapTracker:
+    """Return the per-app CostCapTracker (decision 0032).
+
+    Lazy-constructed on first access so tests that never touch the
+    cap endpoints do not need to wire one into ``create_app``.
+    Production wiring (``create_app`` -> ``CostCapTracker(defaults=...)``)
+    installs a properly-seeded instance during ``lifespan``; this
+    lazy fallback is the safety net for tests + late-bound request
+    handlers.
+    """
+    tracker = getattr(request.app.state, "cost_cap_tracker", None)
+    if tracker is None:
+        settings = get_settings(request)
+        tracker = CostCapTracker(defaults=getattr(settings, "cost_caps", None) or {})
+        request.app.state.cost_cap_tracker = tracker
+    return tracker

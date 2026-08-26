@@ -185,3 +185,120 @@ class TestComputeDashboard:
         audit.count_since.return_value = 0
         result = compute_dashboard(mgr, audit, self._settings())
         assert result.runs_today == 1
+
+
+# --- Decision 0032: per-provider cost_usd aggregation ----------------------
+
+
+class TestByProviderCost:
+    """Decision 0032 sec 2: ``by_provider`` cost aggregation.
+
+    The dashboard adds ``cost_usd`` per provider so the SPA can render
+    a dollar figure next to each provider row without re-deriving on
+    the client. The aggregation must use ``model_catalog.cost_for``
+    with the supplied ``Settings`` so per-provider cost overrides
+    (decision 0025 sec 6.5 / Q5) flow through automatically.
+    """
+
+    def _settings(self):
+        return Settings(
+            workspace=__import__("pathlib").Path("/tmp/ws"),
+            executor="local",
+            provider="openai",
+            model="gpt-4o",
+            litellm_proxy=None,
+            log_level="INFO",
+            tiers={},
+        )
+
+    def test_per_provider_cost_usd_aggregates_tokens(self):
+        now = time.time()
+        mgr = MagicMock()
+        # Two openai runs: 1k in + 0.5k out + 3k in + 1.5k out = 7k total
+        # at $0.005/$0.015 -> 0.035 + 0.0075 = $0.0425
+        mgr.list_all_runs.return_value = [
+            _run(started_at=now - 100, provider="openai", model="gpt-4o", tokens_in=1000, tokens_out=500),
+            _run(started_at=now - 200, provider="openai", model="gpt-4o", tokens_in=3000, tokens_out=1500),
+        ]
+        audit = MagicMock()
+        audit.count_since.return_value = 0
+        result = compute_dashboard(mgr, audit, self._settings())
+        assert "openai" in result.by_provider
+        cost = result.by_provider["openai"].cost_usd
+        assert cost == pytest.approx(0.05, rel=1e-3)
+        assert result.by_provider["openai"].total == 6000
+
+    def test_multi_provider_cost_sums_to_cost_estimate(self):
+        now = time.time()
+        mgr = MagicMock()
+        mgr.list_all_runs.return_value = [
+            _run(started_at=now - 100, provider="openai", model="gpt-4o", tokens_in=1000, tokens_out=500),
+            _run(
+                started_at=now - 200,
+                provider="anthropic",
+                model="claude-3-5-sonnet-latest",
+                tokens_in=2000,
+                tokens_out=1000,
+            ),
+        ]
+        audit = MagicMock()
+        audit.count_since.return_value = 0
+        result = compute_dashboard(mgr, audit, self._settings())
+        per_provider_sum = sum(s.cost_usd for s in result.by_provider.values())
+        assert per_provider_sum == pytest.approx(result.cost_estimate_usd_today, abs=1e-5)
+
+    def test_unknown_provider_cost_is_zero(self):
+        now = time.time()
+        mgr = MagicMock()
+        mgr.list_all_runs.return_value = [
+            _run(
+                started_at=now - 100,
+                provider="unknown-provider",
+                model="unknown-model",
+                tokens_in=100000,
+                tokens_out=100000,
+            )
+        ]
+        audit = MagicMock()
+        audit.count_since.return_value = 0
+        result = compute_dashboard(mgr, audit, self._settings())
+        assert "unknown-provider" in result.by_provider
+        assert result.by_provider["unknown-provider"].cost_usd == 0.0
+
+    def test_settings_cost_rates_override_flows_through(self):
+        now = time.time()
+        mgr = MagicMock()
+        mgr.list_all_runs.return_value = [
+            _run(started_at=now - 100, provider="custom-provider", model="custom-model", tokens_in=1000, tokens_out=0)
+        ]
+        audit = MagicMock()
+        audit.count_since.return_value = 0
+
+        s = self._settings()
+        result_no_override = compute_dashboard(mgr, audit, s)
+        assert result_no_override.by_provider["custom-provider"].cost_usd == 0.0
+
+        s2 = Settings(
+            workspace=__import__("pathlib").Path("/tmp/ws"),
+            executor="local",
+            provider="openai",
+            model="gpt-4o",
+            litellm_proxy=None,
+            log_level="INFO",
+            tiers={},
+            cost_rates={"custom-provider": {"custom-model": [0.001, 0.0, 0.0]}},
+        )
+        result_with_override = compute_dashboard(mgr, audit, s2)
+        assert result_with_override.by_provider["custom-provider"].cost_usd == pytest.approx(0.001)
+
+    def test_tokens_today_aggregates_cost_usd_globally(self):
+        now = time.time()
+        mgr = MagicMock()
+        mgr.list_all_runs.return_value = [
+            _run(started_at=now - 100, provider="openai", model="gpt-4o", tokens_in=1000, tokens_out=500),
+        ]
+        audit = MagicMock()
+        audit.count_since.return_value = 0
+        result = compute_dashboard(mgr, audit, self._settings())
+        assert result.tokens_today.cost_usd == pytest.approx(0.0125)
+        assert result.tokens_today.cost_usd == pytest.approx(result.cost_estimate_usd_today)

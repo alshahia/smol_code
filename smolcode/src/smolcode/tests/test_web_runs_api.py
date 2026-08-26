@@ -343,9 +343,7 @@ class TestRunsAutoApprove:
         behavior); an array value is unambiguously NOT a bool."""
         rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
         run_id = rr.json()["run_id"]
-        r = client.post(
-            "/api/runs/" + run_id + "/auto-approve", json={"enabled": [1, 2, 3]}
-        )
+        r = client.post("/api/runs/" + run_id + "/auto-approve", json={"enabled": [1, 2, 3]})
         assert r.status_code == 422
 
     def test_auto_approve_returns_409_when_session_not_yet_active(self, client):
@@ -366,9 +364,7 @@ class TestRunsAutoApprove:
             if r.json()["status"] in ("done", "error", "stopped"):
                 break
             time.sleep(0.05)
-        r = client.post(
-            "/api/runs/" + run_id + "/auto-approve", json={"enabled": True}
-        )
+        r = client.post("/api/runs/" + run_id + "/auto-approve", json={"enabled": True})
         assert r.status_code == 409
         assert "session" in r.json()["detail"].lower()
 
@@ -380,8 +376,8 @@ class TestRunsAutoApprove:
         it releases the agent and asserts the response body shape.
         """
         from smolagents import CodeAgent
+
         from smolcode.models import _StubLiteLLMModel
-        from smolcode.tools import build_tools
         from smolcode.web import agent_runner as ar
         from smolcode.web import create_app
 
@@ -484,9 +480,7 @@ class TestRunsAutoApprove:
                 break
             time.sleep(0.05)
         # Session cleared -> 409 (vs 404 because the run record is still there).
-        r = client.post(
-            "/api/runs/" + run_id + "/auto-approve", json={"enabled": True}
-        )
+        r = client.post("/api/runs/" + run_id + "/auto-approve", json={"enabled": True})
         assert r.status_code == 409
 
 
