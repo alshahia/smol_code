@@ -296,8 +296,16 @@ class Settings:
 # validates each CIDR via `ipaddress.ip_network(strict=False)` and
 # raises ConfigError on the first malformed entry (fail-closed).
 #
-# IPv6 is NOT supported in the allowlist in M16 (v1.7); the elevated
-# container drops all IPv6 OUTPUT. IPv6 support is a v1.8 candidate.
+# IPv6 IS supported in the allowlist since decision 0034 (v1.9.x). Both
+# iptables (v4) and ip6tables (v6) chains are configured by the ENTRYPOINT
+# script `docker/iptables-init.sh`: default-deny OUTPUT on both, loopback
+# + Docker DNS accept on both, and per-CIDR accept for each CIDR in
+# ELEVATED_NET_ALLOWLIST (CIDRs are classified by family via the
+# `container.classify_cidrs` helper; IPv4 entries go to iptables, IPv6
+# entries to ip6tables). Prior to 0034, v1.7 dropped all IPv6 OUTPUT
+# implicitly (ip6tables default policy = ACCEPT but the Python-side
+# allowlist only listed v4 entries); the v1.7 docs incorrectly claimed
+# IPv6 was enforced. See docs/decisions/0034-ipv6-iptables-enforcement.md.
 
 
 # --- Defaults ----------------------------------------------------------------

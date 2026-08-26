@@ -39,6 +39,7 @@ The contract tests cover:
 from __future__ import annotations
 
 import ipaddress
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -47,6 +48,7 @@ import pytest
 
 from smolcode.config import ConfigError, Tier
 from smolcode.container import (
+    classify_cidrs,
     elevated_container_env,
     format_cidr_allowlist,
     is_iptables_kill_switch_active,
@@ -220,6 +222,165 @@ def test_is_iptables_kill_switch_active_truthy_strings_ignored():
     """
     for val in ("true", "True", "yes", "on", "1 ", " 1"):
         assert not is_iptables_kill_switch_active({"ELEVATED_DISABLE_IPTABLES": val}), val
+
+
+# -- classify_cidrs (decision 0034) -------------------------------------------
+
+
+def test_classify_cidrs_empty():
+    """Empty input -> ([], []). Both lists preserve input order (vacuously)."""
+    v4, v6 = classify_cidrs([])
+    assert v4 == []
+    assert v6 == []
+
+
+def test_classify_cidrs_v4_only():
+    """All-v4 allowlist -> v4 list populated, v6 empty."""
+    nets = parse_cidr_allowlist("10.0.0.0/8,192.168.1.0/24")
+    v4, v6 = classify_cidrs(nets)
+    assert [str(n) for n in v4] == ["10.0.0.0/8", "192.168.1.0/24"]
+    assert v6 == []
+
+
+def test_classify_cidrs_v6_only():
+    """All-v6 allowlist -> v4 empty, v6 list populated."""
+    nets = parse_cidr_allowlist("::1/128,2001:db8::/32")
+    v4, v6 = classify_cidrs(nets)
+    assert v4 == []
+    assert [str(n) for n in v6] == ["::1/128", "2001:db8::/32"]
+
+
+def test_classify_cidrs_mixed_preserves_input_order():
+    """Mixed v4+v6 allowlist: each side keeps its input order, NOT sorted.
+
+    The bash init script uses the same split to decide which chain gets
+    each rule; this test pins the order contract so a future refactor
+    that sorts (e.g. for stable output) does not silently change the
+    order of iptables -A OUTPUT calls (which would matter for debugging).
+    """
+    nets = parse_cidr_allowlist("10.0.0.0/8,::1/128,192.168.1.0/24,2001:db8::/32,::2/128")
+    v4, v6 = classify_cidrs(nets)
+    assert [str(n) for n in v4] == ["10.0.0.0/8", "192.168.1.0/24"]
+    assert [str(n) for n in v6] == ["::1/128", "2001:db8::/32", "::2/128"]
+
+
+def test_classify_cidrs_rejects_non_network():
+    """A non-IPNetwork object raises TypeError rather than silent drop."""
+    with pytest.raises(TypeError, match=r"classify_cidrs expected"):
+        classify_cidrs(["not-a-network"])  # type: ignore[list-item]
+
+
+def test_classify_cidrs_accepts_pure_network_inputs():
+    """A direct iterable of IPv4Network/IPv6Network (not from parse) works.
+
+    The helper must NOT require the caller to have run
+    parse_cidr_allowlist first; classification is a pure shape operation.
+    """
+    v4, v6 = classify_cidrs(
+        [
+            ipaddress.IPv4Network("10.0.0.0/8"),
+            ipaddress.IPv6Network("::1/128"),
+        ]
+    )
+    assert [str(n) for n in v4] == ["10.0.0.0/8"]
+    assert [str(n) for n in v6] == ["::1/128"]
+
+
+# -- bash init script: v6 chain presence (decision 0034) ----------------------
+
+
+_INIT_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "docker" / "iptables-init.sh"
+# Match the actual quoted shell invocations in the script: "$IPT" -P OUTPUT DROP
+# (and the ip6tables variants). Anchoring on the quoted variable prevents
+# false matches in comments or doc strings.
+_V4_DROP_RE = re.compile(re.escape('"$IPT"') + r"\s+-P\s+OUTPUT\s+DROP")
+_V6_DROP_RE = re.compile(re.escape('"$IP6T"') + r"\s+-P\s+OUTPUT\s+DROP")
+_V6_LO_RE = re.compile(re.escape('"$IP6T"') + r"\s+-A\s+OUTPUT\s+-o\s+lo\s+-j\s+ACCEPT")
+_V6_STATE_RE = re.compile(re.escape('"$IP6T"') + r"\s+-A\s+OUTPUT\s+-m\s+state")
+
+
+def test_iptables_init_sh_includes_v6_chain():
+    """The init script applies a parallel ip6tables chain (decision 0034).
+
+    We assert the key markers are present in the file rather than trying
+    to source the script (which would need iptables + ip6tables + gosu
+    installed and CAP_NET_ADMIN). This pins the contract that future
+    edits do not silently revert the IPv6 enforcement.
+    """
+    assert _INIT_SCRIPT_PATH.is_file(), f"missing init script: {_INIT_SCRIPT_PATH}"
+    text = _INIT_SCRIPT_PATH.read_text(encoding="utf-8")
+    assert "ip6tables" in text, "init script does not reference ip6tables"
+    assert _V6_DROP_RE.search(text), "init script does not set ip6tables OUTPUT default policy to DROP"
+    assert _V6_LO_RE.search(text), "init script does not accept ip6tables OUTPUT to loopback"
+    assert _V6_STATE_RE.search(text), "init script does not install ip6tables ESTABLISHED/RELATED rule"
+    assert "V4_CIDRS" in text and "V6_CIDRS" in text, "init script does not split allowlist into v4/v6 buckets"
+    assert "FATAL" in text and "ip6tables" in text, "init script does not fail-closed when ip6tables is missing"
+
+
+def test_iptables_init_sh_validate_first_then_apply():
+    """Validation of every CIDR runs BEFORE the first iptables/ip6tables call.
+
+    Fail-closed contract: a malformed CIDR must exit 78 with no partial
+    firewall (neither chain gets touched). We verify by grep that the
+    `exit 78` appears BEFORE the first actual iptables / ip6tables
+    invocation in the script (the quoted `"$IPT"` / `"$IP6T"` forms).
+    """
+    text = _INIT_SCRIPT_PATH.read_text(encoding="utf-8")
+    first_exit78 = text.find("exit 78")
+    assert first_exit78 != -1, "init script never exits 78 on bad CIDR"
+    v4_match = _V4_DROP_RE.search(text)
+    v6_match = _V6_DROP_RE.search(text)
+    assert v4_match is not None, "iptables default-deny rule missing"
+    assert v6_match is not None, "ip6tables default-deny rule missing"
+    first_iptables_drop = v4_match.start()
+    first_ip6tables_drop = v6_match.start()
+    assert first_exit78 < first_iptables_drop, (
+        f"exit 78 (idx={first_exit78}) must come before iptables default-deny "
+        f"(idx={first_iptables_drop}); otherwise a bad CIDR would be discovered "
+        "AFTER the v4 chain was already mutated."
+    )
+    assert first_exit78 < first_ip6tables_drop, (
+        f"exit 78 (idx={first_exit78}) must come before ip6tables default-deny "
+        f"(idx={first_ip6tables_drop}); otherwise a bad CIDR would be discovered "
+        "AFTER the v6 chain was already mutated."
+    )
+
+
+def test_iptables_init_sh_kill_switch_bypasses_both_chains():
+    """ELEVATED_DISABLE_IPTABLES=1 skips the entire firewall setup (v4 + v6).
+
+    Without this guarantee, an operator who sets the kill switch in an
+    attempt to debug v6 specifically would still have the v4 chain
+    applied (or vice versa). The kill switch is a documented escape
+    hatch; it must be a full escape hatch.
+    """
+    text = _INIT_SCRIPT_PATH.read_text(encoding="utf-8")
+    # The kill switch is the `if [[ "${ELEVATED_DISABLE_IPTABLES:-0}" == "1" ]]`
+    # block; we anchor on its `exec /usr/local/bin/gosu 1000:1000` line which
+    # is the only thing that runs inside the if-block. If we find the
+    # bypass exec BEFORE the first actual iptables / ip6tables invocation,
+    # the kill switch short-circuits both chains.
+    bypass_idx = text.find("/usr/local/bin/gosu 1000:1000")
+    assert bypass_idx != -1, "kill-switch bypass exec not found"
+    # The first invocation is the v4 binary-resolution check (line ~43) AND
+    # the v6 binary-resolution check (line ~47). Both are FATAL exits, not
+    # firewall mutations; what matters is the *first actual firewall mutation*
+    # which is `"$IPT" -P OUTPUT DROP` and `"$IP6T" -P OUTPUT DROP`.
+    v4_match = _V4_DROP_RE.search(text)
+    v6_match = _V6_DROP_RE.search(text)
+    assert v4_match is not None and v6_match is not None
+    first_v4_mutation = v4_match.start()
+    first_v6_mutation = v6_match.start()
+    assert bypass_idx < first_v4_mutation, (
+        f"kill-switch bypass (idx={bypass_idx}) must come before the first v4 "
+        f"firewall mutation (idx={first_v4_mutation}) so the v4 chain never "
+        "runs when the kill switch is on."
+    )
+    assert bypass_idx < first_v6_mutation, (
+        f"kill-switch bypass (idx={bypass_idx}) must come before the first v6 "
+        f"firewall mutation (idx={first_v6_mutation}) so the v6 chain never "
+        "runs when the kill switch is on."
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -1,8 +1,9 @@
-"""Container-side helpers (M16, decision 0020).
+"""Container-side helpers (M16, decision 0020 + decision 0034).
 
 Currently exposes:
 - parse_cidr_allowlist(str) -> list[IPv4Network | IPv6Network]
 - format_cidr_allowlist(iterable) -> str
+- classify_cidrs(iterable) -> tuple[list[IPv4Network], list[IPv6Network]]
 - elevated_container_env(Tier) -> dict[str, str]
 - is_iptables_kill_switch_active(env dict) -> bool
 
@@ -11,6 +12,12 @@ build the `environment` dict passed to the elevated Docker container.
 The same parsing logic is also run inside the container by
 `docker/iptables-init.sh` (via `python3 -c "ipaddress.ip_network(...)"`)
 so the validation is consistent on both sides.
+
+classify_cidrs (decision 0034) splits a parsed allowlist into the IPv4
+vs IPv6 sub-lists so each chain (iptables / ip6tables) only sees its
+family. The same logic is mirrored in the bash script; if you change
+one you must change the other (the test_classify_cidrs_* tests in
+test_elevated_iptables.py pin the Python contract).
 
 The kill switch check is exported separately so `audit.py` can decide
 whether to write a WARN entry to the audit log without depending on
@@ -28,6 +35,7 @@ from .config import ConfigError, Tier
 __all__ = [
     "parse_cidr_allowlist",
     "format_cidr_allowlist",
+    "classify_cidrs",
     "elevated_container_env",
     "is_iptables_kill_switch_active",
 ]
@@ -75,6 +83,41 @@ def format_cidr_allowlist(networks: Iterable[ipaddress.IPv4Network | ipaddress.I
     equals parse_cidr_allowlist(x) for any well-formed input x.
     """
     return ",".join(str(n) for n in networks)
+
+
+def classify_cidrs(
+    networks: Iterable[ipaddress.IPv4Network | ipaddress.IPv6Network],
+) -> tuple[list[ipaddress.IPv4Network], list[ipaddress.IPv6Network]]:
+    """Split a parsed allowlist into the IPv4 vs IPv6 sub-lists (decision 0034).
+
+    Returns a (v4, v6) tuple; each side preserves input order. Empty inputs
+    give ([], []). The decision 0034 init script uses the same split to
+    decide which chain (iptables vs ip6tables) gets each ACCEPT rule; this
+    helper is the Python-side mirror of that logic so callers that want to
+    inspect, log, or pre-validate the split without re-parsing can do so.
+
+    Example:
+        >>> v4, v6 = classify_cidrs(parse_cidr_allowlist(
+        ...     "10.0.0.0/8,::1/128,2001:db8::/32"
+        ... ))
+        >>> [str(n) for n in v4]
+        ['10.0.0.0/8']
+        >>> [str(n) for n in v6]
+        ['::1/128', '2001:db8::/32']
+    """
+    v4: list[ipaddress.IPv4Network] = []
+    v6: list[ipaddress.IPv6Network] = []
+    for n in networks:
+        if isinstance(n, ipaddress.IPv4Network):
+            v4.append(n)
+        elif isinstance(n, ipaddress.IPv6Network):
+            v6.append(n)
+        else:
+            # Defensive: parse_cidr_allowlist only ever yields these two
+            # types, but a caller could pass an arbitrary object. Surface
+            # the bug loudly instead of silently dropping it.
+            raise TypeError(f"classify_cidrs expected IPv4Network or IPv6Network, got {type(n).__name__}")
+    return v4, v6
 
 
 def elevated_container_env(tier: Tier) -> dict[str, str]:

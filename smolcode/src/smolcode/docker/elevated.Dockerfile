@@ -19,17 +19,26 @@
 #     firewall to take effect; smolcode does this in
 #     agents/base.py:_executor_kwargs_for (elevated tier only).
 #
-# v1.7 network posture (M16):
-#   - default-deny OUTPUT chain
-#   - loopback ACCEPT
-#   - DNS (127.0.0.11:53) ACCEPT
-#   - ESTABLISHED,RELATED ACCEPT (return traffic)
-#   - per-CIDR ACCEPT from ELEVATED_NET_ALLOWLIST (CIDR-only; no hostnames)
-#   - IPv6 OUTPUT is dropped (default policy on ip6tables is ACCEPT in
-#     many kernels; we add an explicit DROP rule in iptables-init.sh)
+# v1.7 network posture (M16) + v1.9.x IPv6 followup (decision 0034):
+#   - default-deny OUTPUT chain on iptables (IPv4)
+#   - default-deny OUTPUT chain on ip6tables (IPv6): closes the v1.7 gap
+#     where the elevated container's IPv6 egress was unrestricted (the
+#     default ip6tables policy is ACCEPT on Debian Bullseye, so without
+#     this rule an elevated agent could leak IPv6 packets freely). Both
+#     chains are configured by the ENTRYPOINT script below.
+#   - loopback ACCEPT on both chains (::1 + 127.0.0.1)
+#   - DNS (resolvers from /etc/resolv.conf) ACCEPT on both chains;
+#     only the v4 rules apply to v4 nameservers and only v6 rules to v6
+#   - ESTABLISHED,RELATED ACCEPT on both chains (return traffic)
+#   - per-CIDR ACCEPT from ELEVATED_NET_ALLOWLIST (CIDR-only; no
+#     hostnames); IPv4 entries apply to iptables, IPv6 entries to
+#     ip6tables. The Python-side container.classify_cidrs() (added in
+#     decision 0034) splits the allowlist on parse so each chain only
+#     sees its family.
 #   - ELEVATED_DISABLE_IPTABLES=1 is a documented kill switch; when set,
-#     the init script skips firewall setup and emits a WARN to stderr
-#     (smolcode also writes a WARN entry to the audit log when set).
+#     the init script skips firewall setup (BOTH chains) and emits a WARN
+#     to stderr (smolcode also writes a WARN entry to the audit log when
+#     set).
 #
 # Hardening (same as restricted):
 #   - non-root user (smolagent, UID 1000) for the agent process
