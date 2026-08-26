@@ -51,6 +51,20 @@ Mitigation going forward: keep uncommitted-work windows short; commit validated
 increments promptly; treat sudden "empty tree" during long test runs as this
 tool firing, not as code misbehaving.
 
+## Addendum - recurrences during Phase 1 (same day)
+
+The tool fired THREE more times while Phase 1 was in flight:
+`12:00:27Z`, `12:07:50Z`, `12:23:05Z` (all `smolcode-checkpoint-*` stashes).
+The 12:07 event hit BETWEEN a recovery and its commit (the first commit attempt
+found a clean tree); the 12:23 event reverted an edited file mid-pytest-run,
+producing one legitimate-looking test failure that was root-caused as this
+stash, not code.
+
+**Operational fix that held:** recover + stage + commit inside ONE shell
+invocation (`git checkout <stash^3> -- <new-files>; git stash apply; git add -A;
+git commit`). Both Phase 1 commits (357022d, 996c14f) landed through that
+window. No work was lost across all three events.
+
 ## Consequence for the plan
 - Full-suite validation deferred until the Phase-0 change set is committed or
   otherwise protected.
