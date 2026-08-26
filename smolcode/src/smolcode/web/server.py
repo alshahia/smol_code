@@ -70,6 +70,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.audit_sink = audit
         app.state.cost_cap_tracker = cost_cap_tracker
         app.state.run_manager = run_manager
+        # Phase 1 (C2): refuse to serve when sandboxed runs are configured
+        # but the tier images are missing/stale and cannot be built. Local-
+        # executor deployments are unaffected.
+        if getattr(settings, "executor", "") == "docker":
+            import anyio
+
+            from ..images import ImageBuildError, ensure_tier_images
+
+            def _ensure():
+                from ..images import SANDBOXED_TIERS
+
+                ensure_tier_images(settings, SANDBOXED_TIERS)
+
+            try:
+                await anyio.to_thread.run_sync(_ensure)
+            except ImageBuildError as e:
+                raise RuntimeError("sandbox images not available; refusing to start web server: " + str(e)) from e
         try:
             yield
         finally:

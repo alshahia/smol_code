@@ -242,9 +242,7 @@ def test_delegation_installs_child_session_with_correct_tier(monkeypatch):
     )
     cb = _RecordingCallback()
     set_session(SessionState(tier="restricted", confirm_callback=cb))
-    agent = build_orchestrator_agent(
-        settings, _StubLiteLLMModel(), specialists=[], full_access_gate=lambda: None
-    )
+    agent = build_orchestrator_agent(settings, _StubLiteLLMModel(), specialists=[], full_access_gate=lambda: None)
     answer = agent.tools["do_full_access_task"].forward(task="do infra")
     assert answer == "sub-ok"
     assert len(seen) == 1
@@ -262,9 +260,7 @@ def test_child_seed_inherits_auto_approve(monkeypatch):
         lambda tier, settings, model, **kw: _FakeSubAgent(seen),
     )
     set_session(SessionState(tier="restricted", auto_approve_destructive=True))
-    agent = build_orchestrator_agent(
-        settings, _StubLiteLLMModel(), specialists=[], full_access_gate=lambda: None
-    )
+    agent = build_orchestrator_agent(settings, _StubLiteLLMModel(), specialists=[], full_access_gate=lambda: None)
     agent.tools["do_elevated_task"].forward(task="build")
     assert seen[0].tier == "elevated"
     assert seen[0].auto_approve_destructive is True

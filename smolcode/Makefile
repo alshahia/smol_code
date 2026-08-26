@@ -1,4 +1,4 @@
-.PHONY: install quality style test run clean
+.PHONY: install quality style test run clean docker-images
 
 PYTHON ?= python
 VENV := .venv
@@ -31,6 +31,11 @@ test:
 # Pass-through to the venv python so the user doesn't need to remember the path
 run:
 	$(VENV)/Scripts/python -m smolcode $(ARGS)
+
+# Build/refresh the three tier sandbox images (Phase 1, C2).
+# Same code path the CLI/web boot uses (smolcode.images.ensure_tier_images).
+docker-images:
+	$(VENV)/Scripts/python -m smolcode.images ensure
 
 # Remove build / cache artefacts
 clean:

@@ -132,6 +132,16 @@ done
 # Loopback (::1).
 "$IP6T" -A OUTPUT -o lo -j ACCEPT
 
+# Phase 1 (H1 fix): ICMPv6 control traffic must traverse even a
+# default-deny OUTPUT chain or IPv6 breaks subtly:
+#   type 2    = Packet Too Big (PMTUD; without it large v6 packets black-hole)
+#   type 133/134 = Router Solicitation / Advertisement
+#   type 135/136 = Neighbor Solicitation / Advertisement (NDP)
+# These are link-local control messages, not application egress.
+for icmp_type in 2 133 134 135 136; do
+    "$IP6T" -A OUTPUT -p ipv6-icmp --icmpv6-type "$icmp_type" -j ACCEPT
+done
+
 # DNS to v6 nameservers from /etc/resolv.conf.
 for ns in $NAMESERVERS_V4; do
     ns_class=$(python3 -c "

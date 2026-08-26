@@ -205,6 +205,31 @@ def main(argv=None):
         }[args.tier]
         orchestrator_mode = False
 
+    # Phase 1 (C2): make the tier sandbox images REAL before anything
+    # runs. Refuses (exit 6) when a needed image is missing/stale and
+    # cannot be built - never fall back to an unverified executor image.
+    if not args.smoke and settings.executor == "docker":
+        from .images import SANDBOXED_TIERS, ImageBuildError, ensure_tier_images
+
+        needed = list(SANDBOXED_TIERS) if orchestrator_mode else [args.tier]
+        if orchestrator_mode or args.tier in SANDBOXED_TIERS:
+            try:
+                for tag in ensure_tier_images(settings, needed):
+                    print(f"built sandbox image {tag}", file=sys.stderr)
+            except ImageBuildError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 6
+        # Phase 1 (H1): the restricted tier attaches to an internal
+        # bridge at launch; make sure it exists before any agent runs.
+        if orchestrator_mode or args.tier == "restricted":
+            try:
+                from .container import ensure_internal_network
+
+                ensure_internal_network()
+            except Exception as e:
+                print(f"error: could not prepare restricted-tier internal network: {e}", file=sys.stderr)
+                return 6
+
     # M4: full_access confirmation prompt (30s hard y/N, configurable).
     # Fires BEFORE the agent is built so a denial never spends tokens.
     #

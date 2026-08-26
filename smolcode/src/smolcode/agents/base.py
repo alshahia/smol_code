@@ -105,8 +105,22 @@ def _executor_kwargs_for(executor_type, tier, settings):
 
             run_kwargs["cap_add"] = ["NET_ADMIN"]
             run_kwargs["environment"] = elevated_container_env(tier)
+        elif tier.name == "restricted":
+            # Phase 1 (H1): network=none enforced by topology - attach
+            # ONLY to an internal bridge (no external route, no default-
+            # bridge egress). The network is created idempotently at boot
+            # (see smolcode.container.ensure_internal_network).
+            from ..container import INTERNAL_NETWORK_NAME
+
+            run_kwargs["network"] = INTERNAL_NETWORK_NAME
         return {
             "image_name": tier.docker_image,
+            # Phase 1 (C2): smolagents defaults to build_new_image=True and
+            # would rebuild this tag from ITS generic jupyter Dockerfile,
+            # silently discarding our hardening (non-root user, iptables
+            # ENTRYPOINT, allowlisted CLIs). Images are made real + current
+            # by smolcode.images.ensure_tier_images() at boot instead.
+            "build_new_image": False,
             "container_run_kwargs": run_kwargs,
         }
     return {}

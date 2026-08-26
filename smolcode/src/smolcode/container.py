@@ -33,12 +33,45 @@ from .config import ConfigError, Tier
 
 
 __all__ = [
+    "INTERNAL_NETWORK_NAME",
+    "ensure_internal_network",
     "parse_cidr_allowlist",
     "format_cidr_allowlist",
     "classify_cidrs",
     "elevated_container_env",
     "is_iptables_kill_switch_active",
 ]
+
+
+# Phase 1 (H1): restricted-tier containers attach to this internal bridge
+# (no external route, no default-bridge egress) so network="none" is a
+# property of the runtime topology, not just a declaration.
+INTERNAL_NETWORK_NAME = "smolcode-internal"
+
+
+def ensure_internal_network(docker_client=None):
+    """Create the restricted-tier internal bridge if missing; return it.
+
+    Internal Docker networks have no external route: containers attached
+    ONLY to them cannot reach the internet (or the host gateway), which
+    is exactly the restricted tier's declared network="none" posture.
+    Idempotent. Raises whatever docker-py raises on daemon errors -
+    callers treat that as refuse-to-start.
+    """
+    client = docker_client
+    if client is None:
+        import docker
+
+        client = docker.from_env()
+    for net in client.networks.list(names=[INTERNAL_NETWORK_NAME]):
+        if net.name == INTERNAL_NETWORK_NAME:
+            return net
+    return client.networks.create(
+        INTERNAL_NETWORK_NAME,
+        driver="bridge",
+        internal=True,
+        labels={"org.opencontainers.image.source": "smolcode"},
+    )
 
 
 def parse_cidr_allowlist(value: str) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
