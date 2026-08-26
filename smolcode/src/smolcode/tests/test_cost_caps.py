@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import time
 from contextlib import contextmanager
@@ -220,6 +221,7 @@ def _app_with_cap(monkeypatch, caps=None):
         yield client
     finally:
         client.__exit__(None, None, None)
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 class TestCostCapsAPI:
@@ -315,6 +317,7 @@ def _app_with_running_runs(monkeypatch, runs):
         yield client, app, mgr
     finally:
         client.__exit__(None, None, None)
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 def _fake_run(*, provider, model, started_at, tokens_in, tokens_out):

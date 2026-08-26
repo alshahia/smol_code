@@ -6,31 +6,39 @@ Two responsibilities:
        real API keys into the test environment
 """
 
+import os
+
 import pytest
 
 from smolcode import config as _config_module
 
 
+# Provider-key / provider-host variables do not share a common prefix,
+# so they are listed explicitly. Anything SMOLCODE_-prefixed is cleared
+# by the loop below, which stays correct as new settings are added
+# (SMOLCODE_UPLOAD_DIR, SMOLCODE_PROJECTS, SMOLCODE_MCP_CONFIG, ...).
+_PROVIDER_ENV_VARS = (
+    "OPENCODE_GO_APIKEY",
+    "OPENCODE_HOST",
+    "MINIMAX_API_KEY",
+    "MINIMAX_HOST",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "CUSTOM_BASE_URL",
+    "CUSTOM_API_KEY",
+    "HF_TOKEN",
+)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch, tmp_path):
     """Per-test isolation: cleared env, fresh tmp workspace, no dotenv."""
-    # Clear all SMOLCODE_* and provider-key env vars
-    for var in [
-        "SMOLCODE_WORKSPACE",
-        "SMOLCODE_EXECUTOR",
-        "SMOLCODE_PROVIDER",
-        "SMOLCODE_MODEL",
-        "SMOLCODE_LITELLM_PROXY",
-        "SMOLCODE_LOG_LEVEL",
-        "OPENCODE_GO_APIKEY",
-        "OPENCODE_HOST",
-        "MINIMAX_API_KEY",
-        "MINIMAX_HOST",
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "CUSTOM_BASE_URL",
-        "CUSTOM_API_KEY",
-    ]:
+    # Prefix-based clear so new SMOLCODE_* settings cannot silently
+    # drift past this fixture.
+    for var in list(os.environ):
+        if var.startswith("SMOLCODE_"):
+            monkeypatch.delenv(var, raising=False)
+    for var in _PROVIDER_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
     # Point workspace at a fresh tmp dir
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path / "ws"))

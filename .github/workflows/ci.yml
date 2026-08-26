@@ -1,0 +1,103 @@
+# Continuous integration for smolcode (Phase 0 of the 2026-08-26 remediation plan).
+#
+# Job layout mirrors docs/reviews/2026-08-26-full-app-review/REMEDIATION-PLAN.md:
+#   lint            - ruff check + format check on src (same as `make quality`)
+#   tests           - unit suite, docker/shellcheck-marked tests excluded or self-skipped
+#   sandbox-contract- shellcheck on iptables-init.sh + elevated firewall contract
+#                     tests (they build their own smolcode:elevated-test image)
+#   coverage        - full suite with the coverage gate; NON-BLOCKING until the
+#                     real baseline is measured after Phase 0 (see TODO below).
+#
+# NOTE: docker/full_access.Dockerfile does not build as written (review finding
+# C2) so image builds are intentionally left to the contract tests' own scoped
+# build of the elevated image only.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: smolcode
+
+jobs:
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Ruff lint (src)
+        run: uv run ruff check src
+      - name: Ruff format check (src)
+        run: uv run ruff format --check src
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Unit suite (docker-marked tests deselected)
+        # shellcheck-marked tests self-skip when the binary is absent
+        # (windows); ubuntu runners ship shellcheck so they run there.
+        run: uv run pytest src/smolcode/tests -m "not docker" -q
+
+  sandbox-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Ensure shellcheck present
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          fi
+          shellcheck --version | head -2
+      - name: iptables script contract + firewall end-to-end tests
+        # These tests build smolcode:elevated-test themselves and skip
+        # cleanly only when Docker is unavailable; on ubuntu-latest it is.
+        run: uv run pytest src/smolcode/tests/test_elevated_iptables.py -m "docker or shellcheck" -v
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # TODO(Phase 0 close-out): measure the real baseline with this exact
+    # invocation, pin --cov-fail-under to it (or 80 if it clears), then
+    # remove continue-on-error so the gate blocks regressions.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Suite with coverage
+        run: >
+          uv run pytest src/smolcode/tests -m "not docker" -q
+          --cov=smolcode --cov-report=term-missing --cov-fail-under=80

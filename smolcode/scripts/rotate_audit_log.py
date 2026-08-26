@@ -17,6 +17,7 @@ Exit codes:
     0  rotation (or no-op) succeeded.
     1  an error occurred; stderr has the traceback.
 """
+
 from __future__ import annotations
 
 import gzip

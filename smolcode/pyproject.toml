@@ -55,7 +55,10 @@ dev-dependencies = [
 where = ["src"]
 
 [tool.pytest.ini_options]
-addopts = "-sv --durations=0 --basetemp=.pytest_tmp --cov=smolcode --cov-report=term --cov-fail-under=80"
+# Coverage is enforced by the Makefile `test` target and the CI coverage
+# job, NOT here: a global --cov-fail-under makes every subset/partial run
+# exit non-zero and trains contributors to ignore red exits.
+addopts = "-sv --durations=0 --basetemp=.pytest_tmp"
 testpaths = ["src/smolcode/tests"]
 # M16: markers for tests that need optional tools.
 # `docker`   -- requires a working Docker daemon (used by contract tests

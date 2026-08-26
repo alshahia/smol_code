@@ -377,13 +377,10 @@ def test_redact_is_installed_for_cli(monkeypatch):
     # --print-config requires no key; use it as a no-op entry point.
     rc = cli.main(["--print-config"])
     assert rc == 0
-    # Either the redact factory is still installed, OR basicConfig
-    # re-installed the root logger (acceptable in tests).
-    # We just verify is_installed() is True OR that a redaction
-    # would happen if we logged through the factory now.
-    if not redact_mod.is_installed():
-        redact_mod.install_redact_filter()
-    assert redact_mod.is_installed()
+    # main() itself must have installed the filter. Installing it here
+    # as a fallback would make this test tautological: it could never
+    # fail even if main() stopped installing the filter.
+    assert redact_mod.is_installed(), "cli.main() did not install the RedactSecretsFilter"
     redact_mod.reset_for_tests()
 
 

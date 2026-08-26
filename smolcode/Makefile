@@ -26,7 +26,7 @@ style:
 
 # Run the test suite
 test:
-	$(VENV)/Scripts/pytest src/smolcode/tests/
+	$(VENV)/Scripts/pytest src/smolcode/tests/ --cov=smolcode --cov-report=term --cov-fail-under=80
 
 # Pass-through to the venv python so the user doesn't need to remember the path
 run:

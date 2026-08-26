@@ -18,7 +18,9 @@ don't touch the user's repo. Tests that just need a path use
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -75,10 +77,13 @@ def _non_git_workspace(tmp_path_factory):
     discovers the parent worktree and treats the test directory as
     part of it. We need a fresh empty directory *outside* the
     repository's working tree. We use ``tempfile.mkdtemp`` under
-    the OS temp directory; cleanup relies on the OS temp policy
-    (pytest's finalizer hooks vary by version).
+    the OS temp directory; the directory is registered for best-effort
+    removal at interpreter exit so temp trees do not accumulate
+    across sessions.
     """
-    return Path(tempfile.mkdtemp(prefix="smolcode-not-a-git-repo-"))
+    path = Path(tempfile.mkdtemp(prefix="smolcode-not-a-git-repo-"))
+    atexit.register(shutil.rmtree, path, True)
+    return path
 
 
 # ---- Workspace path doesn't exist -----------------------------------------

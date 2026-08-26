@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import time
 
@@ -368,7 +369,7 @@ class TestRunsAutoApprove:
         assert r.status_code == 409
         assert "session" in r.json()["detail"].lower()
 
-    def test_auto_approve_flips_session_flag_while_run_active(self, client, monkeypatch):
+    def test_auto_approve_flips_session_flag_while_run_active(self, client, monkeypatch, request):
         """Drive the endpoint DURING the run by monkeypatching the
         stub agent to block on a threading.Event so the session stays
         installed; the test flips the flag via POST /auto-approve and
@@ -389,6 +390,7 @@ class TestRunsAutoApprove:
         import tempfile
 
         workspace = tempfile.mkdtemp(prefix="smolcode-autoapprove-")
+        request.addfinalizer(lambda: shutil.rmtree(workspace, ignore_errors=True))
         monkeypatch.setenv("SMOLCODE_WORKSPACE", workspace)
         monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")
         monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")

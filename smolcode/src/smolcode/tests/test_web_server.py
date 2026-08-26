@@ -31,16 +31,20 @@ class TestBindHosts:
 
 
 class TestCreateApp:
-    def test_create_app_default_settings(self):
+    def test_create_app_default_settings(self, monkeypatch):
+        from smolcode import redact as redact_mod
         from smolcode.web import create_app
 
         for k in list(os.environ):
             if k.startswith("SMOLCODE_"):
-                del os.environ[k]
+                monkeypatch.delenv(k, raising=False)
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ["SMOLCODE_WORKSPACE"] = tmp
+            monkeypatch.setenv("SMOLCODE_WORKSPACE", tmp)
             app = create_app()
             assert app.title == "smolcode viewer"
+            # create_app() must install the redaction filter as part of
+            # app construction (server.py calls install_redact_filter).
+            assert redact_mod.is_installed()
             paths = sorted({r.path for r in app.router.routes if hasattr(r, "path")})
             # Must include the read-only viewer + upload endpoints.
             assert "/api/health" in paths

@@ -163,7 +163,7 @@ import gzip, os, shutil, sys, time
 from pathlib import Path
 
 repo = Path(os.environ.get("SMOLCODE_REPO", ".")).resolve()
-log  = repo / "logs" / "audit.jsonl"
+log = repo / "logs" / "audit.jsonl"
 retention_days = int(os.environ.get("SMOLCODE_AUDIT_RETENTION_DAYS", "365"))
 
 if log.exists() and log.stat().st_size > 0:
