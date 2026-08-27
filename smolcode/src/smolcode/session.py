@@ -27,7 +27,7 @@ import re
 import threading
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -93,6 +93,15 @@ class SessionState:
     # run, but the endpoint is called over HTTP and may target a
     # stale id).
     run_id: str | None = None
+    # Phase 3 F3 (decision 0036): per-session per-path allowlist for
+    # outside-project writes (Q2 policy). Populated when the user
+    # clicks "Approve for this session for THIS path" in the
+    # outside-root modal; subsequent writes to the same absolute
+    # target auto-approve without re-prompting. RESET on every new
+    # SessionState() (every new run), matching the lifecycle of the
+    # existing auto_approve_destructive flag. Stores absolute
+    # target paths as returned by Path.resolve().
+    outside_root_allowlist: set = field(default_factory=set)
 
 
 _session: SessionState | None = None
@@ -150,6 +159,38 @@ def _ensure_default_session():
     with _session_lock:
         if _session is None:
             _session = SessionState()
+
+
+def add_outside_root_allow(abs_path):
+    """Phase 3 F3 (decision 0036): add ``abs_path`` to the active
+    session's outside_root_allowlist. Called by
+    ``_resolve_outside_root_decision`` when the user picks
+    "Approve for this session for THIS path" in the Q2 modal.
+    Atomic under ``_session_lock`` so a concurrent auto-approve
+    # check on the same path sees the new entry before it returns.
+    # A no-op when no session is installed (CLI / no-op context).
+    """
+    global _session
+    if not abs_path:
+        return
+    with _session_lock:
+        s = _session
+        if s is None:
+            return
+        s.outside_root_allowlist.add(str(abs_path))
+
+
+def get_outside_root_allowlist():
+    """Phase 3 F3 (decision 0036): snapshot the active session's
+    outside_root_allowlist. Returns an empty set when no session
+    is installed. Read under ``_session_lock`` so a concurrent
+    ``add_outside_root_allow`` is observed consistently.
+    """
+    with _session_lock:
+        s = _session
+        if s is None:
+            return set()
+        return set(s.outside_root_allowlist)
 
 
 def set_auto_approve(run_id, enabled):
@@ -221,6 +262,10 @@ __all__ = [
     # used by POST /api/runs/{id}/auto-approve.
     "set_auto_approve",
     "get_auto_approve",
+    # Phase 3 F3 (decision 0036): outside-root allowlist helpers
+    # used by the Q2 outside-root gate.
+    "add_outside_root_allow",
+    "get_outside_root_allowlist",
     # Phase 1 (C1): scoped installation for orchestrator delegations.
     "session_scope",
     # Phase 1 (decision 0025 §6.3): chat-session storage helpers.

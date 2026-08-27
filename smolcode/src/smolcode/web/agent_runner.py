@@ -571,13 +571,39 @@ def _build_full_access_gate(run, timeout_s):
 
 
 def _rel_path(run, abs_path):
-    """Workspace-relative path for ``abs_path`` (best effort)."""
+    """Workspace- or effective_cwd-relative path for ``abs_path``.
+
+    Phase 3 F3 (decision 0036): when the run has an
+    ``effective_cwd`` set (the user toggled "anchor writes to this
+    project's root" on the composer, AND a matching project root
+    was found), the relative path is computed against THAT
+    directory instead of ``run.workspace``. The fallback chain is
+    ``effective_cwd`` -> ``workspace`` -> "" (legacy). The
+    character of the relative path is unchanged so the SPA's
+    ``touched_paths`` highlighting + WorkspaceTree paths keep
+    working: an anchored run landing at /ws/1/todo_app/x.py yields
+    'todo_app/x.py' (NOT '../todo_app/x.py' or '1/todo_app/x.py').
+    """
     if not isinstance(abs_path, str) or not abs_path:
-        return ""
-    if not run.workspace:
         return ""
     import os
 
+    # Phase 3 F3: prefer effective_cwd when set. Compare against
+    # normcase so Windows drive-letter casing does not break the
+    # containment check; we still return POSIX-style separators for
+    # the SPA's workspace tree display.
+    eff = getattr(run, "effective_cwd", None)
+    if eff:
+        try:
+            eff_n = os.path.normcase(str(eff))
+            common = os.path.commonpath([os.path.normcase(abs_path), eff_n])
+        except ValueError:
+            common = None
+        if common == eff_n:
+            return os.path.relpath(abs_path, eff_n).replace(os.sep, "/")
+
+    if not run.workspace:
+        return ""
     try:
         common = os.path.commonpath([os.path.normcase(abs_path), os.path.normcase(run.workspace)])
     except ValueError:
@@ -585,6 +611,60 @@ def _rel_path(run, abs_path):
     if common != os.path.normcase(run.workspace):
         return ""
     return os.path.relpath(abs_path, run.workspace).replace(os.sep, "/")
+
+
+def _is_outside_root(path, effective_cwd):
+    """Phase 3 F3 (decision 0036): True when ``path`` resolves
+    outside ``effective_cwd``.
+
+    Used by ``_build_diff_callback`` to route writes through the
+    Q2 outside-root gate (BLOCK + full-path modal + per-session
+    per-path allowlist). Returns False when ``effective_cwd`` is
+    empty/None so legacy (un-anchored) runs are never penalised.
+    Comparison is on normcase to keep Windows drive-letter casing
+    out of the path match. Resolves both paths before comparing so
+    a relative ``path`` is still correctly classified.
+    """
+    import os
+    if not path or not effective_cwd:
+        return False
+    try:
+        target = os.path.normcase(str(Path(path).resolve()))
+        cwd = os.path.normcase(str(Path(effective_cwd).resolve()))
+    except (OSError, ValueError):
+        return False
+    if target == cwd:
+        return False
+    try:
+        common = os.path.commonpath([target, cwd])
+    except ValueError:
+        return False
+    return common != cwd
+
+
+def _resolve_outside_root_decision(decision):
+    """Phase 3 F3 (decision 0036): translate an outside_root
+    PendingDecision resolve outcome into an action discriminator +
+    an optional allowlist mutation. Returns ``(approved, action)``
+    where ``action`` is one of ``"deny"``, ``"approve_once"``,
+    ``"approve_session_for_path"``. Auto-mutates
+    ``current_session().outside_root_allowlist`` for the
+    session-for-path variant so the next write to the same
+    absolute target is auto-approved (Q2).
+    """
+    reason = (decision.reason or "").strip()
+    approved = bool(decision.approved)
+    if not approved:
+        return False, "deny"
+    if reason in ("user-once-outside-root", "user-approved-outside-root"):
+        return True, "approve_once"
+    if reason == "user-session-for-path-outside-root":
+        from ..session import add_outside_root_allow
+
+        add_outside_root_allow(decision.path or "")
+        return True, "approve_session_for_path"
+    # Unknown reason on an approve -- treat as approve_once for safety.
+    return True, "approve_once"
 
 
 def _build_diff_callback(run, timeout_s):
@@ -607,6 +687,103 @@ def _build_diff_callback(run, timeout_s):
     def _cb(tool_name, kwargs, path, before, after, summary):
         if run.stop_flag.is_set():
             return DiffDecision(approved=False, reason="stopped")
+
+        # Phase 3 F3 (decision 0036) Q2 policy: when the run is
+        # anchored to a project root AND the proposed write path
+        # escapes that root, route through the outside-root gate
+        # BEFORE the standard diff gate. Outcomes: (a) auto-allow
+        # when the absolute target is on SessionState.
+        # outside_root_allowlist (Q2); (b) deny -> PermissionError;
+        # (c) approve once -> write proceeds; (d) approve for this
+        # session for THIS path -> add to allowlist + write
+        # proceeds. Every outcome emits a diff_decision audit
+        # record with outside_root=true + an action discriminator
+        # (deny / approve_once / approve_session_for_path).
+        eff_cwd = getattr(run, "effective_cwd", None)
+        if getattr(run, "anchor_to_project_root", False) and eff_cwd and _is_outside_root(path, str(eff_cwd)):
+            absolute_target = ""
+            try:
+                absolute_target = str(Path(path).resolve())
+            except (OSError, ValueError):
+                absolute_target = str(path or "")
+            from ..session import current_session as _cs
+
+            allow = getattr(_cs(), "outside_root_allowlist", None) or set()
+            if absolute_target and absolute_target in allow:
+                # Q2 auto-approve path -- no modal, audit emit only.
+                run.status = STATUS_AWAITING_APPROVAL
+                if run.audit_sink is not None:
+                    try:
+                        run.audit_sink.record(
+                            "diff_decision",
+                            tool=tool_name,
+                            path=str(path or ""),
+                            summary=str(summary),
+                            approved=True,
+                            reason="auto-approved-outside-root",
+                            edited=False,
+                            run_id=run.id,
+                            outside_root=True,
+                            auto_approved=True,
+                            absolute_target=absolute_target,
+                            effective_cwd=str(eff_cwd),
+                        )
+                    except Exception:
+                        pass
+                run.status = STATUS_RUNNING
+                return DiffDecision(approved=True, reason="auto-approved-outside-root")
+
+            run.status = STATUS_AWAITING_APPROVAL
+            d_or = run.open_decision(
+                tool=tool_name,
+                args=dict(kwargs) if isinstance(kwargs, dict) else {},
+                summary=str(summary),
+                tier=run.tier,
+                kind="outside_root",
+                path=absolute_target,
+                before=str(before or ""),
+                after=str(after or ""),
+            )
+            run.publish(
+                EVT_APPROVAL_REQUESTED,
+                {
+                    "decision_id": d_or.id,
+                    "tool": tool_name,
+                    "kind": "outside_root",
+                    "absolute_target": absolute_target,
+                    "effective_cwd": str(eff_cwd),
+                    "allowed_actions": ["deny", "approve_once", "approve_session_for_path"],
+                    "ts": _time_now_iso(),
+                    "timeout_s": float(timeout_s),
+                },
+            )
+            decided_or = d_or.event.wait(timeout=timeout_s)
+            if not decided_or:
+                d_or.resolve(approved=False, edited_args=None, reason="timeout")
+            run.status = STATUS_RUNNING
+            approved_or, action_or = _resolve_outside_root_decision(d_or)
+            if run.audit_sink is not None:
+                try:
+                    run.audit_sink.record(
+                        "diff_decision",
+                        tool=tool_name,
+                        path=str(path or ""),
+                        summary=str(summary),
+                        approved=approved_or,
+                        reason=d_or.reason or "",
+                        edited=False,
+                        run_id=run.id,
+                        outside_root=True,
+                        action=action_or,
+                        absolute_target=absolute_target,
+                        effective_cwd=str(eff_cwd),
+                    )
+                except Exception:
+                    pass
+            if not approved_or:
+                return DiffDecision(approved=False, reason=d_or.reason or "user-denied-outside-root")
+            # Approved -- fall through to the diff viewer below.
+
         run.status = STATUS_AWAITING_APPROVAL
         rel = _rel_path(run, path)
         if rel:

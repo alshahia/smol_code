@@ -149,6 +149,11 @@ class QueueEntry:
     provider_override: str | None = None
     model_override: str | None = None
     api_key_value: str | None = None
+    # Phase 3 F3 (decision 0036): per-run anchor toggle (Q1). The
+    # field is forwarded through the queue so the drained run
+    # resolves effective_cwd the same way an immediate start_run
+    # would. Default False keeps the legacy behaviour.
+    anchor_to_project_root: bool = False
 
 
 STATUS_PENDING = "pending"
@@ -265,6 +270,25 @@ class Run:
     # terminal runs. Surfaced in RunSummary.queue_position + the SPA's
     # <QueuePane>.
     queue_position: int | None = None
+    # Phase 3 F3 (decision 0036): the resolved working directory for
+    # write_file / patch_file. Defaults to None = legacy mode (anchored
+    # to settings.workspace via ``workspace``). Set by RunManager.start_run
+    # / start_or_enqueue_run to the project root when the user toggled
+    # ``anchor_to_project_root=True`` on the composer (per Q1 policy the
+    # per-run default is False; the toggle is opt-in). Surfaced in the
+    # Inspector "Working root" row so the user can confirm where files
+    # actually land + click [Open] to launch the OS file explorer at
+    # that path. NEVER updated after Run construction -- effective_cwd
+    # is a run-start-time snapshot.
+    effective_cwd: Path | None = None
+    # Phase 3 F3 (decision 0036): the per-run anchor toggle. Default
+    # False per Q1 (anchor mode is opt-in). When True AND project is
+    # set AND a matching Project root exists, the runner writes to
+    # that root; writes that escape it hit the Q2 outside-root gate
+    # (full-path modal + per-session per-path allowlist). When False
+    # the runner keeps the legacy behaviour (writes anchored to
+    # settings.workspace via Run.workspace).
+    anchor_to_project_root: bool = False
 
     def record_touch(self, rel_path):
         if not isinstance(rel_path, str) or not rel_path:
@@ -723,6 +747,7 @@ class RunManager:
         api_key_value=None,
         session_id=None,
         project=None,
+        anchor_to_project_root=False,
     ):
         """Start one agent run.
 
@@ -785,6 +810,31 @@ class RunManager:
             except ValueError:
                 effective_session_id = None
 
+        # Phase 3 F3 (decision 0036, Q1): resolve effective_cwd from
+        # (anchor_to_project_root AND project AND matching_project_root)
+        # ? Path(matching_project_root) : Path(settings.workspace).
+        # Anchoring without a matching project is a silent no-op (the
+        # SPA renders the "files landed in workspace, not project"
+        # notice).
+        effective_cwd: Path | None = None
+        if bool(anchor_to_project_root) and effective_project:
+            from ..session import resolve_project_root
+
+            try:
+                effective_cwd = resolve_project_root(settings, effective_project)
+                ws_root = Path(str(getattr(settings, "workspace", "") or ""))
+                if effective_cwd == ws_root:
+                    # resolve_project_root returns the workspace
+                    # fallback for projects whose root matches it;
+                    # treat as legacy mode so the Inspector does
+                    # not show a misleading "Working root" row.
+                    effective_cwd = None
+            except Exception:
+                effective_cwd = None
+        if effective_cwd is None:
+            ws = getattr(settings, "workspace", "") or ""
+            effective_cwd = Path(ws) if ws else None
+
         run = Run(
             id=uuid.uuid4().hex,
             task=task.strip(),
@@ -798,6 +848,8 @@ class RunManager:
             api_key_value=ak,
             session_id=effective_session_id,
             project=effective_project,
+            effective_cwd=effective_cwd,
+            anchor_to_project_root=bool(anchor_to_project_root),
         )
         with self._lock:
             self._runs[run.id] = run
@@ -824,6 +876,7 @@ class RunManager:
         api_key_value=None,
         session_id=None,
         project=None,
+        anchor_to_project_root=False,
     ):
         """Phase 2 (decision 0025 §6.4): same as ``start_run`` but
         auto-enqueues when a run is already active. Returns
@@ -872,6 +925,24 @@ class RunManager:
             ak = api_key_value if isinstance(api_key_value, str) and api_key_value.strip() else None
             base_provider = getattr(settings, "provider", "") or ""
             base_model = getattr(settings, "model", "") or ""
+            # Phase 3 F3: resolve effective_cwd the same way start_run
+            # does, so when the queued run drains and starts, the
+            # Q2 outside-root gate is armed correctly.
+            effective_cwd: Path | None = None
+            if bool(anchor_to_project_root) and effective_project:
+                from ..session import resolve_project_root
+
+                try:
+                    effective_cwd = resolve_project_root(settings, effective_project)
+                    ws_root = Path(str(getattr(settings, "workspace", "") or ""))
+                    if effective_cwd == ws_root:
+                        effective_cwd = None
+                except Exception:
+                    effective_cwd = None
+            if effective_cwd is None:
+                ws = getattr(settings, "workspace", "") or ""
+                effective_cwd = Path(ws) if ws else None
+
             run = Run(
                 id=uuid.uuid4().hex,
                 task=task.strip(),
@@ -885,6 +956,8 @@ class RunManager:
                 api_key_value=ak,
                 session_id=eff_sid,
                 project=effective_project,
+                effective_cwd=effective_cwd,
+                anchor_to_project_root=bool(anchor_to_project_root),
             )
             run.status = STATUS_QUEUED
             with self._lock:
@@ -910,6 +983,7 @@ class RunManager:
             api_key_value=api_key_value,
             session_id=session_id,
             project=project,
+            anchor_to_project_root=anchor_to_project_root,
         )
         return run_id, STATUS_RUNNING
 

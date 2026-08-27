@@ -123,6 +123,8 @@ from .schemas import (
     SessionEntry,
     SessionEvent,
     SessionRenameRequest,
+    OpenPathRequest,
+    OpenPathResponse,
     StopResponse,
     TierSummary,
     TreeEntryOut,
@@ -662,6 +664,14 @@ def _run_summary(run: Run) -> dict:
         subagent=sub_summary,
         session_id=run.session_id,
         project=run.project,
+        # Phase 3 F3 (decision 0036): effective_cwd + anchor toggle.
+        # effective_cwd is a Path | None on Run; convert to str for
+        # the wire (None stays None so the SPA skips the Working
+        # root row in legacy mode). anchor_to_project_root is bool
+        # with default False -- pre-F3 servers omit both fields
+        # and the SPA renders nothing for them.
+        effective_cwd=str(run.effective_cwd) if getattr(run, "effective_cwd", None) else None,
+        anchor_to_project_root=bool(getattr(run, "anchor_to_project_root", False)),
         # Phase 3 F2 (decision 0036): model id + provider + context window.
         # resolve_context_window returns None when the provider/model pair
         # is unknown (custom provider with no mapping) -- the SPA renders
@@ -757,6 +767,7 @@ def start_run(
             api_key_value=api_key_value,
             session_id=req.session_id,
             project=req.project,
+            anchor_to_project_root=bool(req.anchor_to_project_root),
         )
     except ValueError as e:
         # Decision 0032: cost-cap rejection carries a ``cost_cap_reached:``
@@ -836,6 +847,98 @@ def post_stop(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
         raise HTTPException(status_code=404, detail="run not found")
     mgr.stop(run_id)
     return StopResponse(stopped=True).model_dump()
+
+
+# --- Phase 3 F3 / Q3 (decision 0036): open-in-explorer endpoint ---
+
+
+def _open_external(abs_path: str) -> bool:
+    """Phase 3 F3 / Q3: platform-specific opener. The test suite
+    monkey-patches this to avoid popping a real Explorer window.
+    Returns True on success, False on platform / subprocess
+    failure. Timeout 3 s per the plan. Windows uses
+    ``cmd /c start "" <path>``; macOS ``open``; Linux
+    ``xdg-open``. shell=False so we never spawn a shell.
+    """
+    import subprocess as _sp
+    import sys as _sys
+
+    try:
+        if _sys.platform == "win32":
+            r = _sp.run(
+                ["cmd", "/c", "start", "", abs_path],
+                shell=False,
+                timeout=3,
+            )
+        elif _sys.platform == "darwin":
+            r = _sp.run(["open", abs_path], shell=False, timeout=3)
+        else:
+            r = _sp.run(["xdg-open", abs_path], shell=False, timeout=3)
+    except Exception:
+        return False
+    return r.returncode == 0
+
+
+def _is_under(base: Path, target: Path) -> bool:
+    """Phase 3 F3 / Q3: containment helper. Returns True when
+    ``target`` (resolved absolute) is the same as ``base`` OR
+    lives under it. False on any OSError / ValueError so the
+    endpoint defaults to safe (deny). Used by /api/open-path.
+    """
+    import os as _os
+
+    try:
+        base_r = base.resolve()
+        target_r = target.resolve()
+    except (OSError, ValueError):
+        return False
+    try:
+        common = _os.path.commonpath([_os.path.normcase(str(target_r)), _os.path.normcase(str(base_r))])
+    except ValueError:
+        return False
+    return common == _os.path.normcase(str(base_r))
+
+
+@router.post("/open-path", response_model=OpenPathResponse)
+def open_path(
+    req: OpenPathRequest,
+    settings: Settings = Depends(get_settings),
+    mgr: RunManager = Depends(get_run_manager),
+) -> dict:
+    """Phase 3 F3 / Q3: open ``req.path`` in the platform file
+    manager. Whitelist base is ``settings.workspace`` by default
+    OR ``run.effective_cwd`` when ``req.run_id`` is supplied AND
+    the run exists AND its effective_cwd is set. Containment is
+    checked FIRST so a path that is clearly outside the
+    whitelist (e.g. /etc/passwd) is refused with 403 before any
+    filesystem existence probe (POLICY-DECISIONS.md Q3).
+    """
+    if not req.path or not str(req.path).strip():
+        raise HTTPException(status_code=400, detail="path is required")
+    base_path: Path | None = None
+    if req.run_id:
+        run = mgr.get(req.run_id)
+        if run is not None and getattr(run, "effective_cwd", None):
+            base_path = Path(run.effective_cwd)
+    if base_path is None:
+        ws = getattr(settings, "workspace", "") or ""
+        base_path = Path(ws) if ws else None
+    if base_path is None or not str(base_path):
+        raise HTTPException(status_code=400, detail="no workspace base configured")
+    try:
+        target = Path(req.path)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not _is_under(base_path, target):
+        raise HTTPException(
+            status_code=403,
+            detail="path is outside the workspace; refusing to open",
+        )
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="path not found")
+    if not _open_external(str(target)):
+        raise HTTPException(status_code=500, detail="opener failed")
+    return OpenPathResponse(opened=True).model_dump()
 
 
 # v1.9.x / decision 0027: server-side auto-approve OFF (and ON) endpoint.

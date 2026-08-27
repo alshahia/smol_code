@@ -242,6 +242,17 @@ class RunStartRequest(BaseModel):
         default=None,
         description="Phase 1: scope this run to a named project (must be in Settings.projects).",
     )
+    # Phase 3 F3 (decision 0036, Q1): the per-run anchor toggle.
+    # Default False per Q1 policy (anchor mode is opt-in). When True
+    # AND project is set AND a matching Project root exists, the
+    # runner's write_file / patch_file resolve relative paths
+    # against that project root instead of settings.workspace.
+    # The SPA renders a checkbox below the project selector;
+    # the field is additive so older clients omit it.
+    anchor_to_project_root: bool = Field(
+        default=False,
+        description="Phase 3 F3: when True and project is set, anchor writes to that project's root.",
+    )
 
 
 class RunStartResponse(BaseModel):
@@ -357,6 +368,18 @@ class RunSummary(BaseModel):
     # the SPA renders the empty state.
     session_id: str | None = None
     project: str | None = None
+    # Phase 3 F3 (decision 0036): the resolved working directory for
+    # write_file / patch_file. None when the run is in legacy mode
+    # (un-anchored, defaults to settings.workspace). When set, the
+    # SPA Inspector renders this in a "Working root" row + an
+    # optional [Open] button that POSTs /api/open-path. String
+    # form (the BE converts Path via str()).
+    effective_cwd: str | None = None
+    # Phase 3 F3 (decision 0036): the per-run anchor toggle (Q1
+    # policy default is False = opt-in). The SPA Inspector renders
+    # the project-notice when the toggle was on but the resolved
+    # effective_cwd is outside the project root.
+    anchor_to_project_root: bool = False
     # Phase 3 F2 (decision 0036): the model id + provider this run is
     # executing against (mirrors Run.model / Run.provider). Both default
     # to empty string when the run was created before model tracking was
@@ -466,6 +489,31 @@ class WorkspaceTreeResponse(BaseModel):
 
 class StopResponse(BaseModel):
     stopped: bool
+
+
+# --- Phase 3 F3 / Q3 (decision 0036): open-in-explorer endpoint ---
+
+
+class OpenPathRequest(BaseModel):
+    """POST /api/open-path body (Phase 3 F3, decision 0036 Q3).
+
+    ``path`` is the absolute or workspace-relative target. The
+    endpoint resolves it against the whitelist base
+    (settings.workspace by default, or ``run_id``'s
+    ``effective_cwd`` when provided) and shells out to the
+    platform-specific opener. Path-escape returns 403
+    (POLICY-DECISIONS.md Q3).
+    """
+
+    path: str = Field(..., description="Filesystem path to open in the OS file manager.")
+    run_id: str | None = Field(
+        default=None,
+        description="Optional run id; when supplied the whitelist base is that run's effective_cwd.",
+    )
+
+
+class OpenPathResponse(BaseModel):
+    opened: bool
 
 
 # --- M11: provider / model catalog (decision 0014) -------------------------
