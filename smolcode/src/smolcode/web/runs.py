@@ -189,7 +189,14 @@ class Run:
     thread: threading.Thread | None = None
     result: str | None = None
     error: str | None = None
-    started_at: float = field(default_factory=time.monotonic)
+    # Phase 3 F1 (decision 0036): ``started_at`` is stamped with the
+    # wall clock so the dashboard's last-24h filter (Unix epoch)
+    # and the run-start event share the same clock domain. The
+    # internal ``started_mono`` below remains monotonic and is the
+    # anchor for ``remaining_s()`` + the audit sink's duration so
+    # NTP / wall-clock jumps mid-run cannot corrupt the countdown.
+    started_at: float = field(default_factory=time.time)
+    started_mono: float = field(default_factory=time.monotonic)
     ended_at: float | None = None
     audit_sink: Any = None
     model: str = ""
@@ -229,7 +236,7 @@ class Run:
     # ``step.action`` publish (under pending_lock) so a paused run can
     # be resumed by re-instantiating the agent and replaying the
     # memory. ``snapshot_at`` is the captured wall-clock epoch seconds
-    # (``time.monotonic()``) at the moment of the snapshot, or None
+    # (``time.time()``) at the moment of the snapshot, or None
     # if no snapshot has been taken yet.
     snapshot_path: Path | None = None
     snapshot_at: float | None = None
@@ -347,7 +354,7 @@ class Run:
             return None
         if budget <= 0:
             return None
-        return budget - (time.monotonic() - self.started_at)
+        return budget - (time.monotonic() - self.started_mono)
 
     def summary_dict(self, max_wall_s=None):
         """Snapshot the fields the FE renders in the Inspector.
@@ -455,7 +462,7 @@ class Run:
         entry = SubAgentSummary(
             id=str(sub_id),
             tier=str(tier or ""),
-            started_at=float(started_at) if started_at is not None else time.monotonic(),
+            started_at=float(started_at) if started_at is not None else time.time(),
             ended_at=None,
             specialist=str(specialist) if specialist else None,
         )
@@ -481,7 +488,7 @@ class Run:
         clear when the id still matches -- this preserves correct
         attribution across nested invocations.
         """
-        ended = float(ended_at) if ended_at is not None else time.monotonic()
+        ended = float(ended_at) if ended_at is not None else time.time()
         with self.pending_lock:
             for s in self.subagent_history:
                 if s.id == sub_id:
@@ -1192,7 +1199,7 @@ class RunManager:
         run = self.get(run_id)
         if run is not None and run.status == STATUS_QUEUED:
             run.status = STATUS_STOPPED
-            run.ended_at = time.monotonic()
+            run.ended_at = time.time()
             run.publish(EVT_RUN_ENDED, {"run_id": run.id, "status": STATUS_STOPPED, "ts": _now_iso()})
         self._refresh_queue_positions()
         return True

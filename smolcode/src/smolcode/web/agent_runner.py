@@ -707,7 +707,10 @@ def run_in_thread(run, settings, cost_cap_tracker=None):
     # EVERY step callback. ``None`` keeps the legacy behaviour
     # (no per-step cap enforcement) -- the run-start check in
     # ``RunManager.start_or_enqueue_run`` is the only enforcement.
-    started = time.monotonic()
+    # Phase 3 F1 (decision 0036): stamp with wall clock so the
+    # run-end event's duration_s lives in the same clock domain as
+    # ``run.started_at`` (set by ``Run()``) and ``run.ended_at`` below.
+    started = time.time()
     run.status = STATUS_RUNNING
     run.publish(
         EVT_RUN_STARTED,
@@ -955,7 +958,7 @@ def run_in_thread(run, settings, cost_cap_tracker=None):
             pool.shutdown(wait=False)
         except Exception:
             pass
-        run.ended_at = time.monotonic()
+        run.ended_at = time.time()
         run.status = final_status
         try:
             set_session(None)
