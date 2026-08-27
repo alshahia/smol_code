@@ -13,6 +13,7 @@ import logging
 import os
 import time
 import traceback
+from pathlib import Path
 
 from ..confirm import resolve_destructive_timeout_s
 from ..session import DestructiveDecision, DiffDecision, SessionState, set_session
@@ -626,11 +627,13 @@ def _is_outside_root(path, effective_cwd):
     a relative ``path`` is still correctly classified.
     """
     import os
+    from pathlib import Path as _PathOut
+
     if not path or not effective_cwd:
         return False
     try:
-        target = os.path.normcase(str(Path(path).resolve()))
-        cwd = os.path.normcase(str(Path(effective_cwd).resolve()))
+        target = os.path.normcase(str(_PathOut(path).resolve()))
+        cwd = os.path.normcase(str(_PathOut(effective_cwd).resolve()))
     except (OSError, ValueError):
         return False
     if target == cwd:
