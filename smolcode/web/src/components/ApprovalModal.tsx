@@ -27,7 +27,10 @@ export interface PendingApproval {
   summary: string
   // M10: kind drives the layout. 'destructive' = M9 destructive tool;
   // 'diff' = write_file/patch_file gate. Optional for backward compat.
-  kind?: 'destructive' | 'diff' | string
+  // Phase 3 F3 (decision 0036): 'outside_root' = the Q2 outside-project
+  // write gate; renders the FULL absolute target path + three buttons
+  // (Deny / Approve once / Approve for this session for THIS path).
+  kind?: 'destructive' | 'diff' | 'outside_root' | string
   // M10: diff-specific fields.
   path?: string
   relPath?: string
@@ -36,6 +39,16 @@ export interface PendingApproval {
   rawDiff?: string
   hunks?: DiffHunk[]
   stats?: DiffStats
+  // Phase 3 F3: outside_root-specific fields. absoluteTarget is the
+  // FULL path the write would land at (monospace, prominent in the
+  // modal). effectiveCwd is the project root the user opted into for
+  // context. allowedActions is the policy contract -- the BE guarantees
+  // ["deny","approve_once","approve_session_for_path"] but the SPA
+  // reads it from the event so the modal stays in sync if the BE adds
+  // new outcomes later.
+  absoluteTarget?: string
+  effectiveCwd?: string
+  allowedActions?: string[]
 }
 
 interface Props {
@@ -53,6 +66,11 @@ export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props)
   const [editedAfter, setEditedAfter] = useState<string | null>(null)
   if (!pending) return null
   const isDiff = pending.kind === 'diff'
+  // Phase 3 F3 (decision 0036): outside_root variant renders a
+  // distinct layout (Q2 BLOCK + full-path modal + per-session per-path
+  // allowlist). The render branch below replaces both the destructive
+  // args dump AND the diff viewer for this kind.
+  const isOutsideRoot = pending.kind === 'outside_root'
   const argsJson = (() => {
     try {
       return JSON.stringify(pending.args, null, 2)
@@ -70,22 +88,70 @@ export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props)
     onDecide(false, 'user-denied', null)
     setEditedAfter(null)
   }
+  // Phase 3 F3: outside_root three-button flow. Reasons map 1:1 to
+  // the BE's allowed_actions; the BE's _resolve_outside_root_decision
+  // translates them into the action discriminator + the optional
+  // SessionState.outside_root_allowlist mutation.
+  function outsideDeny(): void {
+    onDecide(false, 'user-denied-outside-root', null)
+  }
+  function outsideApproveOnce(): void {
+    onDecide(true, 'user-once-outside-root', null)
+  }
+  function outsideApproveSessionForPath(): void {
+    onDecide(true, 'user-session-for-path-outside-root', null)
+  }
   return (
     <div className="approval-modal" role="dialog" aria-modal="true">
-      <div className={'approval-card ' + (isDiff ? 'approval-card-wide' : '')}>
-        <h3>{isDiff ? 'Awaiting approval: file change' : 'Awaiting approval'}</h3>
-        <div className="approval-field">
-          <span className="approval-label">Tool:</span> <code>{pending.tool}</code>
-        </div>
-        <div className="approval-field">
-          <span className="approval-label">Summary:</span> {pending.summary}
-        </div>
+      <div
+        className={
+          'approval-card ' +
+          (isDiff || isOutsideRoot ? 'approval-card-wide' : '')
+        }
+      >
+        <h3>
+          {isOutsideRoot
+            ? 'Outside-project write'
+            : isDiff
+              ? 'Awaiting approval: file change'
+              : 'Awaiting approval'}
+        </h3>
+        {!isOutsideRoot && (
+          <>
+            <div className="approval-field">
+              <span className="approval-label">Tool:</span> <code>{pending.tool}</code>
+            </div>
+            <div className="approval-field">
+              <span className="approval-label">Summary:</span> {pending.summary}
+            </div>
+          </>
+        )}
         {isDiff && pending.relPath ? (
           <div className="approval-field">
             <span className="approval-label">Path:</span> <code>{pending.relPath}</code>
           </div>
         ) : null}
-        {!isDiff && (
+        {isOutsideRoot && pending.absoluteTarget ? (
+          <>
+            <div className="approval-field">
+              <span className="approval-label">Tool:</span> <code>{pending.tool}</code>
+            </div>
+            <div className="approval-field outside-root-target">
+              <span className="approval-label">Writing to:</span>
+              <code className="outside-root-path">{pending.absoluteTarget}</code>
+            </div>
+            {pending.effectiveCwd ? (
+              <div className="approval-field">
+                <span className="approval-label">Project root:</span> <code>{pending.effectiveCwd}</code>
+              </div>
+            ) : null}
+            <div className="approval-field muted small">
+              This path is outside the project root you opted into.
+              Pick how to handle this write.
+            </div>
+          </>
+        ) : null}
+        {!isDiff && !isOutsideRoot && (
           <div className="approval-field">
             <span className="approval-label">Args:</span>
             <pre className="approval-args">{argsJson}</pre>
@@ -105,18 +171,38 @@ export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props)
           </div>
         ) : null}
         <div className="approval-actions">
-          <button className="btn btn-primary" onClick={() => approve(false)}>
-            {editedAfter !== null ? 'Apply + Approve' : 'Approve'}
-          </button>
-          <button className="btn btn-danger" onClick={deny}>
-            Deny
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => approve(true)}
-          >
-            Approve (no more prompts this run)
-          </button>
+          {isOutsideRoot ? (
+            <>
+              <button className="btn btn-danger" onClick={outsideDeny}>
+                Deny
+              </button>
+              <button className="btn btn-primary" onClick={outsideApproveOnce}>
+                Approve once
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={outsideApproveSessionForPath}
+                title="Add this absolute target to the per-session per-path allowlist. Subsequent writes to the same path auto-approve without re-prompting."
+              >
+                Approve for this session for THIS path
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-primary" onClick={() => approve(false)}>
+                {editedAfter !== null ? 'Apply + Approve' : 'Approve'}
+              </button>
+              <button className="btn btn-danger" onClick={deny}>
+                Deny
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => approve(true)}
+              >
+                Approve (no more prompts this run)
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

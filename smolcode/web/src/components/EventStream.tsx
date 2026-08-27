@@ -77,7 +77,19 @@ function groupRows(events: StreamEvent[]): Row[] {
 
 interface Props {
   runId: string
-  onApprovalRequest?: (decisionId: string, tool: string, args: unknown, summary: string) => void
+  onApprovalRequest?: (
+    decisionId: string,
+    tool: string,
+    args: unknown,
+    summary: string,
+    // Phase 3 F3 (decision 0036): optional kind / outside_root
+    // hints. Old consumers can ignore; new App.tsx branches on
+    // kind === 'outside_root'.
+    kind?: string,
+    absoluteTarget?: string | null,
+    effectiveCwd?: string | null,
+    allowedActions?: string[] | null,
+  ) => void
   onDiffProposed?: (decisionId: string, tool: string, args: unknown, summary: string, path: string, relPath: string, before: string, after: string, rawDiff: string, hunks: unknown, stats: unknown) => void
   onFinal?: (result: string | null, error: string | null) => void
 }
@@ -143,11 +155,22 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
       if (!evt) return
       setEvents((prev) => [...prev, evt])
       if (type === 'approval.requested' && onApprovalRequest) {
+        // Phase 3 F3 (decision 0036): forward the kind hint so the
+        // parent can branch into the outside_root modal vs the
+        // standard destructive modal. The kind is optional on
+        // older servers / pre-F3 events -- fall back to
+        // 'destructive'.
         onApprovalRequest(
           String(evt.decision_id || ''),
           String(evt.tool || ''),
           evt.args || {},
           String(evt.summary || ''),
+          String(evt.kind || 'destructive'),
+          evt.absolute_target ? String(evt.absolute_target) : null,
+          evt.effective_cwd ? String(evt.effective_cwd) : null,
+          Array.isArray(evt.allowed_actions)
+            ? (evt.allowed_actions as string[])
+            : null,
         )
       }
       if (type === 'diff.proposed' && onDiffProposed) {

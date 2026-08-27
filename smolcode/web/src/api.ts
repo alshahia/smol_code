@@ -122,6 +122,13 @@ export interface StartRunOptions {
   session_id?: string | null
   /** Phase 1 (decision 0025 §6.3): scope this run to a named project. */
   project?: string | null
+  /**
+   * Phase 3 F3 (decision 0036, Q1): the per-run anchor toggle. Default
+   * false on the BE so omitting this field preserves the legacy
+   * behaviour. The composer renders a checkbox below the project
+   * selector that flips this field on / off per run.
+   */
+  anchor_to_project_root?: boolean
 }
 
 // --- M9 types -------------------------------------------------------------
@@ -194,6 +201,16 @@ export interface RunSummary {
   // run is attached to. Both additive; older servers omit them.
   session_id?: string | null
   project?: string | null
+  // Phase 3 F3 (decision 0036): the resolved working directory for
+  // write_file / patch_file. null in legacy mode (un-anchored); when
+  // set, the SPA Inspector renders a "Working root" row + an [Open]
+  // button that POSTs /api/open-path.
+  effective_cwd?: string | null
+  // Phase 3 F3 (decision 0036): the per-run anchor toggle (Q1 default
+  // False). The SPA Inspector renders the project-notice when the
+  // toggle was on but the resolved effective_cwd is outside the
+  // project root.
+  anchor_to_project_root?: boolean
   // Phase 3 F2 (decision 0036): model id + provider this run is using.
   // Both default to '' on pre-F2 servers; the SPA renders them as kv
   // rows when present.
@@ -353,6 +370,7 @@ export async function startRun(
   }
   if (opts.session_id) body.session_id = opts.session_id
   if (opts.project) body.project = opts.project
+  if (opts.anchor_to_project_root) body.anchor_to_project_root = true
   return jsonOrThrow(
     await fetch('/api/runs', {
       method: 'POST',
@@ -886,4 +904,32 @@ export function downloadExport(id: string, payload: ExportPayload): void {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+// --- Phase 3 F3 / Q3 (decision 0036): open-in-explorer ---
+
+export interface OpenPathResponse {
+  opened: boolean
+}
+
+/**
+ * POST /api/open-path (Phase 3 F3, decision 0036 Q3).
+ *
+ * @param runId  Optional run id. When supplied the BE whitelists the
+ *               target against that run's `effective_cwd`. When omitted,
+ *               the BE uses `settings.workspace`. The endpoint returns
+ *               403 on path-escape, 404 on missing path, 400 on bad
+ *               input, 500 on subprocess failure.
+ * @param path   Absolute (or workspace-relative) path to open.
+ */
+export async function postOpenPath(path: string, runId?: string | null): Promise<OpenPathResponse> {
+  const body: Record<string, unknown> = { path }
+  if (runId) body.run_id = runId
+  return jsonOrThrow(
+    await fetch('/api/open-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  )
 }

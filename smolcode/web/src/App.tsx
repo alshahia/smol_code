@@ -44,13 +44,16 @@ import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
 import {
   getConfig,
+  listProjects,
   listProviders,
   listUploads,
   listRuns,
   postApproval,
   postAutoApprove,
+  postOpenPath,
   postStop,
   type ConfigResponse,
+  type ProjectInfo,
   type ProviderInfo,
   type UploadMetadata,
   type RunSummary,
@@ -127,6 +130,22 @@ function App() {
   }
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [projectRefreshTrigger, setProjectRefreshTrigger] = useState<number>(0)
+  // Phase 3 F3 (decision 0036): cached project list so the Inspector
+  # can render the "files landed outside the project root" notice
+  # without re-fetching on every render. Refreshed alongside the
+  # project switcher so create / rename events invalidate it.
+  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const refreshProjects = useCallback(async () => {
+    try {
+      const r = await listProjects()
+      setProjects(r.projects || [])
+    } catch {
+      // best-effort: a stale list is harmless
+    }
+  }, [])
+  useEffect(() => {
+    void refreshProjects()
+  }, [refreshProjects, projectRefreshTrigger])
 
   // v1.9.x (FE-8): Dashboard overlay open/close.
   const [dashboardOpen, setDashboardOpen] = useState<boolean>(false)
@@ -299,7 +318,49 @@ function App() {
     setQueueRefreshTrigger((n) => n + 1)
   }
 
-  const onApprovalRequest = (decisionId: string, tool: string, args: unknown, summary: string) => {
+  // Phase 3 F3 (decision 0036, Q3): invoked when the user clicks
+  // [Open] next to the Working root row in the Inspector. Calls
+  // /api/open-path with the active run id so the BE can resolve
+  // the whitelist base from run.effective_cwd (rather than the
+  // default workspace). Failure surfaces as a transient error
+  // banner -- a 403 here means the path escaped the run's
+  // effective_cwd between the snapshot and the click, which is
+  // an honest race we surface instead of silently failing.
+  const onOpenPath = async (path: string) => {
+    try {
+      await postOpenPath(path, activeRunId)
+    } catch (e) {
+      setError('Open failed: ' + (e as Error).message)
+    }
+  }
+
+  // Phase 3 F3 (decision 0036): branch on kind. outside_root events
+  // carry absoluteTarget / effectiveCwd / allowedActions hints for
+  // the Q2 modal. Backward-compat: callers that omit kind/default
+  // to destructive still work.
+  const onApprovalRequest = (
+    decisionId: string,
+    tool: string,
+    args: unknown,
+    summary: string,
+    kind?: string,
+    absoluteTarget?: string | null,
+    effectiveCwd?: string | null,
+    allowedActions?: string[] | null,
+  ) => {
+    if (kind === 'outside_root') {
+      setPending({
+        decisionId,
+        tool,
+        args,
+        summary,
+        kind: 'outside_root',
+        absoluteTarget: absoluteTarget ?? undefined,
+        effectiveCwd: effectiveCwd ?? undefined,
+        allowedActions: allowedActions ?? undefined,
+      })
+      return
+    }
     setPending({ decisionId, tool, args, summary, kind: 'destructive' })
   }
 
@@ -573,7 +634,9 @@ function App() {
             config={config}
             treeRefreshTrigger={treeRefreshTrigger}
             project={activeProject}
+            projectInfo={projects.find((p) => p.name === activeProject) || null}
             onFileClick={(p) => setFilePreviewPath(p)}
+            onOpenPath={onOpenPath}
           />
         </aside>
       </div>

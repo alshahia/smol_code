@@ -42,6 +42,12 @@ export function RunComposer({
   const [task, setTask] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Phase 3 F3 (decision 0036, Q1): the per-run anchor toggle.
+  // Default false per Q1 (opt-in). Component-local React state --
+  // NOT persisted across page reloads (matches the policy
+  // recommendation in PHASED-PLAN.md task 7). When project is
+  // unset the checkbox is meaningless so we hide it.
+  const [anchorToProjectRoot, setAnchorToProjectRoot] = useState(false)
 
   const handle = async () => {
     setError(null)
@@ -60,6 +66,7 @@ export function RunComposer({
         keys,
         session_id: sessionId ?? undefined,
         project: project ?? undefined,
+        anchor_to_project_root: anchorToProjectRoot || undefined,
       })
       setTask('')
       onSubmitted(r.run_id)
@@ -85,6 +92,17 @@ export function RunComposer({
         project={project ?? null}
         disabled={submitting}
       />
+      {project ? (
+        <label className="run-composer-anchor" title="Resolve write_file / patch_file paths against this project root instead of the default workspace. Writes that escape the root will trigger a full-path confirmation modal.">
+          <input
+            type="checkbox"
+            checked={anchorToProjectRoot}
+            onChange={(e) => setAnchorToProjectRoot(e.target.checked)}
+            disabled={submitting}
+          />
+          Anchor writes to this project's root
+        </label>
+      ) : null}
       <div className="run-composer-row">
         <button className="btn btn-primary" onClick={handle} disabled={submitting}>
           {submitting ? 'Starting...' : 'Run'}

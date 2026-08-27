@@ -20,7 +20,7 @@ import { TierBadge } from './TierBadge'
 import { WorkspaceTree } from './WorkspaceTree'
 import { AuditPanel } from './AuditPanel'
 import { SubAgentList } from './SubAgentList'
-import type { ConfigResponse, RunSummary } from '../api'
+import type { ConfigResponse, ProjectInfo, RunSummary } from '../api'
 
 interface Props {
   activeRun: RunSummary | null
@@ -32,10 +32,20 @@ interface Props {
   // Phase 1 (decision 0025 §6.3): scope the workspace tree to the
   // active project (null = legacy workspace).
   project?: string | null
+  // Phase 1 (decision 0025 §6.3): the resolved project metadata, so
+  // the Inspector can compare ``activeRun.effective_cwd`` against
+  # ``project.root`` and surface the "files landed outside the
+  # project root" notice (Q1 policy).
+  projectInfo?: ProjectInfo | null
   // Phase 2 (decision 0025 §6.4 A4): invoked when the user clicks
   // a file in the workspace tree; the parent opens a <FilePreview>
   // pane for the clicked path.
   onFileClick?: (path: string) => void
+  // Phase 3 F3 (decision 0036, Q3): invoked when the user clicks
+  // the [Open] button next to the Working root row; the parent
+  // calls POST /api/open-path (the response toast is handled by the
+  // parent so the Inspector stays presentational).
+  onOpenPath?: (path: string) => void
 }
 
 const MAX_RUN_WALL_S_FALLBACK = 900 // SMOLCODE_WEB_RUN_TIMEOUT_S default (decision 0023)
@@ -53,7 +63,9 @@ export function Inspector({
   config,
   treeRefreshTrigger,
   project,
+  projectInfo,
   onFileClick,
+  onOpenPath,
 }: Props) {
   // 1s tick for the countdown. We start at 0 and only flip to active
   // when the run is in flight; this avoids spurious re-renders for
@@ -121,6 +133,18 @@ export function Inspector({
               <span>provider:</span> <code>{activeRun.provider}</code>
             </div>
           )}
+          {activeRun.effective_cwd ? (
+            <div className="kv inspector-working-root">
+              <span>Working root:</span> <code title={activeRun.effective_cwd}>{activeRun.effective_cwd}</code> {onOpenPath ? (
+                <button className="btn btn-tiny btn-secondary" onClick={() => onOpenPath(activeRun.effective_cwd as string)} title="Open this directory in the OS file manager">Open</button>
+              ) : null}
+            </div>
+          ) : null}
+          {activeRun.anchor_to_project_root && activeRun.project && projectInfo && activeRun.effective_cwd && projectInfo.root && !activeRun.effective_cwd.startsWith(projectInfo.root) ? (
+            <div className="warn-banner inspector-anchor-notice">
+              This run files landed in <code>{activeRun.effective_cwd}</code>, not in project <strong>{activeRun.project}</strong> (<code>{projectInfo.root}</code>). Enable <strong>Anchor writes to this project root</strong> in the composer next time, or set the project root in Settings.
+            </div>
+          ) : null}
           {activeRun.duration_s !== null && (
             <div className="kv">
               <span>duration:</span> <code>{activeRun.duration_s.toFixed(1)}s</code>
