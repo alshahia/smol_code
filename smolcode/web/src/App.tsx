@@ -131,9 +131,9 @@ function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [projectRefreshTrigger, setProjectRefreshTrigger] = useState<number>(0)
   // Phase 3 F3 (decision 0036): cached project list so the Inspector
-  # can render the "files landed outside the project root" notice
-  # without re-fetching on every render. Refreshed alongside the
-  # project switcher so create / rename events invalidate it.
+  // can render the "files landed outside the project root" notice
+  // without re-fetching on every render. Refreshed alongside the
+  // project switcher so create / rename events invalidate it.
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const refreshProjects = useCallback(async () => {
     try {
@@ -505,6 +505,7 @@ function App() {
           value={activeProject}
           onChange={setActiveProject}
           refreshTrigger={projectRefreshTrigger}
+          workspace={config?.workspace ?? ''}
         />
       </header>
 

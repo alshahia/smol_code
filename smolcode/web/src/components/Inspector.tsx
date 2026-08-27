@@ -34,8 +34,8 @@ interface Props {
   project?: string | null
   // Phase 1 (decision 0025 §6.3): the resolved project metadata, so
   // the Inspector can compare ``activeRun.effective_cwd`` against
-  # ``project.root`` and surface the "files landed outside the
-  # project root" notice (Q1 policy).
+  // ``project.root`` and surface the "files landed outside the
+  // project root" notice (Q1 policy).
   projectInfo?: ProjectInfo | null
   // Phase 2 (decision 0025 §6.4 A4): invoked when the user clicks
   // a file in the workspace tree; the parent opens a <FilePreview>
