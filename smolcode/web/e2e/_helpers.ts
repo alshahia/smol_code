@@ -105,6 +105,11 @@ export interface MockSession {
   project: string | null
 }
 
+export interface MockProject {
+  name: string
+  root: string
+}
+
 export interface MockUpload {
   stored_name: string
   original_name: string
@@ -364,6 +369,8 @@ export interface BackendMock {
     move_queue?: number
     cost_caps?: number
   }
+  /** Phase 4 (decision 0037): projects list mocked for /api/projects. */
+  projects?: MockProject[]
   /** Capture all POST/PUT/DELETE bodies for assertion. */
   capturedRequests?: { method: string; url: string; body?: string }[]
 }
@@ -528,7 +535,7 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ projects: [] }),
+          body: JSON.stringify({ projects: opts.projects ?? [] }),
         })
         return
       }
@@ -652,6 +659,27 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
         })
         return
       }
+      // Phase 4 F4 (decision 0037): POST /api/projects creates a project.
+      if (pathname === '/api/projects') {
+        let parsed: { name?: string; root?: string } = {}
+        try { parsed = body ? JSON.parse(body) : {} } catch {
+          await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ detail: 'bad json' }) })
+          return
+        }
+        const name = parsed.name ?? ''
+        if (!name) {
+          await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ detail: 'project name is required' }) })
+          return
+        }
+        const existing = opts.projects ?? []
+        if (existing.some((p) => p.name === name)) {
+          await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ detail: 'project name already exists: ' + name }) })
+          return
+        }
+        const newProj: MockProject = { name, root: parsed.root || '/default/' + name }
+        await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(newProj) })
+        return
+      }
     }
     if (method === 'DELETE') {
       if (pathname.match(/^\/api\/queue\/[^/]+$/)) {
@@ -667,6 +695,15 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify(opts.delete_upload_response ?? { deleted: 'x' }),
+        })
+        return
+      }
+      // Phase 4 F4 (decision 0037): DELETE /api/projects/{name} removes.
+      if (pathname.match(/^\/api\/projects\/[^/]+$/)) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ deleted: decodeURIComponent(pathname.split('/').pop() ?? '') }),
         })
         return
       }

@@ -67,11 +67,11 @@ web UI against the Phase 2 build (`dc2c094`).
 
 | Phase | Theme | ADR | Status | Notes |
 |---|---|---|---|---|
-| 0 | RED tests + 3 policy decisions | not yet written (0037 reserved) | pending - policy captured, RED tests not yet written | POLICY-DECISIONS.md created 2026-08-27 in this session |
-| 1 | F1 dashboard clock domain | 0037 (planned) | pending | S - 1 line + 1 test; smallest, do first |
-| 2 | F2 inspector fields + context circle | 0037 (planned) | pending | L - 5 layers (catalog -> extractor -> summary -> schemas -> UI) |
-| 3 | F3 project-root anchoring + Open-in-Explorer | 0037 (planned) | pending - policy unblocked | M-L - outside-root modal adds 1-2 days over original M |
-| 4 | F4 outside-workspace selector | 0037 (planned) | pending | M - UI + pass-through |
+| 0 | RED tests + 3 policy decisions | 0037 (covers F1+F2+F3+F4 batch) | shipped (commit `69b616f`) | POLICY-DECISIONS.md created 2026-08-27 |
+| 1 | F1 dashboard clock domain | 0037 | shipped (commit `e1ffd39`) | dashboard counters now honest |
+| 2 | F2 inspector fields + context circle | 0037 | shipped (commit `dcd41d4`) | model/provider/cache + breakdown modal |
+| 3 | F3 project-root anchoring + Open-in-Explorer | 0037 | shipped (commits `c923dd1` + `eb892e0` + `73b05bd`) | policy honoured (Q1 OFF / Q2 BLOCK+modal+allowlist / Q3 any-under-effective_cwd) |
+| 4 | F4 outside-workspace selector | 0037 | shipped (commit `108b145`, this Phase 4) | M - SPA-only; BE contract unchanged (4 characterisation tests still pass) |
 
 **Policy captured (POLICY-DECISIONS.md) -- Phase 3 work unblocked:**
 

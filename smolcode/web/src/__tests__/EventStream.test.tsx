@@ -128,7 +128,19 @@ describe('EventStream SSE dispatch (decision 0030)', () => {
         summary: 'destructive op',
       })
     })
-    expect(onApprovalRequest).toHaveBeenCalledWith('d-1', 'shell', { cmd: 'rm -rf /' }, 'destructive op')
+    // Phase 3 F3 (decision 0037) extended onApprovalRequest with trailing
+    // (kind, absoluteTarget?, effectiveCwd?, allowedActions?). The destructive
+    // approval carries kind='destructive' and nulls for the outside-root fields.
+    expect(onApprovalRequest).toHaveBeenCalledWith(
+      'd-1',
+      'shell',
+      { cmd: 'rm -rf /' },
+      'destructive op',
+      'destructive',
+      null,
+      null,
+      null,
+    )
   })
 
   it('dispatches diff.proposed to onDiffProposed with every field', () => {
