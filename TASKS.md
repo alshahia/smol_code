@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-08-26 (decision 0034 session, post 0033 ship)
+**Date:** 2026-08-27 (decision 0034 session, post 0033 ship; 2026-08-27 web UI feedback batch added - see section 0a)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -56,6 +56,52 @@ Every Phase 2 work loss from that tool was recovered from stash^3
 byte-for-byte; the recommended mitigation (recover + apply + add +
 commit in ONE shell invocation) is documented in the Phase 1
 incident addendum and was applied to both Phase 2 commits here.
+
+---
+
+## 0a. Web UI feedback phases status (2026-08-27)
+
+Per `docs/reviews/2026-08-27-web-ui-user-feedback/PHASED-PLAN.md` --
+addressing the four UX failures the user reported after exercising the
+web UI against the Phase 2 build (`dc2c094`).
+
+| Phase | Theme | ADR | Status | Notes |
+|---|---|---|---|---|
+| 0 | RED tests + 3 policy decisions | not yet written (0037 reserved) | pending - policy captured, RED tests not yet written | POLICY-DECISIONS.md created 2026-08-27 in this session |
+| 1 | F1 dashboard clock domain | 0037 (planned) | pending | S - 1 line + 1 test; smallest, do first |
+| 2 | F2 inspector fields + context circle | 0037 (planned) | pending | L - 5 layers (catalog -> extractor -> summary -> schemas -> UI) |
+| 3 | F3 project-root anchoring + Open-in-Explorer | 0037 (planned) | pending - policy unblocked | M-L - outside-root modal adds 1-2 days over original M |
+| 4 | F4 outside-workspace selector | 0037 (planned) | pending | M - UI + pass-through |
+
+**Policy captured (POLICY-DECISIONS.md) -- Phase 3 work unblocked:**
+
+- Q1 (anchor default): **OFF per-run**. Selecting a project does NOT
+  redirect writes by default; the user ticks a per-run checkbox in the
+  composer. Backward-compatible with legacy runs.
+- Q2 (outside-root policy): **BLOCK with full-path confirmation modal
+  + per-session per-path allowlist**. The modal shows the FULL absolute
+  target path (monospace, prominent), the project root for context,
+  and three buttons: Deny / Approve once / Approve for this session for
+  THIS path. The allowlist lives on `SessionState.outside_root_allowlist`
+  (set of absolute paths) and is per-run (every new run resets it).
+- Q3 (open-path scope): **any path under `effective_cwd`**. Reuses the
+  existing `/api/files` whitelist helper. `full_access` writes exempt
+  with audit marker.
+
+**Implementation sequencing:**
+
+Phase 1 and Phase 2 can run in parallel once Phase 0 lands the RED
+tests. Phase 3 is policy-unblocked but serialised after Phase 2 (the
+Inspector banner copy in Phase 3 needs the working-root display that
+Phase 3 itself owns; Phase 2 only adds the context-circle and tokens,
+not project-root display). Phase 4 needs Phase 1 verified to ensure
+the dashboard counts it after writing to an outside workspace.
+
+**Reporting convention:**
+
+Each shipped phase in this batch will update this block with the new
+commit ref + ADR (0037), matching the Phases 0/1/2 pattern above.
+ADRs are written at the START of each phase, not before.
 
 ---
 
