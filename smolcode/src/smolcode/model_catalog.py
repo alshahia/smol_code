@@ -258,6 +258,62 @@ DEFAULT_COST_RATES: dict[str, dict[str, tuple[float, float, float]]] = {
     },
 }
 
+# --- Context windows (Phase 3 F2, decision 0036) -------------------------------
+
+# Hardcoded per-provider/model context-window sizes in tokens. The SPA's
+# Inspector.tsx renders a fill bar against context_window so the user
+# can see how much room the agent has before truncation. Unknown models
+# return None (no bar); users override per provider/model via a future
+# Settings.context_windows JSON env (mirrors cost_rates pattern).
+DEFAULT_CONTEXT_WINDOWS: dict[str, dict[str, int]] = {
+    "opencode-go": {
+        "deepseek-v4-flash": 128000,
+    },
+    "MiniMax": {
+        "MiniMax-M3": 2_000_000,
+    },
+    "openai": {
+        "gpt-4o": 128000,
+        "gpt-4o-mini": 128000,
+        "o1-preview": 128000,
+    },
+    "anthropic": {
+        "claude-3-5-sonnet-latest": 200000,
+        "claude-3-5-haiku-latest": 200000,
+        "claude-3-opus-latest": 200000,
+    },
+}
+
+
+def resolve_context_window(
+    provider: str | None,
+    model: str | None,
+    settings: "Settings | None" = None,
+    # Settings is a forward reference (only used for type hints).,
+) -> int | None:
+    """Return the context-window size in tokens for provider/model, or None.
+
+    Looks up the provider/model in DEFAULT_CONTEXT_WINDOWS, with
+    an optional override via settings.context_windows (same JSON env
+    pattern as cost_for's settings.cost_rates -- mirroring
+    _resolve_rates). Returns None (NOT a KeyError) when the
+    provider/model is unknown, empty, or None; the SPA renders no
+    fill bar in that case rather than crashing the Inspector.
+    """
+    if not provider or not model:
+        return None
+    override = getattr(settings, "context_windows", None) or {}
+    prov_override = override.get(provider) or {}
+    if model in prov_override:
+        try:
+            return int(prov_override[model])
+        except (TypeError, ValueError):
+            pass
+    prov_default = DEFAULT_CONTEXT_WINDOWS.get(provider) or {}
+    if model in prov_default:
+        return prov_default[model]
+    return None
+
 
 def _resolve_rates(
     provider: str | None,
@@ -533,6 +589,9 @@ __all__ = [
     "DEFAULT_COST_RATES",
     "cost_for",
     "rate_source_for",
+    # Phase 3 F2 (decision 0036): per-provider/model context-window sizes.
+    "DEFAULT_CONTEXT_WINDOWS",
+    "resolve_context_window",
     # Public alias for the env-var whitelist used by the web layer.
     "is_api_key_env",
 ]

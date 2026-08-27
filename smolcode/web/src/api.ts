@@ -131,6 +131,15 @@ export interface TokenSummary {
   input: number
   output: number
   total: number
+  // Phase 3 F2 (decision 0036): cumulative cache tokens (OpenAI
+  // cached_tokens OR Anthropic cache_read + cache_creation). Absent on
+  // pre-F2 servers; the SPA checks >= 0 defensively.
+  cache_hit?: number
+  // This-step input / output tokens; 0 when the run has not stepped yet.
+  current_input?: number
+  current_output?: number
+  // Wall-clock epoch seconds of the most recent ActionStep, or null.
+  last_step_at?: number | null
 }
 
 // Phase 0 (decision 0025): latest sub-agent invocation.
@@ -185,6 +194,17 @@ export interface RunSummary {
   // run is attached to. Both additive; older servers omit them.
   session_id?: string | null
   project?: string | null
+  // Phase 3 F2 (decision 0036): model id + provider this run is using.
+  // Both default to '' on pre-F2 servers; the SPA renders them as kv
+  // rows when present.
+  model?: string
+  provider?: string
+  // Phase 3 F2 (decision 0036): model's max context window in tokens
+  // (resolved via model_catalog.resolve_context_window). null when
+  // the provider/model pair is unknown to the catalog. The SPA
+  // Inspector.tsx renders this as the denominator of the context
+  // fill bar.
+  context_window?: number | null
 }
 
 export interface RunListResponse {

@@ -63,7 +63,10 @@ from .. import __version__
 from ..audit import AuditSink
 from ..audit_reader import audit_chain_status, read_audit_entries
 from ..config import Project, Settings, as_dict
-from ..model_catalog import fetch_models
+
+# Phase 3 F2 (decision 0036): context-window resolver for the
+# Inspector.tsx fill bar denominator.
+from ..model_catalog import fetch_models, resolve_context_window
 from ..model_catalog import get_providers as _catalog_get_providers
 from ..session import (
     create_session_file,
@@ -646,12 +649,26 @@ def _run_summary(run: Run) -> dict:
             input=int(snap["tokens_in"]),
             output=int(snap["tokens_out"]),
             total=int(snap["tokens_total"]),
+            # Phase 3 F2 (decision 0036): cache tokens + this-step split.
+            # snap dict is the Run.summary_dict() output; falls back to 0
+            # when the run is pre-step or the snapshot predates F2.
+            cache_hit=int(snap.get("tokens_cache_hit", 0) or 0),
+            current_input=int(snap.get("current_input", 0) or 0),
+            current_output=int(snap.get("current_output", 0) or 0),
+            last_step_at=snap.get("last_step_at"),
         ),
         step_count=int(snap["step_count"]),
         remaining_s=snap.get("remaining_s"),
         subagent=sub_summary,
         session_id=run.session_id,
         project=run.project,
+        # Phase 3 F2 (decision 0036): model id + provider + context window.
+        # resolve_context_window returns None when the provider/model pair
+        # is unknown (custom provider with no mapping) -- the SPA renders
+        # no fill bar in that case.
+        model=getattr(run, "model", "") or "",
+        provider=getattr(run, "provider", "") or "",
+        context_window=resolve_context_window(getattr(run, "provider", "") or None, getattr(run, "model", "") or None),
     ).model_dump()
 
 

@@ -297,11 +297,35 @@ class TokenSummary(BaseModel):
     total is the sum of input + output across every step.action
     event the runner has observed. input / output are broken out
     separately so the SPA can render two lines.
+
+    Phase 3 F2 (decision 0036): cache_hit, current_input, current_output,
+    last_step_at are additive -- older SPA clients ignore them; Phase 0/1
+    clients see them as extra fields and ignore them too.
+
+    cache_hit is the CUMULATIVE cache tokens (OpenAI
+    usage.prompt_tokens_details.cached_tokens OR Anthropic
+    usage.cache_read_input_tokens + cache_creation_input_tokens, summed
+    across every step). The SPA Inspector renders this as a separate
+    "cache hit" badge so the user can see how much of the prompt was
+    served from cache vs paid for fresh.
+
+    current_input / current_output are THIS-STEP input/output tokens
+    (the most recent ActionStep only). 0 / None when the run has not
+    produced a step yet (e.g. just-queued). The SPA renders these as
+    a delta next to the cumulative totals so the user can see how much
+    the last action cost.
+
+    last_step_at is the wall-clock epoch seconds of the most recent
+    ActionStep, or None when the run has not stepped yet.
     """
 
     input: int = 0
     output: int = 0
     total: int = 0
+    cache_hit: int = 0
+    current_input: int = 0
+    current_output: int = 0
+    last_step_at: float | None = None
 
 
 class RunSummary(BaseModel):
@@ -333,6 +357,19 @@ class RunSummary(BaseModel):
     # the SPA renders the empty state.
     session_id: str | None = None
     project: str | None = None
+    # Phase 3 F2 (decision 0036): the model id + provider this run is
+    # executing against (mirrors Run.model / Run.provider). Both default
+    # to empty string when the run was created before model tracking was
+    # wired up. The SPA Inspector.tsx renders these above the token
+    # usage section so the user can confirm "which model am I talking to"
+    # at a glance.
+    model: str = ""
+    provider: str = ""
+    # Phase 3 F2 (decision 0036): the model's max context window in tokens
+    # (resolved via `model_catalog.resolve_context_window`). None when the provider/model pair
+    # is unknown to the catalog. The SPA renders this as the denominator
+    # of the context-fill bar in the Inspector.
+    context_window: int | None = None
     # Phase 2 (decision 0025 §6.4): seconds since the most recent
     # agent-memory snapshot. None when the run has not been snapshot
     # yet (e.g. a run that was started and immediately stopped).

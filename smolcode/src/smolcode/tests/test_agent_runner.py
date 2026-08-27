@@ -142,7 +142,12 @@ class TestStepPayloads:
         assert p["tool_calls"][0]["args"] == {"cmd": "pytest"}
         assert p["is_final_answer"] is True
         assert p["timing_ms"] == pytest.approx(123.0)
-        assert p["tokens"] == {"input": 100, "output": 50}
+        # Phase 3 F2 (decision 0036): cache_hit is additive; pre-F2
+        # consumers that check strict dict equality need updating. The
+        # new field defaults to 0 when the provider did not report cache
+        # fields (this fixture has no model_output_message.raw.usage, so
+        # the cache extractor falls through to cache_hit=0).
+        assert p["tokens"] == {"input": 100, "output": 50, "cache_hit": 0}
 
     def test_planning_step(self):
         class S:

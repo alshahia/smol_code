@@ -108,6 +108,19 @@ export function Inspector({
           <div className="kv">
             <span>tier:</span> <code>{activeRun.tier}</code>
           </div>
+          {/* Phase 3 F2 (decision 0036): which model + provider this run
+              is talking to. Render only when the server actually populated
+              them -- pre-F2 servers / Phase 0 sessions omit both. */}
+          {activeRun.model && (
+            <div className="kv">
+              <span>model:</span> <code>{activeRun.model}</code>
+            </div>
+          )}
+          {activeRun.provider && (
+            <div className="kv">
+              <span>provider:</span> <code>{activeRun.provider}</code>
+            </div>
+          )}
           {activeRun.duration_s !== null && (
             <div className="kv">
               <span>duration:</span> <code>{activeRun.duration_s.toFixed(1)}s</code>
@@ -134,10 +147,63 @@ export function Inspector({
               <div className="kv">
                 <span>steps:</span> <code>{stepCount}</code>
               </div>
+              {/* Phase 3 F2 (decision 0036): cache_hit badge. Only render
+                  when > 0 -- the field is additive; pre-F2 servers omit it
+                  entirely and the SPA renders nothing. */}
+              {tokens.cache_hit > 0 && (
+                <div className="kv">
+                  <span>cache:</span> <code>{tokens.cache_hit.toLocaleString()}</code>
+                </div>
+              )}
             </>
           ) : (
             <div className="muted small">No token data yet (pre-v1.8 server?).</div>
           )}
+        </div>
+      )}
+
+      {activeRun && (activeRun.context_window ?? 0) > 0 && (
+        <div className="inspector-section">
+          <h4>Context window</h4>
+          {/* Phase 3 F2 (decision 0036): context-fill bar. The numerator
+              is tokens.total (cumulative input + output across every
+              step). The denominator is context_window (resolved via
+              model_catalog.resolve_context_window on the BE). Pre-F2
+              servers omit context_window -- this section is skipped. */}
+          {(() => {
+            const used = tokens?.total ?? 0
+            const win = activeRun.context_window ?? 0
+            const pct = win > 0 ? Math.min(100, Math.round((used / win) * 100)) : 0
+            const fillColor = pct >= 80 ? '#dc2626' : pct >= 60 ? '#f59e0b' : '#10b981'
+            return (
+              <>
+                <div className="kv">
+                  <span>used:</span>{' '}
+                  <code>
+                    {used.toLocaleString()} / {win.toLocaleString()} ({pct}%)
+                  </code>
+                </div>
+                <div
+                  style={{
+                    height: '6px',
+                    background: '#e5e7eb',
+                    borderRadius: '3px',
+                    overflow: 'hidden',
+                    margin: '6px 0 0 0',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: pct + '%',
+                      height: '100%',
+                      background: fillColor,
+                      transition: 'width 200ms ease-out',
+                    }}
+                  />
+                </div>
+              </>
+            )
+          })()}
         </div>
       )}
 

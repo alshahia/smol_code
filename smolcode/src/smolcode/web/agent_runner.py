@@ -283,9 +283,42 @@ def _action_step_payload(step):
     tokens = getattr(step, "token_usage", None)
     if tokens is not None:
         try:
+            # Phase 3 F2 (decision 0036): extract cache_hit from the provider
+            # response. smolagents' TokenUsage only exposes input / output, so
+            # we reach into step.model_output_message.raw.usage to read the
+            # provider-specific cache fields.
+            #
+            # OpenAI shape: usage.prompt_tokens_details.cached_tokens
+            # Anthropic shape: usage.cache_read_input_tokens +
+            #                 usage.cache_creation_input_tokens (sum)
+            # The two are mutually exclusive in practice (OpenAI emits only its
+            # own; Anthropic only its own), but we read both defensively so a
+            # proxy that mixes fields still produces the right sum.
+            cache_hit = 0
+            try:
+                mom = getattr(step, "model_output_message", None)
+                raw = getattr(mom, "raw", None) if mom is not None else None
+                usage = getattr(raw, "usage", None) if raw is not None else None
+                if usage is not None:
+                    # OpenAI shape
+                    ptd = getattr(usage, "prompt_tokens_details", None)
+                    oai_cached = getattr(ptd, "cached_tokens", None) if ptd is not None else None
+                    if oai_cached:
+                        cache_hit += int(oai_cached)
+                    # Anthropic shape
+                    a_read = getattr(usage, "cache_read_input_tokens", None)
+                    if a_read:
+                        cache_hit += int(a_read)
+                    a_create = getattr(usage, "cache_creation_input_tokens", None)
+                    if a_create:
+                        cache_hit += int(a_create)
+            except Exception:
+                # Provider returned an unexpected shape -- fall back to 0.
+                pass
             out["tokens"] = {
                 "input": int(getattr(tokens, "input_tokens", 0) or 0),
                 "output": int(getattr(tokens, "output_tokens", 0) or 0),
+                "cache_hit": cache_hit,
             }
         except Exception:
             pass
