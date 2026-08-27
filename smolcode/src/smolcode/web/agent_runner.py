@@ -978,6 +978,14 @@ def run_in_thread(run, settings, cost_cap_tracker=None):
                 "ts": _time_now_iso(),
             },
         )
+        # Phase 2 (M-item): delete the auto-created smolcode-snap-*
+        # snapshot temp file. A TERMINAL run can never resume, and
+        # skipping this leaked one transcript JSON per web run into
+        # the system temp directory.
+        try:
+            run.cleanup_temp_snapshot()
+        except Exception as _e:
+            _log.warning("snapshot cleanup failed for run %s: %s", run.id, _e)
         # Phase 2 (decision 0025 §6.4): drain the FIFO queue so the
         # next queued run starts. Done after EVT_RUN_ENDED so SSE
         # subscribers see the run ended before the next one starts.

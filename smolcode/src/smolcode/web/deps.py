@@ -40,7 +40,14 @@ def get_uploads_store(request: Request) -> UploadsStore:
 
 
 def get_audit_sink(request: Request) -> AuditSink | None:
-    """Return the per-app AuditSink (None if --no-audit was passed)."""
+    """Return the per-app AuditSink built by create_app (Phase 2/H5).
+
+    ``None`` ONLY when the server was started with the explicit
+    ``--no-audit`` opt-out (``create_app(no_audit=True)``). Every
+    normal boot attaches a real append-only sink resolved exactly
+    like cli.py resolves it, so web runs share the CLI tamper-
+    evident logs/audit.jsonl chain.
+    """
     return getattr(request.app.state, "audit_sink", None)
 
 

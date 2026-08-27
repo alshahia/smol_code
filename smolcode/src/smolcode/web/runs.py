@@ -556,13 +556,22 @@ class Run:
         else:
             path = Path(path)
             path.parent.mkdir(parents=True, exist_ok=True)
-        # Write atomically: tmp + os.replace.
+        # Write atomically: tmp + os.replace. Phase 2: remove the .tmp
+        # sidecar on failure so a crashed write does not leak files
+        # next to the caller-owned path either.
         tmp_path = path.with_suffix(path.suffix + ".tmp")
-        tmp_path.write_text(
-            _json.dumps(data, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
-        os.replace(tmp_path, path)
+        try:
+            tmp_path.write_text(
+                _json.dumps(data, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         with self.snapshot_lock:
             self.snapshot_path = path
             self.snapshot_at = time.time()
@@ -581,17 +590,60 @@ class Run:
             raise FileNotFoundError(str(path))
         return _json.loads(path.read_text(encoding="utf-8"))
 
+    def cleanup_temp_snapshot(self):
+        """Phase 2: delete the auto-created smolcode-snap-* temp file.
+
+        ``snapshot(path=None)`` materialises agent memory in a
+        ``NamedTemporaryFile(delete=False)`` so a PAUSED run can be
+        resumed later. Once the run reaches a TERMINAL status that
+        file can never be read again -- but nothing deleted it, so
+        every web run leaked one temp JSON (with the full transcript)
+        into the system temp dir. Called from the runner finally block
+        after the terminal event publish. Snapshots written to an
+        EXPLICIT caller-supplied path are not ours to delete; only
+        the ``smolcode-snap-*`` prefix is removed. Returns True when
+        a file was deleted.
+        """
+        with self.snapshot_lock:
+            p = self.snapshot_path
+        if p is None:
+            return False
+        try:
+            name = Path(p).name
+        except Exception:
+            return False
+        if not name.startswith("smolcode-snap-"):
+            return False
+        try:
+            Path(p).unlink(missing_ok=True)
+        except OSError:
+            return False
+        with self.snapshot_lock:
+            self.snapshot_path = None
+        return True
+
 
 class RunManager:
-    def __init__(self, cost_cap_tracker=None):
+    def __init__(self, cost_cap_tracker=None, audit_sink=None):
         # Decision 0032: optional cap tracker. When set, ``start_run`` /
         # ``start_or_enqueue_run`` consults ``tracker.check_reached``
         # against today's per-provider USD spend BEFORE spinning up the
         # runner thread. ``None`` is allowed so existing call sites (and
         # legacy tests) keep working -- it just disables enforcement.
         self._cost_cap_tracker = cost_cap_tracker
+        # Phase 2 (H5): optional manager-default audit sink. create_app
+        # builds ONE AuditSink per server process and hands it here;
+        # any run started WITHOUT an explicit ``audit=`` argument
+        # (retry, rerun, queue drain, legacy call sites) then inherits
+        # it instead of silently skipping the audit trail. An explicit
+        # per-call sink always wins.
+        self._audit_sink = audit_sink
         self._runs = {}
         self._lock = threading.Lock()
+
+    def _effective_audit(self, audit):
+        """Phase 2 (H5): per-call sink wins; else the manager default."""
+        return audit if audit is not None else getattr(self, "_audit_sink", None)
 
     def _check_cost_cap_or_raise(self, settings, provider_override):
         """Decision 0032: per-day USD cap enforcement at run-start.
@@ -730,7 +782,7 @@ class RunManager:
             id=uuid.uuid4().hex,
             task=task.strip(),
             tier=tier,
-            audit_sink=audit,
+            audit_sink=self._effective_audit(audit),
             model=effective_model,
             provider=effective_provider,
             workspace=str(getattr(settings, "workspace", "") or ""),
@@ -817,7 +869,7 @@ class RunManager:
                 id=uuid.uuid4().hex,
                 task=task.strip(),
                 tier=tier,
-                audit_sink=audit,
+                audit_sink=self._effective_audit(audit),
                 model=model_override or base_model,
                 provider=provider_override or base_provider,
                 workspace=str(getattr(settings, "workspace", "") or ""),
@@ -1207,11 +1259,12 @@ class RunManager:
 _orig_runmanager_init = RunManager.__init__
 
 
-def _patched_runmanager_init(self, cost_cap_tracker=None):
+def _patched_runmanager_init(self, cost_cap_tracker=None, audit_sink=None):
     # Decision 0032: thread the optional cost_cap_tracker through to the
     # original init so callers (tests, CLI) can wire a custom tracker.
     # None is the legacy default and disables enforcement.
-    _orig_runmanager_init(self, cost_cap_tracker=cost_cap_tracker)
+    # Phase 2 (H5): same for the manager-default audit sink.
+    _orig_runmanager_init(self, cost_cap_tracker=cost_cap_tracker, audit_sink=audit_sink)
     self._queue = []
     self._queue_lock = threading.Lock()
 

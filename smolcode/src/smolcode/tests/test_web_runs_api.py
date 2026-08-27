@@ -28,6 +28,8 @@ def client(tmp_path, monkeypatch):
     # Force local executor + stub model so no LLM calls happen.
     monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
     monkeypatch.setenv("SMOLCODE_LOG_LEVEL", "WARNING")
+    # Phase 2 (H5): create_app builds a real audit sink; isolate it.
+    monkeypatch.setenv("SMOLCODE_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
     # Replace build_model in the agent_runner module with the stub so
     # /api/runs can start without a real key.
     from smolcode.web import agent_runner as ar

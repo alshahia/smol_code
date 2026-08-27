@@ -283,7 +283,7 @@ is configured.
 | API key in `.env` | `chmod 600`, gitignored, never logged. |
 | API key in CLI args | `--api-key` is **not** a flag. Keys come from env only. |
 | API key in process env of the agent container | The container env is a **whitelist** (`KG_AUTH_TOKEN`, `PATH`, no `MINIMAX_API_KEY`, no `OPENCODE_API_KEY`). The agent's LLM calls go through the host, not the container. |
-| Key leak via structured logs | A single `RedactSecretsFilter` redacts any value matching `*KEY=*...`, `sk-...`, `hf_...`, `ghp_...`, `gho_...`, `AIza...`, `AKIA...`, etc., before log emission (`SEC-4` pattern from sibling project; 9 prefixes as of M13). |
+| Key leak via structured logs | A single `RedactSecretsFilter` redacts values matching its **9 prefix families** — `sk-ant-…`, `sk-…`, `hf_…`, `ghp_…`, `gho_…`, `ghu_…`, `ghs_…`, `AIza…`, `AKIA…` — before log emission (M7 + M13; canonical list in `smolcode/redact.py:DEFAULT_PATTERNS`). Generic `KEY=` / `TOKEN=` assignment shapes are deliberately NOT matched (over-redaction risk); adding a family requires updating this row plus `test_redact.py`. Reconciled with the implementation in Phase 2 (the previous wording claimed a `*KEY=*...` rule that never existed). |
 | Key in crash dump | The CLI catches exceptions and emits a structured error; raw tracebacks are not printed when a key is in `os.environ`. |
 | Web UI traceback leak (decision 0024) | `agent_runner.run_in_thread`'s broad `except Exception` block now appends `traceback.format_exc()` to `run.error` AND surfaces it in the `EVT_ERROR.traceback` SSE field. The `RedactSecretsFilter` is applied to all SSE events before publish (per `web/api.py` + `redact.py`), so any API key, OAuth token, or env-var value that lands in a traceback frame variable name is scrubbed before it leaves the server. Capped at 8 KB so a runaway traceback cannot blow up the SSE queue. |
 | Provider response caching | LiteLLM's `caching` plugin is **off** by default. Enabling it stores API responses on disk and could leak data across runs. |
@@ -306,8 +306,13 @@ deprecation alias.
 
 ## 9. Audit log
 
-`full_access` runs are written to `logs/audit.jsonl` (one JSON
-object per line). As of **M13** every line also carries a SHA-256
+Every smolcode run writes to `logs/audit.jsonl` (one JSON object
+per line): CLI runs via a per-run sink, web-started runs via the
+per-app sink built when the server boots (Phase 2/H5 — previously
+web runs produced **zero** audit records). Pass `--no-audit` (CLI,
+or `smolcode web`) to opt out entirely.
+
+As of **M13** every line also carries a SHA-256
 hash chain (`prev_hash` + `entry_hash`) so silent tampering with
 prior entries can be detected by replay. Use `smolcode audit verify`
 to confirm chain integrity (CI-friendly; exit 0 = clean, exit 1 =
@@ -315,6 +320,13 @@ tampered/unverifiable). See `docs/decisions/0016-m13-audit-integrity-redact-expa
 for the chain construction and `smolcode/src/smolcode/audit.py:verify_chain`
 for the verifier. The chain is **on by default**; set
 `SMOLCODE_AUDIT_HASH_CHAIN=1` to disable (not recommended).
+
+Phase 2 chain semantics across runs: each new sink **continues**
+the chain found at the end of the log file, so legitimate multi-run
+logs (the normal CLI case — every run appends to the same file)
+pass `verify_chain` end-to-end. Appending to a log whose last entry
+FAILS verification is refused (`AuditError`) so a tampered tail can
+not be silently laundered by further writes; rotate or restore first.
 
 Each entry contains:
 
@@ -345,15 +357,19 @@ never silently gzipped and held forever. The standalone
 `scripts/rotate_audit_log.py` predates this guarantee; prefer the
 CLI verb for any new deployment.
 
-`restricted` and `elevated` runs are **not** written to the audit
-log by default (the volume would be enormous); a separate `INFO`
-log captures everything at the user's option via
-`SMOLCODE_LOG_LEVEL=DEBUG`.
+**Volume note (reconciled in Phase 2):** contrary to earlier drafts,
+ALL tiers are audited by default today — restricted included — because
+per-run records are cheap (start/end/error plus gate decisions, not
+per-token dumps). Rotation (`smolcode audit rotate --keep-days N`)
+keeps the live log bounded; a separate `INFO` log still captures
+everything at the user's option via `SMOLCODE_LOG_LEVEL=DEBUG`.
 
 Operators read the log four ways (all apply `RedactSecretsFilter`
-so leaked keys cannot escape):
+so leaked keys cannot escape — including `audit ls --json` since
+Phase 2; suppress with `--no-redact` when you genuinely need raw
+fields):
 
-- `smolcode audit ls [-n N]` — quick terminal scan
+- `smolcode audit ls [-n N] [--json]` — quick terminal scan
 - `smolcode audit grep <pattern>` — case-insensitive substring
 - `smolcode audit grep --patterns <re1> <re2> ...` — regex (M14.4)
 - `GET /api/audit?limit=&grep=&verify=1` — SPA viewer

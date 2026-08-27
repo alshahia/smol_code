@@ -30,8 +30,16 @@ from .runs import RunManager
 ALLOWED_BIND_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build a FastAPI app bound to the given Settings."""
+def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> FastAPI:
+    """Build a FastAPI app bound to the given Settings.
+
+    Phase 2 (H5): unless ``no_audit=True`` is passed, ONE AuditSink is
+    constructed exactly like cli.py resolves it (SMOLCODE_AUDIT_LOG
+    override, else ``<cwd>/logs/audit.jsonl``) and shared by the
+    uploads store, the run manager, and GET /api/audit. Web-started
+    runs therefore leave the same tamper-evident trail CLI runs do.
+    Sink construction failure refuses the boot (fail-closed).
+    """
     if settings is None:
         settings = load_settings()
 
@@ -44,7 +52,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     install_redact_filter()
 
+    # Phase 2 (H5): real per-app audit sink. ``None`` only when the
+    # operator explicitly opted out via ``no_audit=True`` (the web
+    # equivalent of the CLI --no-audit flag); every consumer then
+    # sees the documented no-sink behaviour.
     audit: AuditSink | None = None
+    if not no_audit:
+        from ..audit import default_audit_path as _default_audit_path
+
+        try:
+            audit = AuditSink(_default_audit_path())
+        except Exception as e:
+            raise RuntimeError("audit sink init failed; refusing to start web server: " + str(e)) from e
 
     uploads_store = UploadsStore(
         settings.uploads_dir,
@@ -60,8 +79,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # per-day run-start check can consult it without re-reading settings.
     cost_cap_tracker = CostCapTracker(defaults=settings.cost_caps or {})
 
-    # M9: run manager is shared across requests.
-    run_manager = RunManager(cost_cap_tracker=cost_cap_tracker)
+    # M9: run manager is shared across requests. Phase 2 (H5): the
+    # manager also receives the default audit sink so queued runs,
+    # retries and reruns started without an explicit audit argument
+    # still land in the SAME tamper-evident log.
+    run_manager = RunManager(cost_cap_tracker=cost_cap_tracker, audit_sink=audit)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -113,6 +135,7 @@ def run_server(
     log_level: str = "info",
     no_browser: bool = False,
     settings: Settings | None = None,
+    no_audit: bool = False,
 ) -> None:
     if host not in ALLOWED_BIND_HOSTS:
         raise ValueError(
@@ -128,7 +151,7 @@ def run_server(
     except ImportError as e:
         raise RuntimeError("uvicorn is not installed. Install with: uv pip install -e .[web]") from e
 
-    app = create_app(settings=settings)
+    app = create_app(settings=settings, no_audit=no_audit)
     config = uvicorn.Config(
         app=app,
         host=host,

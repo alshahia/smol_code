@@ -42,6 +42,10 @@ def _isolate_env(monkeypatch, tmp_path):
         monkeypatch.delenv(var, raising=False)
     # Point workspace at a fresh tmp dir
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path / "ws"))
+    # Phase 2 (H5): create_app now builds a real AuditSink; keep the
+    # default log inside tmp so tests never write logs/audit.jsonl
+    # into the repo working tree.
+    monkeypatch.setenv("SMOLCODE_AUDIT_LOG", str(tmp_path / "audit.jsonl"))
     # Disable dotenv loading so tests do not pick up the real parent .env
     monkeypatch.setattr(_config_module, "load_dotenv_into_environ", lambda *a, **kw: None)
     return tmp_path

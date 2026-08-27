@@ -131,7 +131,12 @@ class AuditSink:
             self.hash_chain = raw not in ("1", "true", "yes", "on")
         else:
             self.hash_chain = bool(hash_chain)
-        self._prev_hash = _GENESIS_HASH
+        # Phase 2 (H6): when appending to a log that already carries a
+        # hash chain (e.g. the shared logs/audit.jsonl written by earlier
+        # CLI runs), CONTINUE that chain instead of restarting at the
+        # genesis sentinel -- a fresh anchor made every legitimate
+        # multi-run log fail verify_chain() at the seam.
+        self._prev_hash = self._seed_prev_hash_from_tail()
 
     def record(self, event, **fields):
         """Write one JSONL line with the given event name and fields.
@@ -146,13 +151,18 @@ class AuditSink:
             raise AuditError("AuditSink is closed")
         payload = {"ts": _now_iso(), "event": event, "pid": self._pid}
         payload.update(fields)
-        if self.hash_chain:
-            prev_hash = self._prev_hash
-            entry_hash = _compute_entry_hash(prev_hash, payload)
-            payload["prev_hash"] = prev_hash
-            payload["entry_hash"] = entry_hash
-        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         with self._lock:
+            # Phase 2 (M-item): prev_hash read + entry_hash computation
+            # MUST happen under the SAME lock as the write. Computing
+            # outside let two threads anchor on the same prev_hash and
+            # interleave their writes, yielding a log verify_chain()
+            # rejects.
+            if self.hash_chain:
+                prev_hash = self._prev_hash
+                entry_hash = _compute_entry_hash(prev_hash, payload)
+                payload["prev_hash"] = prev_hash
+                payload["entry_hash"] = entry_hash
+            line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             try:
                 self._fp.write(line + "\n")
             except (OSError, ValueError) as e:
@@ -161,6 +171,64 @@ class AuditSink:
                 # Advance the chain AFTER the write so a failed write
                 # does not poison the next line's prev_hash.
                 self._prev_hash = payload["entry_hash"]
+
+    def _seed_prev_hash_from_tail(self):
+        """Return the anchor prev_hash for a freshly opened sink.
+
+        Reads the last complete line of the (possibly existing) log:
+
+        * tail chained AND verifying -> return its ``entry_hash`` so
+          the new sink continues the chain (multi-run logs stay
+          verifiable);
+        * tail chained BUT broken -> raise ``AuditError``. Extending
+          a tampered log would launder the evidence; the operator
+          rotates or restores the file first (fail-closed, H6);
+        * tail unchained (pre-M13 history or ``hash_chain=False``),
+          malformed, empty, or unreadable -> return the genesis
+          sentinel. The verifier already reports such logs as
+          unverifiable from the offending historical line;
+          appending a fresh anchor makes them no worse.
+
+        Note: this seeds ONE writer view. Concurrent appends from
+        multiple PROCESSES to the same file remain unsupported --
+        the in-process lock cannot see another process writes.
+        """
+        try:
+            size = self.path.stat().st_size
+        except OSError:
+            return _GENESIS_HASH
+        if size == 0:
+            return _GENESIS_HASH
+        window = min(size, 65536)
+        try:
+            with self.path.open("rb") as fp:
+                fp.seek(size - window)
+                blob = fp.read()
+        except OSError:
+            return _GENESIS_HASH
+        text = blob.decode("utf-8", errors="replace")
+        candidates = [ln.strip() for ln in text.splitlines()]
+        candidates = [ln for ln in candidates if ln]
+        if not candidates:
+            return _GENESIS_HASH
+        try:
+            obj = json.loads(candidates[-1])
+        except ValueError:
+            return _GENESIS_HASH
+        if not isinstance(obj, dict):
+            return _GENESIS_HASH
+        prev = obj.get("prev_hash")
+        entry = obj.get("entry_hash")
+        if not isinstance(prev, str) or not isinstance(entry, str):
+            return _GENESIS_HASH
+        if _compute_entry_hash(prev, obj) != entry:
+            raise AuditError(
+                "refusing to append to audit log "
+                + str(self.path)
+                + ": the last entry hash does not verify (possible"
+                + " tampering). Rotate or restore the log first."
+            )
+        return entry
 
     # Convenience methods -----------------------------------------------------
 

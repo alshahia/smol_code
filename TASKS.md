@@ -8,6 +8,57 @@ this file. The three stay in sync; this file is the readable summary.
 
 ---
 
+## 0. Remediation phases status (2026-08-26)
+
+Per `docs/reviews/2026-08-26-full-app-review/REMEDIATION-PLAN.md` --
+fixing the 2026-08-26 full-app review findings in dependency order.
+
+| Phase | Theme | ADR | Status | Commit ref |
+|---|---|---|---|---|
+| 0 | CI + quality gates + env hygiene | 0034 (precedent) | shipped earlier this session | `6539355` + `d9a5519` (see git log) |
+| 1 | C1 gate redesign + C2 images + H1 network | 0035 | shipped earlier this session | `357022d` (C1) + `996c14f` (C2/H1) + `c62fa95` (ADR) |
+| 2 | Audit integrity + web sink + ls-json redaction + snapshot cleanup | 0036 | shipped this commit (see git log) | this session - code commit + docs commit |
+| 3 | Retry/rerun/queue/caps (H7-H9) | not yet written | pending - next | (see remediation plan §3) |
+| 4 | Tools / MCP hardening (H2-H4) | pending | next batch | |
+| 5 | Web robustness + session model | pending | after 1-4 | |
+| 6 | Frontend correctness | pending | after 3 | |
+| 7 | Docs alignment + structural ADRs | pending | last | |
+
+**Phase 2 exit criteria met:**
+
+- `docs/security.md` sections 8-9 claims are demonstrably true:
+  - 9 prefix families (not generic KEY= shapes) - test_redact.py
+  - All four read paths redact (incl. `audit ls --json`) -
+    `test_audit_integrity_phase2.py::TestLsJsonRedaction`
+  - Web runs leave start/end records readable via GET /api/audit with
+    verify=true ok - `test_audit_integrity_phase2.py::TestWebRunLeavesVerifiableAuditTrail`
+  - Multi-run logs pass `verify_chain` end-to-end - `TestChainContinuation::test_three_runs_three_sinks_chain_verifies`
+  - A tampered log blocks further appends with an actionable error -
+    `TestChainContinuation::test_append_to_tampered_tail_refused`
+- `make quality` clean; full non-docker suite green; CI Job A ready
+  (push to `origin/main` triggers it for the first time on Phase 2
+  changes - docker-marked tests run in Job B).
+
+**Known limitations carried into Phase 3+:**
+
+- `RunManager.__init__` is still monkey-patched at the module bottom
+  (runs.py end); folding it back into the class is Phase 5 §6.
+- Base images remain tag-pinned pending digest conversion
+  (ADR 0035 noted; recipe documented in the Dockerfiles).
+- `audit ls --no-redact` exposes raw fields; intentionally so for
+  forensic work, but operators must remember the flag does NOT
+  bypass write-time redaction (none of the keys actually leak; the
+  read path simply does not scrub them on output).
+
+**Operational note:** the `smolcode-checkpoint` external tool runs
+`git stash push --include-untracked` periodically on this host.
+Every Phase 2 work loss from that tool was recovered from stash^3
+byte-for-byte; the recommended mitigation (recover + apply + add +
+commit in ONE shell invocation) is documented in the Phase 1
+incident addendum and was applied to both Phase 2 commits here.
+
+---
+
 ## 1. Current state (2026-08-26, end of decision 0034 session)
 
 | Item | Status | Reference |

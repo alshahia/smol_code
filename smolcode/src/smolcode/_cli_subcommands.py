@@ -128,16 +128,19 @@ def _uploads_main(argv_list):
 
 
 def _web_main(argv_list):
-    """Handle `smolcode web [--port N] [--host H] [--no-browser]`.
+    """Handle `smolcode web [--port N] [--host H] [--no-browser] [--no-audit]`.
 
     Starts the FastAPI server (decision 0010 D2). Host defaults to
     127.0.0.1 (loopback only); --host is rejected unless it is in
     ALLOWED_BIND_HOSTS (server.py enforces the same allowlist at
-    start time).
+    start time). Phase 2 (H5): --no-audit is the explicit opt-out
+    from the per-app audit sink; without it web runs are audited
+    exactly like CLI runs.
     """
     port = 7860
     host = "127.0.0.1"
     no_browser = False
+    no_audit = False
     log_level = "info"
     for i, tok in enumerate(argv_list[1:], start=1):
         if tok in ("--port", "-p") and i + 1 < len(argv_list):
@@ -148,6 +151,8 @@ def _web_main(argv_list):
                 return 2
         elif tok == "--no-browser":
             no_browser = True
+        elif tok == "--no-audit":
+            no_audit = True
         elif tok == "--host" and i + 1 < len(argv_list):
             host = argv_list[i + 1]
         elif tok in ("--log-level",) and i + 1 < len(argv_list):
@@ -182,7 +187,9 @@ def _web_main(argv_list):
     if not no_browser:
         print("opening browser; pass --no-browser to suppress", file=sys.stderr)
     try:
-        run_server(host=host, port=port, log_level=log_level, no_browser=no_browser, settings=settings)
+        run_server(
+            host=host, port=port, log_level=log_level, no_browser=no_browser, settings=settings, no_audit=no_audit
+        )
         return 0
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
@@ -469,7 +476,7 @@ def _audit_main(argv_list):
 
     Accepted forms:
         smolcode audit                              -> default: ls
-        smolcode audit ls [-n N] [--json] [--audit-log PATH]
+        smolcode audit ls [-n N] [--json] [--no-redact] [--audit-log PATH]
         smolcode audit grep <pattern> [-n N] [--no-redact] [--audit-log PATH]
         smolcode audit grep --patterns <re1> <re2> ... [-n N] [--audit-log PATH]
         smolcode audit verify [--audit-log PATH]
@@ -497,8 +504,9 @@ def _audit_main(argv_list):
     if verb in ("help", "-h", "--help"):
         print("usage: smolcode audit [ls|grep|verify|rotate|help] [options]")
         print()
-        print("  ls [-n N] [--json] [--audit-log PATH]")
+        print("  ls [-n N] [--json] [--no-redact] [--audit-log PATH]")
         print("     # list recent audit entries (default: last 20).")
+        print("     # Redacted like grep unless --no-redact is passed.")
         print("  grep <pattern> [-n N] [--no-redact] [--audit-log PATH]")
         print("     # filter entries whose task/action/message contains <pattern>.")
         print("     # Output is routed through RedactSecretsFilter (M7).")
@@ -573,7 +581,10 @@ def _audit_main(argv_list):
     if verb == "ls":
         if pos:
             print("unknown audit ls argument: " + repr(pos[0]), file=sys.stderr)
-            print("usage: smolcode audit ls [-n N] [--json] [--audit-log PATH]", file=sys.stderr)
+            print(
+                "usage: smolcode audit ls [-n N] [--json] [--no-redact] [--audit-log PATH]",
+                file=sys.stderr,
+            )
             return 2
         from pathlib import Path as _P
 
@@ -594,8 +605,17 @@ def _audit_main(argv_list):
         if limit is not None:
             entries = entries[-limit:]
         if as_json:
+            # Phase 2 (M-item): route JSON output through the SAME
+            # redactor as the table/grep paths. The raw JSONL dump
+            # previously leaked verbatim task text and exception
+            # messages; docs/security.md section 9 promises all read
+            # paths apply RedactSecretsFilter.
+            from .redact import DEFAULT_PATTERNS as _AUDIT_PATTERNS
+            from .redact import _redact_value as _audit_redact_value
+
             for obj in entries:
-                print(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+                out_obj = obj if no_redact else _audit_redact_value(obj, _AUDIT_PATTERNS)
+                print(json.dumps(out_obj, ensure_ascii=False, separators=(",", ":")))
             return 0
         if not entries:
             print("(audit log empty)")

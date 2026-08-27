@@ -42,6 +42,10 @@ def _make_client_with_audit(tmp_path, monkeypatch, *, with_sink: bool = True):
             monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")
+    # Phase 2 (H5): create_app builds its own sink by default; keep
+    # that one pointed at tmp too (the injected sink below stays
+    # authoritative for these tests).
+    monkeypatch.setenv("SMOLCODE_AUDIT_LOG", str(tmp_path / "boot-audit.jsonl"))
     from smolcode.audit import AuditSink
     from smolcode.web import create_app
 
