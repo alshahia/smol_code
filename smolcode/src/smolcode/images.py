@@ -171,8 +171,10 @@ def ensure_tier_images(settings, tier_names=_SANDBOXED_TIERS, *, docker_client=N
             )
         except Exception as e:
             raise ImageBuildError(_failure_message(plan, e)) from e
+        chunk_count = 0
         try:
             for chunk in log_stream:
+                chunk_count += 1
                 msg = chunk.get("stream") or chunk.get("errorDetail", {}).get("message", "")
                 if msg:
                     _log.debug("[%s build] %s", plan.tag, msg.rstrip())
@@ -182,6 +184,28 @@ def ensure_tier_images(settings, tier_names=_SANDBOXED_TIERS, *, docker_client=N
             raise
         except Exception as e:
             raise ImageBuildError(_failure_message(plan, e)) from e
+        # Defence in depth: the Docker daemon can return an HTTP 5xx with
+        # an empty body (observed on Windows named-pipe transports via
+        # the Python SDK). The iterator above then yields zero chunks
+        # and no errorDetail, so the build silently no-ops. Refuse to
+        # treat that as success: require at least one streamed chunk
+        # AND confirm the image is actually present.
+        if chunk_count == 0:
+            raise ImageBuildError(
+                _failure_message(
+                    plan,
+                    "build endpoint returned no stream chunks (likely HTTP 5xx; "
+                    "check the Docker daemon is reachable and the build context is valid)",
+                )
+            )
+        if not image_is_current(client, plan.tag, plan.src_hash):
+            raise ImageBuildError(
+                _failure_message(
+                    plan,
+                    "build completed without error but image is missing or "
+                    "does not carry the expected source-hash label",
+                )
+            )
         built.append(plan.tag)
     return built
 

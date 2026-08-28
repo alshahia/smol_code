@@ -83,12 +83,29 @@ class FakeImages:
 
 
 class FakeApi:
-    def __init__(self, calls):
+    """Mock docker.api.build().
+
+    Real Docker always yields at least the terminal '}' chunk before
+    closing. This fake mirrors that so the chunk_count==0 defence in
+    ensure_tier_images does not raise spuriously. Pass chunks=[] to
+    simulate the silent-empty-stream failure mode (production code
+    raises ImageBuildError on that).
+
+    on_complete(tag, src_hash) is invoked AFTER build() returns so the
+    FakeClient can record the freshly-built image and satisfy the
+    post-build image_is_current() check.
+    """
+
+    def __init__(self, calls, chunks=None, on_complete=None):
         self._calls = calls
+        self._chunks = chunks if chunks is not None else [{"stream": ""}]
+        self._on_complete = on_complete
 
     def build(self, **kwargs):
         self._calls.append(kwargs)
-        return iter([])
+        if self._on_complete is not None:
+            self._on_complete(kwargs.get("tag"), kwargs.get("labels", {}).get(IMAGE_SRC_LABEL))
+        return iter(self._chunks)
 
 
 class FakeClient:
@@ -96,7 +113,19 @@ class FakeClient:
         self.store = {}
         self.build_calls = []
         self.images = FakeImages(self.store)
-        self.api = FakeApi(self.build_calls)
+        # Wire record_built as the post-build hook so production code's
+        # post-build image_is_current() check observes the freshly
+        # built image (mirrors real Docker's behaviour).
+        self.api = FakeApi(self.build_calls, on_complete=self.record_built)
+
+    def record_built(self, tag, src_hash):
+        """Simulate Docker writing a freshly-built image into the store.
+
+        Production code (ensure_tier_images) verifies the image exists
+        AND carries the expected source-hash label after every build;
+        the fake mirrors that by recording the tag here.
+        """
+        self.store[tag] = FakeImage({IMAGE_SRC_LABEL: src_hash})
 
 
 def test_image_is_current_true_on_matching_label(docker_settings):
@@ -152,6 +181,32 @@ def test_ensure_unknown_tier_name_fails_closed(docker_settings):
     c = FakeClient()
     with pytest.raises(ImageBuildError, match="settings has no tier"):
         ensure_tier_images(docker_settings, ["phantom"], docker_client=c)
+
+
+def test_ensure_fails_closed_on_empty_build_stream(docker_settings):
+    """Regression: a build endpoint that yields zero stream chunks (HTTP
+    5xx with empty body observed on Windows named-pipe transports via
+    the Python SDK) used to silently claim success. ensure_tier_images
+    must now raise ImageBuildError instead.
+    """
+    c = FakeClient()
+    # Simulate the silent-failure mode: build() yields no chunks.
+    c.api = FakeApi(c.build_calls, chunks=[], on_complete=c.record_built)
+    with pytest.raises(ImageBuildError, match="no stream chunks"):
+        ensure_tier_images(docker_settings, ["restricted"], docker_client=c)
+    assert c.build_calls, "build() should still have been attempted"
+
+
+def test_ensure_fails_closed_when_build_completed_but_image_missing(docker_settings):
+    """Defence in depth: a build that streams OK but never produces an
+    image (e.g. daemon accepted the request then crashed mid-build)
+    must not be reported as success.
+    """
+    c = FakeClient()
+    # No on_complete -> image is never recorded into the store.
+    c.api = FakeApi(c.build_calls, chunks=[{"stream": "ok"}], on_complete=None)
+    with pytest.raises(ImageBuildError, match="missing or does not carry"):
+        ensure_tier_images(docker_settings, ["restricted"], docker_client=c)
 
 
 # --- executor kwargs pinning ----------------------------------------------------

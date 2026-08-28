@@ -26,17 +26,31 @@ Tools exposed (both readonly):
 
 Implementation note
 -------------------
-Uses `mcp.server.mcpserver.MCPServer` (the mcp 2.0.0 high-level
-class). The older `mcp.server.fastmcp.FastMCP` was moved to a separate
-`fastmcp` package and is not installed in this environment (decision
-0005 section 2.2).
+Prefers `mcp.server.mcpserver.MCPServer` (the mcp 2.0.0 high-level
+class). Falls back to `mcp.server.fastmcp.FastMCP` for mcp 1.x, which
+is the version currently pinned in `smolcode/uv.lock`. Both expose
+identical `@server.tool()` and `server.run(transport="stdio")`
+surfaces for this demo (decision 0005 section 2.2).
 """
 
 from __future__ import annotations
 
 import sys
 
-from mcp.server.mcpserver import MCPServer
+
+try:
+    # mcp >= 2.0
+    from mcp.server.mcpserver import MCPServer
+
+    _server_cls = MCPServer
+    _server_module = "mcp.server.mcpserver"
+except ImportError:  # pragma: no cover - exercised on mcp 1.x
+    # mcp 1.x: FastMCP is the same high-level class, just located in a
+    # different submodule. Behaviour-compatible for this demo.
+    from mcp.server.fastmcp import FastMCP as _FastMCP
+
+    _server_cls = _FastMCP
+    _server_module = "mcp.server.fastmcp"
 
 
 # A tiny hardcoded corpus so the demo is fully self-contained.
@@ -65,7 +79,7 @@ _CORPUS: dict[str, str] = {
 }
 
 
-mcp = MCPServer("smolcode-docs-demo")
+mcp = _server_cls("smolcode-docs-demo")
 
 
 @mcp.tool()
