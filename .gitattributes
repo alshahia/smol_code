@@ -1,0 +1,45 @@
+# Enforce LF line endings on all text files by default.
+# This is the single most important guard against Docker ENTRYPOINT
+# ENOENT failures on Windows hosts: a CRLF-terminated #! shebang
+# causes Linux kernel execve() to look for an interpreter path
+# with a trailing CR byte, which doesn't exist. See commit history
+# for the original iptables-init.sh incident (M16, decision 0020).
+*
+    text=auto
+    eol=lf
+
+# Shell and Python scripts are always LF, regardless of autocrlf.
+*.sh        eol=lf
+*.bash      eol=lf
+*.py        eol=lf
+*.pyi       eol=lf
+
+# YAML/TOML/JSON/Markdown: LF (no CRLF inside data files).
+*.yml       eol=lf
+*.yaml      eol=lf
+*.toml      eol=lf
+*.json      eol=lf
+*.md        eol=lf
+
+# Explicitly mark binary files so Git does not try to text-convert them.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.woff      binary
+*.woff2     binary
+
+# Dockerfile + Makefile are text but the syntax is whitespace-sensitive;
+# tab characters must survive checkout. text=auto does the right thing,
+# but pinning them avoids future ambiguity.
+Dockerfile*        eol=lf
+*.Dockerfile       eol=lf
+Makefile           eol=lf
+*.mk               eol=lf
+
+# Shell scripts that legitimately need CRLF (e.g. Windows .bat/.cmd):
+# none in this repo. If a future script DOES need CRLF, override per-file
+# with a `path eol=crlf` line.
