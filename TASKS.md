@@ -103,9 +103,26 @@ Each shipped phase in this batch will update this block with the new
 commit ref + ADR (0037), matching the Phases 0/1/2 pattern above.
 ADRs are written at the START of each phase, not before.
 
+**Batch shipped to `origin/main` at `a8e57c4` (2026-08-27, FF merge of `phase3-web-ui-fixes`):**
+
+- Range pushed: `dc2c094..a8e57c4` (9 commits, 31 files, +3040 / -110 LOC)
+- HEAD on `main` and `origin/main`: `a8e57c4`
+- Branch `phase3-web-ui-fixes` retained locally at `a8e57c4` for history
+- Commits in the batch: `69b616f` (Phase 0) + `e1ffd39` (F1) + `dcd41d4` (F2) + `c923dd1`/`eb892e0`/`73b05bd` (F3) + `108b145`/`a8e57c4` (F4) + `8a0a055` (chore: stray `#` -> `//`)
+- ADR 0037 (`docs/decisions/0037-phase4-outside-workspace-project-selector.md`, ~9 KB) is the canonical home for the F1+F2+F3+F4 batch (Phase 3 commit messages tag "[decision 0036]" by historical accident; 0036 is the Phase 2 audit-integrity ADR)
+- Validation gates at ship: vitest 114/114 pass + pytest 1311/1311 pass (5 docker/shellcheck skip) + ruff check + format clean + tsc -b clean + pnpm build clean
+- Working tree clean post-push
+- Phase 4 added 22 net new FE tests (7 ProjectSwitcher + 14 ProjectSwitcherOutside + 1 EventStream trailing-arg sync) and 5 new e2e tests via `e2e/_helpers.ts` + `e2e/project-switcher.spec.ts`
+
 ---
 
 ## 1. Current state (2026-08-26, end of decision 0034 session)
+
+> **Note (2026-08-27):** this section is the 2026-08-26 snapshot at
+> decision 0034 (`130ca5c`). It is preserved as-is because it captures
+> the resolved-state evidence for that session. The current state is
+> **post-decision 0037** (`a8e57c4` on `main` and `origin/main`) -- see
+> section 0a for the F1+F2+F3+F4 batch shipped on top of `dc2c094`.
 
 | Item | Status | Reference |
 |---|---|---|
@@ -209,6 +226,7 @@ tests exist for CI environments with the tools available.
 | `ba2c107` | 2026-08-29 | **decision 0031 docs**: TASKS.md update for decision 0031 - log 0030 ship + 0031 status (actual hash; supersedes `TBD-0031-docs`) | - |
 | `3fdd831` | 2026-08-26 | **decision 0032 (branch `feat/decision-0032`)**: per-provider usage caps (22 files, +2056/-39) — `CostCapTracker` + `Settings.cost_caps` env + two-layer enforcement (Layer A `cost_cap_reached:` -> 429; Layer B `_StopRequested` -> `stopped`) + `GET/PUT /api/cost-caps` + `<UsageLimitsPanel>` + Dashboard cost-cap column; closes v1.9.x followup from decision 0025 §10.5; 36 new BE tests + 9 new vitest + 4 new e2e | +2056 |
 | `3bedacc` | 2026-08-26 | **decision 0033 (branch `feat/decision-0033`)**: multi-browser Playwright matrix (4 files, +154/-5) — adds `projects: [chromium, firefox, webkit]` to `playwright.config.ts`; same 47 tests × 3 browsers = 141 pass / 3 skip. Also fixed a webkit-only race in App.tsx where the global keyboard router's stop handler captured a stale `activeRunId`; mirror via `activeRunIdRef` so the handler reads live state. Keyboard.spec.ts bumped to click `<body>` before `Ctrl+.` (webkit keeps focus on the textarea after the Run click; chromium / firefox move focus to body). Closes v1.9.x followup 'Multi-browser Playwright matrix' (0.25d). No new tests, no new helpers, no new deps. | +154 |
+| `a8e57c4` (FF of `108b145`+`8a0a055`+`73b05bd`+`eb892e0`+`c923dd1`+`dcd41d4`+`e1ffd39`+`69b616f`) | 2026-08-27 | **decision 0037 (branch `phase3-web-ui-fixes`)**: 2026-08-27 web UI feedback remediation (31 files, +3040/-110) — F1 dashboard clock-domain fix (monotonic -> wall-clock on `Run.started_at`), F2 Inspector fields + context-window circle + cache-tokens + breakdown modal, F3 project-root anchor + outside-root gate + per-session per-path allowlist + Open-in-Explorer (Q1 OFF per-run / Q2 BLOCK+modal+allowlist / Q3 any-under-`effective_cwd`), F4 outside-workspace project selector (SPA-only; BE contract unchanged). 9 commits FF-merged into `main` at `a8e57c4` and pushed to `origin/main`. ADR 0037 (`docs/decisions/0037-phase4-outside-workspace-project-selector.md`) is the canonical home for the whole F1+F2+F3+F4 batch. | +3040 |
 
 All twenty recent commits are PUSHED to `https://github.com/alshahia/smol_code`.
 

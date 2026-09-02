@@ -57,3 +57,12 @@ tmp_server3.log
 
 # One-off migration scripts with hardcoded absolute paths
 web/src/m15_apply.py
+
+# ---- Per-run web session state (Phase 4, 2026-08-27) -----------------------
+# Created at runtime by the web server when a session opens the project
+# switcher and/or uploads files. Currently ignored transitively via
+# `*.jsonl` / `*.log` patterns above, but listed explicitly here so the
+# intent is documented and a future change in contents does not start
+# staging these by accident.
+.web-ws/
+.smolcode/
