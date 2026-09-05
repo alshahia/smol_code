@@ -218,3 +218,37 @@ def test_executor_kwargs_disable_executor_side_builds(docker_settings):
     kw = _executor_kwargs_for("docker", tier, docker_settings)
     assert kw["image_name"] == "smolcode:restricted"
     assert kw["build_new_image"] is False
+
+
+import types
+
+import pytest
+
+from smolcode.images import _context_files
+
+
+@pytest.mark.parametrize("tier", ["restricted", "elevated", "full_access"])
+def test_build_call_names_the_tier_dockerfile(docker_settings, tier):
+    """2026-09-02 C-A layer 1: client.api.build must pass dockerfile=
+    naming the tier Dockerfile. The build context contains no root
+    Dockerfile, so the daemon default lookup fails every first build."""
+    captured = {}
+
+    class _FakeApi:
+        def build(self, **kwargs):
+            captured.update(kwargs)
+            return iter(())
+
+    class _FakeClient:
+        def __init__(self):
+            self.api = _FakeApi()
+
+            def _missing(tag):
+                raise Exception("no image yet")
+
+            self.images = types.SimpleNamespace(get=_missing)
+
+    with pytest.raises(ImageBuildError, match="no stream chunks"):
+        ensure_tier_images(docker_settings, [tier], docker_client=_FakeClient())
+    expected = [n for n in _context_files(tier) if n.endswith(".Dockerfile")][0]
+    assert captured.get("dockerfile") == expected

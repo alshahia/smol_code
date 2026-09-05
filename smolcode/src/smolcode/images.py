@@ -116,12 +116,22 @@ def _plans_for(settings, tier_names, context_dir=None):
         tier = settings.tiers.get(t)
         if tier is None:
             raise ImageBuildError("settings has no tier " + repr(t))
+        # 2026-09-02 C-A layer 1: pick the tier Dockerfile by suffix.
+        # _context_files returns a sorted list, so [0] used to pick
+        # iptables-init.sh for the restricted tier.
+        dockerfile = ""
+        for name in _context_files(t):
+            if name.endswith(".Dockerfile"):
+                dockerfile = name
+                break
+        if not dockerfile:
+            raise ImageBuildError("no *.Dockerfile in build context for tier " + repr(t))
         plans.append(
             _BuildPlan(
                 tag=tier.docker_image,
                 context_dir=ctx,
                 src_hash=source_hash(t, context_dir),
-                dockerfile=_context_files(t)[0],
+                dockerfile=dockerfile,
             )
         )
     return plans
@@ -165,6 +175,7 @@ def ensure_tier_images(settings, tier_names=_SANDBOXED_TIERS, *, docker_client=N
             log_stream = client.api.build(
                 path=str(plan.context_dir),
                 tag=plan.tag,
+                dockerfile=plan.dockerfile,
                 rm=True,
                 labels={IMAGE_SRC_LABEL: plan.src_hash},
                 decode=True,
