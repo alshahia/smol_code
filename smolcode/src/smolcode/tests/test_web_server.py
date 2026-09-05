@@ -54,7 +54,8 @@ class TestCreateApp:
             assert "/api/audit" in paths
             assert "/api/uploads" in paths
 
-    def test_create_app_with_settings(self, tmp_path):
+    def test_create_app_with_settings(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("smolcode.images.ensure_tier_images", lambda *a, **k: [])
         from smolcode.config import Settings, _default_tiers
         from smolcode.web import create_app
 
@@ -78,3 +79,35 @@ class TestCreateApp:
         with TestClient(app) as _client:
             assert app.state.settings is settings
             assert app.state.uploads_store is not None
+
+
+def test_create_app_refuses_boot_when_daemon_down(tmp_path, monkeypatch):
+    """2026-09-02 H-H: DockerException (daemon down) must refuse the boot
+    with a RuntimeError, not surface as a bare traceback."""
+    import docker.errors
+
+    from smolcode.config import Settings, _default_tiers
+    from smolcode.web import create_app
+
+    def _boom(*args, **kwargs):
+        raise docker.errors.DockerException("daemon down")
+
+    monkeypatch.setattr("smolcode.images.ensure_tier_images", _boom)
+    settings = Settings(
+        workspace=tmp_path,
+        executor="docker",
+        provider="opencode-go",
+        model="m",
+        litellm_proxy=None,
+        log_level="INFO",
+        tiers=_default_tiers(),
+        uploads_dir=tmp_path / "uploads",
+        upload_max_bytes=1024,
+        upload_allowed_mime=("text/",),
+    )
+    app = create_app(settings=settings)
+    from fastapi.testclient import TestClient
+
+    with pytest.raises(RuntimeError, match="sandbox images not available"):
+        with TestClient(app):
+            pass

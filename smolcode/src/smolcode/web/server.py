@@ -97,6 +97,7 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
         # executor deployments are unaffected.
         if getattr(settings, "executor", "") == "docker":
             import anyio
+            from docker.errors import DockerException
 
             from ..images import ImageBuildError, ensure_tier_images
 
@@ -107,7 +108,7 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
 
             try:
                 await anyio.to_thread.run_sync(_ensure)
-            except ImageBuildError as e:
+            except (ImageBuildError, DockerException) as e:
                 raise RuntimeError("sandbox images not available; refusing to start web server: " + str(e)) from e
         try:
             yield

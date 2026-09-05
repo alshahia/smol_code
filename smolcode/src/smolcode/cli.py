@@ -209,6 +209,8 @@ def main(argv=None):
     # runs. Refuses (exit 6) when a needed image is missing/stale and
     # cannot be built - never fall back to an unverified executor image.
     if not args.smoke and settings.executor == "docker":
+        from docker.errors import DockerException
+
         from .images import SANDBOXED_TIERS, ImageBuildError, ensure_tier_images
 
         needed = list(SANDBOXED_TIERS) if orchestrator_mode else [args.tier]
@@ -216,7 +218,7 @@ def main(argv=None):
             try:
                 for tag in ensure_tier_images(settings, needed):
                     print(f"built sandbox image {tag}", file=sys.stderr)
-            except ImageBuildError as e:
+            except (ImageBuildError, DockerException) as e:
                 print(f"error: {e}", file=sys.stderr)
                 return 6
         # Phase 1 (H1): the restricted tier attaches to an internal
