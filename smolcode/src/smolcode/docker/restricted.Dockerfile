@@ -10,10 +10,15 @@
 #   - the restricted import allowlist is enforced by smolagents
 #     LocalPythonExecutor inside the container, not by this image
 
-ARG PYTHON_BASE=3.12-bullseye
+# Phase 6: bumped bullseye -> bookworm (2026-09-24). bullseye-security
+# has superseded the exact git version python:3.12-bullseye pins, so the
+# install now 404s and THIS IMAGE CANNOT BUILD AT ALL. The sandboxed
+# executor was therefore entirely non-functional; the docker-marked tests
+# had been skipping because the daemon was down, which hid it.
+ARG PYTHON_BASE=3.12-bookworm
 # Pin note: convert to a digest pin (python@sha256:<digest>) for
 # supply-chain hardening; obtain the digest via
-# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bullseye
+# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bookworm
 FROM python:${PYTHON_BASE}
 # 2026-09-02 review finding 6: the restricted command allowlist includes
 # git, so the binary must exist in the image.

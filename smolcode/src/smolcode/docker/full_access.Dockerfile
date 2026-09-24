@@ -25,9 +25,11 @@
 # normal bridge with egress. Intentional and documented (docs/security.md
 # section 3.3).
 
-ARG PYTHON_BASE=3.12-bullseye
+# Phase 6: bumped bullseye -> bookworm (2026-09-24). See
+# restricted.Dockerfile for why the bullseye base no longer builds.
+ARG PYTHON_BASE=3.12-bookworm
 # Pin note: convert to a digest pin for supply-chain hardening; obtain via
-# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bullseye
+# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bookworm
 FROM python:${PYTHON_BASE}
 
 RUN apt-get update \

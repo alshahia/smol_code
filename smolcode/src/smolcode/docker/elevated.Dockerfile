@@ -24,10 +24,12 @@
 #     short-lived init runs as root
 #   - no SSH / no docker CLI / no kubectl in this image
 
-ARG PYTHON_BASE=3.12-bullseye
+# Phase 6: bumped bullseye -> bookworm (2026-09-24). See
+# restricted.Dockerfile for why the bullseye base no longer builds.
+ARG PYTHON_BASE=3.12-bookworm
 # Pin note: convert to a digest pin (python@sha256:<digest>) for
 # supply-chain hardening; obtain the digest via
-# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bullseye
+# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bookworm
 FROM python:${PYTHON_BASE}
 
 # Jupyter kernel gateway required by smolagents DockerExecutor;
