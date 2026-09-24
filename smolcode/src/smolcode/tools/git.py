@@ -124,6 +124,30 @@ class _GitDiffTool(Tool):
         if staged:
             cmd_args.append("--staged")
         if extra_args:
+            # extra_args is spliced straight into argv, so "--output=<path>"
+            # turns "show me a diff" into "write a file wherever the model
+            # likes". Allowlisting the read-only options is the safe shape
+            # here -- a blanket dash-rejection would break the legitimate
+            # --stat / -U5 that this input exists to allow.
+            allowed_extra = {
+                "--stat",
+                "--shortstat",
+                "--numstat",
+                "--name-only",
+                "--name-status",
+                "--raw",
+                "-p",
+                "--patch",
+                "-w",
+                "--ignore-all-space",
+                "--ignore-space-change",
+            }
+            for a in extra_args:
+                if not isinstance(a, str):
+                    raise PermissionError("each arg must be a string")
+                unified = (a.startswith("-U") and a[2:].isdigit()) or (a.startswith("--unified=") and a[10:].isdigit())
+                if a not in allowed_extra and not unified:
+                    raise PermissionError("refusing diff option that looks like a git flag: " + repr(a))
             cmd_args.extend(extra_args)
         for a in cmd_args:
             if not isinstance(a, str):
@@ -181,7 +205,12 @@ class _GitAddTool(Tool):
 
         if not paths or not isinstance(paths, list):
             raise PermissionError("paths must be a non-empty list")
-        cmd_args = ["git", "add", *paths]
+        for p in paths:
+            if isinstance(p, str) and p.startswith("-"):
+                raise PermissionError("refusing path that looks like a git flag: " + repr(p))
+        # "--" ends option parsing, so a file genuinely named "-foo" still
+        # works while "--all" / "-A" cannot be smuggled in as an operand.
+        cmd_args = ["git", "add", "--", *paths]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -238,6 +267,12 @@ class _GitCommitTool(Tool):
 
         if not message:
             raise PermissionError("message must be a non-empty string")
+        if message.startswith("-"):
+            # "-m" takes the next argv as a VALUE, so this is belt-and-braces
+            # rather than a live hole -- but it keeps the rule uniform across
+            # every tool that accepts model text, which is what the
+            # equivalence guard in the test suite asserts.
+            raise PermissionError("refusing message that looks like a git flag: " + repr(message))
         cmd_args = ["git", "commit", "-m", message]
         for a in cmd_args:
             if not isinstance(a, str):
@@ -359,6 +394,20 @@ class _GitPushTool(Tool):
         import os
         import subprocess
 
+        # Validate BEFORE the destructive gate. The gate denies every call
+        # in a session with no confirm callback, so a guard placed after it
+        # is unreachable in exactly the configuration it is meant to cover
+        # -- and rejecting malformed input should never cost the user a
+        # prompt. No "--" is valid for git push (it takes no pathspec), so
+        # this is dash-rejection only: --mirror / --force / --delete are
+        # flags, and a positional operand is what the caller meant.
+        if not remote:
+            raise PermissionError("remote is required")
+        if remote.startswith("-"):
+            raise PermissionError("refusing remote that looks like a git flag: " + repr(remote))
+        if branch and branch.startswith("-"):
+            raise PermissionError("refusing branch that looks like a git flag: " + repr(branch))
+
         from smolcode.destructive import destructive_reason, is_destructive
 
         # M4.x / Phase 1 (C1): per-tool destructive gate. Fires on
@@ -388,8 +437,6 @@ class _GitPushTool(Tool):
                 if not decision.approved:
                     raise PermissionError("destructive git_push denied: " + decision.reason)
 
-        if not remote:
-            raise PermissionError("remote is required")
         cmd_args = ["git", "push", remote]
         if branch:
             cmd_args.append(branch)
@@ -452,9 +499,37 @@ class _GitCloneTool(Tool):
 
         if not url:
             raise PermissionError("url is required")
-        cmd_args = ["git", "clone", url]
+        # Phase 6 (H2/R10). This is the sharpest edge of the set: git treats
+        # a clone URL as a transport spec, not just a location, and several
+        # forms of that spec execute a program the caller chooses --
+        #   ext::sh -c ...        -> runs a shell command
+        #   --upload-pack=<cmd>   -> runs <cmd> on the "remote"
+        #   -c core.sshCommand=... -> rewrites how git shells out
+        # So a leading dash is refused AND the scheme is allowlisted.
+        if url.startswith("-"):
+            raise PermissionError("refusing url that looks like a git flag: " + repr(url))
+        scheme = url.split("://", 1)[0].lower() if "://" in url else ""
+        if scheme and scheme not in ("https", "http", "ssh", "git", "file"):
+            raise PermissionError("refusing clone url with scheme " + repr(scheme) + ": not in allowlist")
+        if not scheme and ":" in url.split("/", 1)[0]:
+            # scp-like "user@host:path" is legitimate; "ext::..." is not.
+            head = url.split("/", 1)[0]
+            if not head.endswith(":") and ":" in head:
+                raise PermissionError("refusing clone url that looks like a git flag: " + repr(url))
         if directory:
-            cmd_args.append(directory)
+            if directory.startswith("-"):
+                raise PermissionError("refusing directory that looks like a git flag: " + repr(directory))
+            # Contain the clone target: otherwise the model can write a repo
+            # anywhere the server process can reach.
+            import os as _os
+
+            base = _os.path.abspath(self.cwd) if self.cwd else _os.path.abspath(".")
+            dest = _os.path.abspath(_os.path.join(base, directory))
+            if dest != base and not dest.startswith(base + _os.sep):
+                raise PermissionError("clone directory escapes the workspace: " + repr(directory))
+            cmd_args = ["git", "clone", "--", url, directory]
+        else:
+            cmd_args = ["git", "clone", "--", url]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -511,6 +586,8 @@ class _GitFetchTool(Tool):
 
         if not remote:
             raise PermissionError("remote is required")
+        if remote.startswith("-"):
+            raise PermissionError("refusing remote that looks like a git flag: " + repr(remote))
         cmd_args = ["git", "fetch", remote]
         for a in cmd_args:
             if not isinstance(a, str):
@@ -571,10 +648,19 @@ class _GitCheckoutTool(Tool):
 
         if not target:
             raise PermissionError("target is required")
+        if target.startswith("-"):
+            # --orphan / --detach / a stray -b would otherwise be read as the
+            # mode rather than the thing to check out.
+            raise PermissionError("refusing target that looks like a git flag: " + repr(target))
         cmd_args = ["git", "checkout"]
         if create:
+            # With -b the target is the NEW BRANCH NAME, and inserting "--"
+            # there would make git read it as the start-point instead, so
+            # this branch relies on the dash-rejection above alone.
             cmd_args.append("-b")
-        cmd_args.append(target)
+            cmd_args.append(target)
+        else:
+            cmd_args.extend(["--", target])
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
