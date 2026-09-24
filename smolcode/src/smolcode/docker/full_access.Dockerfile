@@ -76,6 +76,22 @@ RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
        > /etc/apt/sources.list.d/kubernetes.list
 
 # terraform from HashiCorp's official apt repo.
+#
+# BLOCKED (2026-09-24, verified from host AND container, DNS resolving fine):
+# https://apt.releases.hashicorp.com/ returns HTTP 404 for every path
+# including / and /gpg, while pkgs.k8s.io, packages.cloud.google.com and
+# packages.microsoft.com all still return 200. HashiCorp's apt repo appears to
+# be withdrawn or down upstream, so gpg --dearmor gets a 404 body and this
+# step exits 2, which fails the whole image build.
+#
+# This is NOT caused by the bullseye->bookworm move, and it is not fixable in
+# this file: the only ways to make it build would be to trust an unverified
+# key, drop signed-by, or remove terraform. None of those are acceptable for
+# a full_access tier, so the build is left honestly failing until upstream
+# returns. Note this image was ALREADY unbuildable before Phase 6 (it failed
+# earlier, on the bullseye git 404), so nothing regressed.
+# Re-check with:
+#   curl -sS -o /dev/null -w '%{http_code}\n' https://apt.releases.hashicorp.com/gpg
 RUN wget -qO- https://apt.releases.hashicorp.com/gpg \
       | gpg --dearmor --yes -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bullseye main" \
