@@ -140,7 +140,7 @@ started, and the partial Phase-3 landing is runtime-broken.
 | Phase | Theme | ADR | Status | Findings |
 |---|---|---|---|---|
 | 3 | Build/install/test isolation + CI can see the product | 0038 | **shipped** (`7f284ff`) | R1, R2, R5, R6 |
-| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **shipped** (`9eea09f`, `55cf0f2`, `1c0b7dd`) | H7, H8, H9 |
+| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **shipped** (`9eea09f`, `55cf0f2`, `44ef539`) | H7, H8, H9 |
 | 5 | Frontend correctness + strict TS | 0040 | pending (after 3, 4) | H10 + FE mediums |
 | 6 | Tool/MCP hardening + in-container plane truth | 0041 | pending (after 3; parallel with 4) | R8, H2, H3, H4, H11 |
 | 7 | Web/session robustness | 0042 | pending (after 6) | TOCTOU, Host, stop, eviction |
@@ -205,7 +205,7 @@ the START of the phase.
 and `packaging` jobs are new, so their first real run is unproven. Phase 4
 (retry/rerun/export/queue/cost caps) starts next.
 
-### Phase 4 shipped (`9eea09f` + `55cf0f2` + `1c0b7dd`, decision 0039)
+### Phase 4 shipped (`9eea09f` + `55cf0f2` + `44ef539`, decision 0039)
 
 H7, H8, H9 and R4. All four shipped with a green Phase 3 suite because
 the tests mocked below the seam; the fix was the seam, not the symptom.
