@@ -282,6 +282,16 @@ function App() {
     setStoredKeyValue(getKey(selectedProviderId))
   }, [selectedProviderId])
 
+  // Phase 5 (ADR 0040): selecting a run from history changed activeRunId,
+  // which changes refreshRuns' identity, but nothing actually CALLED it.
+  // The run detail behind the Inspector therefore stayed null until the
+  // next 5s poll tick -- up to five seconds of an empty Inspector after
+  // every click. refreshRuns depends on activeRunId, so this fires exactly
+  // on mount and on each selection.
+  useEffect(() => {
+    void refreshRuns()
+  }, [refreshRuns])
+
   useEffect(() => {
     const id = window.setInterval(() => {
       void refreshRuns()

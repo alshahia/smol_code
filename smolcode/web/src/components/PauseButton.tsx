@@ -38,7 +38,7 @@ export function PauseButton({ runId, status, onChanged }: Props) {
       } else {
         await pauseRun(runId)
       }
-      onChanged && onChanged()
+      if (onChanged) onChanged()
     } catch (e) {
       setErr((e as Error).message)
     } finally {

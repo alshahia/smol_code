@@ -353,6 +353,12 @@ export interface BackendMock {
   pause_response?: { run_id: string; paused: boolean }
   resume_response?: { run_id: string; resumed: boolean }
   health_response?: { status: string; version: string; uploads_dir: string; uploads_count: number }
+  /**
+   * decision 0040: GET /api/runs/{id}/events/snapshot body.
+   * Keyed by run id. The SPA reads this instead of waiting on a live
+   * SSE stream when the run is already in a terminal state.
+   */
+  events_snapshot?: Record<string, { events: unknown[]; status: string }>
   /** When set, GET /api/config returns 500 to drive the error screen. */
   fail_config?: boolean
   /** When set, GET /api/config never resolves to drive the loading screen. */
@@ -562,6 +568,17 @@ export async function mockBackend(page: Page, opts: BackendMock = {}): Promise<v
             exported_at: Math.floor(Date.now() / 1000),
             schema_version: 1,
           }),
+        })
+        return
+      }
+      // /api/runs/{id}/events/snapshot (decision 0040)
+      if (pathname.match(/^\/api\/runs\/([^/]+)\/events\/snapshot$/)) {
+        const id = pathname.split('/')[3]
+        const snap = opts.events_snapshot?.[id]
+        await route.fulfill({
+          status: snap ? 200 : 404,
+          contentType: 'application/json',
+          body: JSON.stringify(snap ?? { detail: 'not found' }),
         })
         return
       }

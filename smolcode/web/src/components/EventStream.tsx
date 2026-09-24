@@ -166,7 +166,20 @@ export function EventStream({ runId, status: runStatus, onApprovalRequest, onDif
   // over: RunManager.subscribe drains run.events (a queue) while
   // events_snapshot reads run.events_log, so an event published between
   // the two requests would be rendered twice.
+  // Four cases, not two, and the distinction matters:
+  //
+  //   undefined        legacy caller that passes no status at all.
+  //                    Stream, exactly as before Phase 5.
+  //   null             the caller has the run but has not resolved its
+  //                    status yet (App renders EventStream on activeRunId
+  //                    and fills activeRun on the next poll). Opening a
+  //                    stream here would connect to a run that may
+  //                    already be finished, then sit there waiting --
+  //                    the exact symptom this phase fixes. Wait instead.
+  //   terminal         render the recorded log, open nothing.
+  //   non-terminal     open the stream.
   const terminal = runStatus != null && TERMINAL_RUN_STATUSES.has(runStatus)
+  const shouldStream = runStatus === undefined || (runStatus != null && !terminal)
 
   useEffect(() => {
     if (!terminal) return
@@ -193,7 +206,7 @@ export function EventStream({ runId, status: runStatus, onApprovalRequest, onDif
   }, [runId, terminal])
 
   useEffect(() => {
-    if (terminal) return
+    if (!shouldStream) return
     setEvents([])
     setStatus('connecting')
     const url = '/api/runs/' + encodeURIComponent(runId) + '/events'
@@ -270,7 +283,7 @@ export function EventStream({ runId, status: runStatus, onApprovalRequest, onDif
       es.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, terminal])
+  }, [runId, shouldStream])
 
   return (
     <div className="event-stream">

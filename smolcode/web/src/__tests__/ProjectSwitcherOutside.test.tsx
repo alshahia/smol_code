@@ -16,11 +16,11 @@ vi.mock('../api', async () => {
 import * as api from '../api'
 import {
   ProjectSwitcher,
-  isOutsideWorkspace,
   MAX_RECENT_PROJECTS,
   RECENT_PROJECTS_KEY,
   type RecentProject,
 } from '../components/ProjectSwitcher'
+import { isOutsideWorkspace } from '../components/projectWorkspace'
 
 const mockedApi = vi.mocked(api)
 

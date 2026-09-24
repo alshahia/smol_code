@@ -89,7 +89,7 @@ export function FileMentionInput({
           return
         }
         const prefix = text.slice(i + 1, cursor)
-        if (/[^A-Za-z0-9_./\-]/.test(prefix)) {
+        if (/[^A-Za-z0-9_./-]/.test(prefix)) {
           setAutocomplete(null)
           return
         }

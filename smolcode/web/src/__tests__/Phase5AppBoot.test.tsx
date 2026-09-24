@@ -166,6 +166,16 @@ function installFetch() {
       return Promise.resolve(json({ uploads: [] }))
     }
     if (path === '/api/runs') return Promise.resolve(json({ runs }))
+    // The snapshot endpoint (decision 0040). It must be handled BEFORE the
+    // generic /api/runs/ catch-all below, and it must return a real
+    // `events` array: EventStream does setEvents(snap.events) and then
+    // iterates it, so a bare {} throws 'events is not iterable' and takes
+    // the whole tree down.
+    const snap = /^\/api\/runs\/([^/]+)\/events\/snapshot$/.exec(path)
+    if (snap) {
+      const run = (runs as Array<{ id: string; status: string }>).find((r) => r.id === snap[1])
+      return Promise.resolve(json({ events: [], status: run ? run.status : 'done' }))
+    }
     if (path in BODY) return Promise.resolve(json(BODY[path as keyof typeof BODY]))
     if (path.startsWith('/api/runs/')) return Promise.resolve(json({}))
     return Promise.resolve(json({}))

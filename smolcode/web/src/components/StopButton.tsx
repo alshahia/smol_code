@@ -15,7 +15,7 @@ export function StopButton({ runId, onStopped }: Props) {
     setErr(null)
     try {
       await postStop(runId)
-      onStopped && onStopped()
+      if (onStopped) onStopped()
     } catch (e) {
       setErr((e as Error).message)
     } finally {

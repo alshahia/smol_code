@@ -11,7 +11,7 @@
 // matching the backend's parser regex. Tokens are terminated by any
 // character outside ``[A-Za-z0-9_./-]``.
 
-const MENTION_RE = /(?:^|[^\w])@([A-Za-z0-9_./\-]+)/g
+const MENTION_RE = /(?:^|[^\w])@([A-Za-z0-9_./-]+)/g
 const FENCE_RE = /```[^\n]*\n.*?```/gs
 
 export interface MentionToken {

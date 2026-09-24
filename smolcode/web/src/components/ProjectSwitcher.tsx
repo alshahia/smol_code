@@ -22,6 +22,7 @@ import {
   listProjects as apiListProjects,
   type ProjectInfo,
 } from '../api'
+import { isOutsideWorkspace } from './projectWorkspace'
 
 /** A project the user has recently created in this browser. */
 export interface RecentProject {
@@ -63,17 +64,6 @@ function loadRecents(): RecentProject[] {
 function saveRecents(recents: RecentProject[]): void {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return
   try { window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(recents.slice(0, MAX_RECENT_PROJECTS))) } catch {}
-}
-
-export function isOutsideWorkspace(target: string, workspace: string | null | undefined): boolean {
-  const t = target.trim(); if (!t) return false
-  const ws = (workspace ?? '').trim(); if (!ws) return false
-  const norm = (p: string) => p.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase()
-  const a = norm(t); const b = norm(ws)
-  if (a === b) return false
-  const lastA = a.split('/').pop() ?? ''
-  if (a === b + '/' + lastA) return false
-  return !a.startsWith(b + '/')
 }
 
 export function ProjectSwitcher({ value, onChange, refreshTrigger, workspace }: Props) {
