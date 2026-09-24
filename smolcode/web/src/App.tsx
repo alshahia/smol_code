@@ -76,7 +76,23 @@ function App() {
   const [activeRun, setActiveRun] = useState<RunSummary | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [pending, setPending] = useState<PendingApproval | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Phase 5 (ADR 0040 §2): ONE error state served four different
+  // failures, and any of them replaced the entire application with
+  // "Cannot reach the smolcode web server". A failed thumbnail fetch told
+  // the user the server was down.
+  //
+  //   fatalError    -- set ONLY when getConfig() fails. The app cannot
+  //                    render without a config, so this is the only
+  //                    full-screen case.
+  //   transientError -- every other background failure (uploads, the
+  //                    provider list, open-path, post-approval). Shown as
+  //                    a dismissible inline banner with a Retry button;
+  //                    the app stays mounted underneath.
+  //   error         -- retained for pane-local callers that still expect
+  //                    the original name.
+  const [fatalError, setFatalError] = useState<string | null>(null)
+  const [transientError, setTransientError] = useState<string | null>(null)
+  const setError = setTransientError
   // Phase 0 (decision 0025, B11): bumped on every diff.proposed /
   // diff.resolved event so the Inspector's WorkspaceTree refreshes
   // immediately instead of waiting for its 10s poll.
@@ -174,8 +190,13 @@ function App() {
     try {
       const r = await listUploads(activeProject)
       setUploads(r.uploads)
+      // Phase 5 (ADR 0040 §2): a success clears the channel it could
+      // have set. The old shared error state was never cleared on
+      // success, so one transient blip left the app permanently broken
+      // until a reload.
+      setTransientError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setTransientError((e as Error).message)
     }
   }, [activeProject])
 
@@ -190,7 +211,16 @@ function App() {
     }
   }, [activeRunId])
 
+  // Phase 5 (ADR 0040 §1): this effect is the BOOT sequence and must
+  // run exactly once. It used to depend on refreshRuns, which closes over
+  // activeRunId -- so every run selection re-ran getConfig() and
+  // re-applied c.provider / c.model, silently resetting the user's
+  // composer selection to the server default. A ref guard is used rather
+  // than useState because the flag must not itself trigger a render.
+  const bootstrappedRef = useRef(false)
   useEffect(() => {
+    if (bootstrappedRef.current) return
+    bootstrappedRef.current = true
     void (async () => {
       try {
         const c = await getConfig()
@@ -206,7 +236,10 @@ function App() {
         await refreshUploads()
         await refreshRuns()
       } catch (e) {
-        setError((e as Error).message)
+        // Only getConfig() failing is fatal. refreshUploads/refreshRuns
+        // route their own errors to the transient banner, so reaching
+        // here means the app has no config and cannot render.
+        setFatalError((e as Error).message)
       }
     })()
   }, [refreshUploads, refreshRuns])
@@ -218,6 +251,7 @@ function App() {
         const r = await listProviders()
         if (cancelled) return
         setProviders(r.providers)
+        setTransientError(null)
         const last = loadLast()
         if (last && last.providerId.length > 0) {
           const info = r.providers.find((p) => p.id === last.providerId)
@@ -450,11 +484,11 @@ function App() {
     }
   }, [activeRun?.id, activeRun?.status])
 
-  if (error) {
+  if (fatalError) {
     return (
       <div className="error-screen">
         <h1>Cannot reach the smolcode web server</h1>
-        <pre>{error}</pre>
+        <pre>{fatalError}</pre>
         <p>
           Is <code>smolcode web</code> running on <code>http://127.0.0.1:7860</code>?
         </p>
@@ -474,6 +508,33 @@ function App() {
 
   return (
     <div className="app">
+      {/* Phase 5 (ADR 0040 §2): transient failures render HERE, as a
+          dismissible banner with a Retry, instead of replacing the whole
+          application. role="alert" so assistive tech announces it; the
+          Retry re-runs the two background fetches that can set it. */}
+      {transientError && (
+        <div className="error-banner app-transient-error" role="alert">
+          <span>{transientError}</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              void refreshUploads()
+              void refreshRuns()
+            }}
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            aria-label="Dismiss error"
+            onClick={() => setTransientError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <header className="header">
         <div className="brand">smolcode</div>
         <TierBadge tier={tier} />
@@ -650,7 +711,13 @@ function App() {
         />
       )}
 
+      {/* Phase 5 (ADR 0040 §3): key on the decision id so React
+          remounts the modal per decision. ApprovalModal also resets its
+          own editedAfter in an effect keyed on decisionId, so it is
+          correct standalone; the key is defence in depth and makes the
+          per-decision remount unconditional. */}
       <ApprovalModal
+        key={pending?.decisionId ?? 'none'}
         pending={pending}
         onDecide={onDecide}
         onAutoApproveToggle={onAutoApproveToggle}

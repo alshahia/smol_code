@@ -141,6 +141,11 @@ export function ProviderSelector({ value, onChange }: Props) {
         className="provider-select"
         value={value ?? ''}
         onChange={handleSelect}
+        // Phase 5 (ADR 0040): the select had only a `title`, which is a
+        // weak accessible-name fallback and gave tests nothing to query
+        // by. An explicit aria-label is the name assistive tech actually
+        // announces, and it makes the control addressable in tests.
+        aria-label="Model provider"
         title="Select a model provider"
       >
         {providers.map((p) => (
