@@ -73,7 +73,20 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
     tools.extend(build_fs_tools(workspace, tier=tier, uploads_dir=uploads_dir_str))
     # Phase 1 (C1): bind the tier's NAME so each tool's destructive gate
     # keys on its own effective tier rather than on the ambient session.
-    tools.extend(build_shell_tools(command_policy, tier_name=tier.name))
+    # Phase 6 (6.3): cwd and the timeout ceiling are bound here too. cwd was
+    # previously not passed at all, so the run tool's subprocess inherited
+    # the SERVER process's working directory instead of the workspace -- the
+    # command was not bound to the workspace. The ceiling reuses the tier's
+    # existing timeout_s so one number governs a run's total budget rather
+    # than each subprocess getting its own model-chosen budget.
+    tools.extend(
+        build_shell_tools(
+            command_policy,
+            tier_name=tier.name,
+            cwd=workspace,
+            max_timeout=int(getattr(tier, "timeout_s", 600) or 600),
+        )
+    )
     tools.extend(build_git_tools(command_policy, cwd=workspace, tier_name=tier.name))
     if mcp_configs:
         tools.extend(build_mcp_tools(tier, mcp_configs))

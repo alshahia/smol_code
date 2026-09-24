@@ -37,6 +37,17 @@ class _RunTool(Tool):
     output_type = "string"
     allowlist = ""  # pipe-separated, overridden per-build by build_shell_tools
     cwd = ""  # overridden per-build
+    # Phase 6 (6.3): hard ceiling on the model-supplied timeout, in seconds.
+    # Before this existed, timeout went straight to subprocess.run, so a
+    # model could pin a worker indefinitely. Bound per build.
+    max_timeout = 600
+    # Phase 6 (6.3): hard cap on captured output. 1 MiB is far above any
+    # useful git/pytest transcript and far below anything that would exhaust
+    # memory or blow the context window.
+    # Written as a literal, not 1024 * 1024: smolagents' class-attribute
+    # validator rejects any expression, treating computed values as
+    # "complex attributes [that] should be defined in __init__".
+    max_output_bytes = 1048576
     # Phase 1 (C1): the EXECUTING tool's effective tier, bound per build.
     # The destructive gate keys on this - never on the ambient session's
     # tier, which under the orchestrator describes a different agent.
@@ -48,6 +59,22 @@ class _RunTool(Tool):
     def forward(self, cmd: str, args, timeout=60) -> str:
         import os
         import subprocess
+
+        # Phase 6 (6.3): clamp BEFORE anything else runs, and report the
+        # effective value so a silently-shortened timeout cannot look like
+        # the command simply finished.
+        if timeout is None:
+            timeout = 60
+        try:
+            timeout = int(timeout)
+        except (TypeError, ValueError):
+            raise PermissionError("timeout must be an integer")
+        if timeout <= 0:
+            raise PermissionError("timeout must be positive")
+        ceiling = int(self.max_timeout or 600)
+        effective_timeout = timeout if timeout < ceiling else ceiling
+        if effective_timeout != timeout:
+            timeout = effective_timeout
 
         if not isinstance(args, list):
             raise PermissionError("args must be a list of strings")
@@ -68,6 +95,17 @@ class _RunTool(Tool):
         allowed = [s for s in self.allowlist.split("|") if s]
         if basename not in allowed:
             raise PermissionError("command " + repr(basename) + " not in allowlist " + repr(allowed))
+
+        # Phase 6 NOTE: a dash-guard on args was TRIED HERE AND REVERTED.
+        # It looked like a hole -- run("git", ["push", "--force"]) does walk
+        # past the dash-guards on the first-class git_push tool -- but the run
+        # tool is the SANCTIONED escape hatch by design: git.py's own module
+        # docstring says the higher-level operations are deliberately not
+        # exposed as tools and "the agent must use the shell tool directly and
+        # accept the allowlist". A blanket dash-rejection breaks python -c,
+        # pytest -q and ruff, so the allowlist on cmd is the boundary for this
+        # tool, and the git-specific guards apply to the first-class git tools
+        # only. Recorded here so it is not re-added as a security fix later.
 
         # M4.x / Phase 1 (C1): per-tool destructive gate. The gate fires
         # on is_destructive() REGARDLESS of the ambient session tier; the
@@ -127,17 +165,56 @@ class _RunTool(Tool):
             return "TIMEOUT after " + str(timeout) + "s: " + repr(str(e))
         except FileNotFoundError as e:
             return "NOT FOUND: " + repr(str(e))
+        cap = int(self.max_output_bytes or 1048576)
         out_parts = []
-        if proc.stdout:
-            out_parts.append("stdout:" + chr(10) + proc.stdout.rstrip())
-        if proc.stderr:
-            out_parts.append("stderr:" + chr(10) + proc.stderr.rstrip())
+        # A nested helper was tried and reverted: smolagents' MethodChecker
+        # reports "Name '_clip' is undefined" for a def inside forward, so
+        # the loop has to carry the logic inline. Same reason everything else
+        # in this file is inlined.
+        for label, text in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            if not text:
+                continue
+            raw = text.encode("utf-8", "replace")
+            if len(raw) <= cap:
+                out_parts.append(label + ":" + chr(10) + text.rstrip())
+            else:
+                kept = raw[:cap].decode("utf-8", "replace")
+                out_parts.append(
+                    label
+                    + ":"
+                    + chr(10)
+                    + kept
+                    + chr(10)
+                    + "...[TRUNCATED "
+                    + label
+                    + ": "
+                    + str(len(raw) - cap)
+                    + " of "
+                    + str(len(raw))
+                    + " bytes omitted, cap="
+                    + str(cap)
+                    + "]"
+                )
         out_parts.append("returncode: " + str(proc.returncode))
         return chr(10).join(out_parts)
 
 
-def build_shell_tools(command_policy, tier_name=""):
-    """Return the run Tool bound to command_policy.allowlist + tier name."""
+def build_shell_tools(command_policy, tier_name="", cwd=None, max_timeout=600):
+    """Return the run Tool bound to allowlist, tier, cwd and timeout ceiling.
+
+    Phase 6 (6.3): cwd and max_timeout are new. cwd was absent entirely, so the
+    bound class attribute stayed "" and subprocess.run(cwd=None) made the
+    subprocess inherit the SERVER process's working directory instead of the
+    workspace -- the command was not bound to the workspace at all.
+    """
     allowlist = "|".join(command_policy.allowlist) if command_policy.allowlist else ""
-    cls = bind_attrs(_RunTool, {"allowlist": allowlist, "tier_name": str(tier_name or "")})
+    cls = bind_attrs(
+        _RunTool,
+        {
+            "allowlist": allowlist,
+            "tier_name": str(tier_name or ""),
+            "cwd": str(cwd) if cwd is not None else "",
+            "max_timeout": int(max_timeout or 600),
+        },
+    )
     return [cls()]
