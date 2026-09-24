@@ -88,11 +88,14 @@ function App() {
   //                    provider list, open-path, post-approval). Shown as
   //                    a dismissible inline banner with a Retry button;
   //                    the app stays mounted underneath.
-  //   error         -- retained for pane-local callers that still expect
-  //                    the original name.
+  //
+  // There is deliberately no `setError` alias. Aliasing a setState
+  // function made react-hooks/exhaustive-deps demand it as an effect
+  // dependency, which it cannot know is stable. Every former caller now
+  // says setTransientError explicitly, which is also clearer at the call
+  // site about which channel a failure lands in.
   const [fatalError, setFatalError] = useState<string | null>(null)
   const [transientError, setTransientError] = useState<string | null>(null)
-  const setError = setTransientError
   // Phase 0 (decision 0025, B11): bumped on every diff.proposed /
   // diff.resolved event so the Inspector's WorkspaceTree refreshes
   // immediately instead of waiting for its 10s poll.
@@ -151,17 +154,24 @@ function App() {
   // without re-fetching on every render. Refreshed alongside the
   // project switcher so create / rename events invalidate it.
   const [projects, setProjects] = useState<ProjectInfo[]>([])
-  const refreshProjects = useCallback(async () => {
-    try {
-      const r = await listProjects()
-      setProjects(r.projects || [])
-    } catch {
-      // best-effort: a stale list is harmless
-    }
-  }, [])
+  // Fetch inline rather than via a refreshProjects useCallback: calling a
+  // useCallback from a fetch effect routes setState through a function the
+  // set-state-in-effect rule cannot see past. Inlining also adds the
+  // cancellation guard this effect was missing.
   useEffect(() => {
-    void refreshProjects()
-  }, [refreshProjects, projectRefreshTrigger])
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await listProjects()
+        if (!cancelled) setProjects(r.projects || [])
+      } catch {
+        // best-effort: a stale list is harmless
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [projectRefreshTrigger])
 
   // v1.9.x (FE-8): Dashboard overlay open/close.
   const [dashboardOpen, setDashboardOpen] = useState<boolean>(false)
@@ -266,7 +276,7 @@ function App() {
         if (!cancelled) {
           setProviders([])
         }
-        setError((e as Error).message)
+        setTransientError((e as Error).message)
       }
     })()
     return () => {
@@ -274,22 +284,44 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!selectedProviderId) {
-      setStoredKeyValue(null)
-      return
-    }
-    setStoredKeyValue(getKey(selectedProviderId))
-  }, [selectedProviderId])
+  // Re-read the stored key from localStorage when the selected provider
+  // changes, during render rather than in an effect. The effect form ran
+  // after the paint that still showed the previous provider's key, so a
+  // key could briefly render against the wrong provider. L355 writes the
+  // value directly, and that write is deliberately preserved: it is a
+  // real state update, not a re-derivation.
+  const [lastKeyProviderId, setLastKeyProviderId] = useState(selectedProviderId)
+  if (selectedProviderId !== lastKeyProviderId) {
+    setLastKeyProviderId(selectedProviderId)
+    setStoredKeyValue(selectedProviderId ? getKey(selectedProviderId) : null)
+  }
 
   // Phase 5 (ADR 0040): selecting a run from history changed activeRunId,
   // which changes refreshRuns' identity, but nothing actually CALLED it.
   // The run detail behind the Inspector therefore stayed null until the
   // next 5s poll tick -- up to five seconds of an empty Inspector after
-  // every click. refreshRuns depends on activeRunId, so this fires exactly
-  // on mount and on each selection.
+  // every click. The fetch is inlined rather than routed through the
+  // refreshRuns callback for the same reason as the projects fetch above,
+  // and so the run detail is resolved once per selection, immediately.
   useEffect(() => {
-    void refreshRuns()
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await listRuns()
+        if (cancelled) return
+        setRuns(r.runs)
+        const active = r.runs.find((x) => x.id === activeRunId) ?? null
+        setActiveRun(active)
+      } catch {
+        /* ignore transient */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // refreshRuns is deliberately not in the deps: its identity changes
+    // exactly when activeRunId does, which is the point of this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshRuns])
 
   useEffect(() => {
@@ -301,7 +333,16 @@ function App() {
 
   useEffect(() => {
     void refreshUploads()
+    // Deliberate setState-in-effect, not a lint oversight. The counter is
+    // a cross-component invalidation signal: ProjectSwitcher and the
+    // workspace tree take it as a refreshTrigger prop and re-fetch on
+    // change. There is no prop to derive from -- a project switch is an
+    // event, not a value -- so a render-time compare has nothing to
+    // compare. Replacing this plumbing with context or explicit data
+    // passing is a larger change than this phase, and the bump is
+    // idempotent and cheap.
     setProjectRefreshTrigger((n) => n + 1)
+    // oxlint-disable-next-line react/set-state-in-effect
   }, [activeProject, refreshUploads])
 
   // v1.9.x (FE-8): mount the Phase-3 keyboard router on app startup.
@@ -374,7 +415,7 @@ function App() {
     try {
       await postOpenPath(path, activeRunId)
     } catch (e) {
-      setError('Open failed: ' + (e as Error).message)
+      setTransientError('Open failed: ' + (e as Error).message)
     }
   }
 
@@ -450,7 +491,7 @@ function App() {
     try {
       await postApproval(activeRunId, dId, approved, reason, editedAfter)
     } catch (e) {
-      setError((e as Error).message)
+      setTransientError((e as Error).message)
     }
   }
 
@@ -481,10 +522,20 @@ function App() {
     onAutoApproveToggle(false)
   }
 
-  // v1.9.x (FE-6): clear flag when active run changes (rerun / retry /
-  // new run). Otherwise stale flag from a previous run would persist.
-  useEffect(() => {
-    if (activeRun && (activeRun.status === 'done' || activeRun.status === 'error' || activeRun.status === 'stopped')) {
+  // v1.9.x (FE-6): clear the flag when the active run reaches a terminal
+  // state, so a stale flag cannot survive a rerun / retry / new run.
+  // Done during render rather than in an effect for the same reason as the
+  // other prop-derived resets: the effect ran after the paint that still
+  // had the flag set, and it was the set-state-in-effect the linter
+  // flagged. Keyed on id AND status, not the object, so an unrelated
+  // field change on the run summary does not clear the flag.
+  const activeRunIsTerminal =
+    activeRun !== null && (activeRun.status === 'done' || activeRun.status === 'error' || activeRun.status === 'stopped')
+  const [lastAutoApproveKey, setLastAutoApproveKey] = useState<string | null>(null)
+  const autoApproveKey = activeRun ? activeRun.id + ':' + activeRun.status : null
+  if (autoApproveKey !== lastAutoApproveKey) {
+    setLastAutoApproveKey(autoApproveKey)
+    if (activeRun && activeRunIsTerminal) {
       setAutoApproveRunIds((prev) => {
         if (!prev.has(activeRun.id)) return prev
         const next = new Set(prev)
@@ -492,7 +543,7 @@ function App() {
         return next
       })
     }
-  }, [activeRun?.id, activeRun?.status])
+  }
 
   if (fatalError) {
     return (
