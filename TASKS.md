@@ -139,8 +139,8 @@ started, and the partial Phase-3 landing is runtime-broken.
 
 | Phase | Theme | ADR | Status | Findings |
 |---|---|---|---|---|
-| 3 | Build/install/test isolation + CI can see the product | 0038 | **next** | R1, R2, R5, R6 |
-| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | pending (after 3) | H7, H8, H9 |
+| 3 | Build/install/test isolation + CI can see the product | 0038 | **shipped** (`7f284ff`) | R1, R2, R5, R6 |
+| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **next** | H7, H8, H9 |
 | 5 | Frontend correctness + strict TS | 0040 | pending (after 3, 4) | H10 + FE mediums |
 | 6 | Tool/MCP hardening + in-container plane truth | 0041 | pending (after 3; parallel with 4) | R8, H2, H3, H4, H11 |
 | 7 | Web/session robustness | 0042 | pending (after 6) | TOCTOU, Host, stop, eviction |
@@ -188,6 +188,22 @@ removal, multi-user collab, Monaco, touch DnD, dark mode.
 **Reporting convention (unchanged):** each shipped phase updates this
 block with its commit ref + ADR (0038–0044), and writes its ADR at
 the START of the phase.
+
+### Phase 3 shipped (`7f284ff`, decision 0038)
+
+| Finding | Resolution | Evidence |
+|---|---|---|
+| R1 wheel excluded `docker/*` | `[tool.setuptools.package-data]` in `pyproject.toml`; `test_packaging.py` pins it | wheel built + installed in a clean venv; `images hash <tier>` returns 64-hex for all three tiers; new `test_packaging.py` (11 tests) |
+| R1b `images ensure` traceback when the daemon is down | `_get_client` wraps Docker client construction in `ImageBuildError` | one-line `error: cannot reach the Docker daemon (DockerException: ...)`, exit code 6 |
+| R2 `pnpm build` failed (8 TS errors) | `StreamEvent` declares `absolute_target` / `effective_cwd` / `allowed_actions`; `tokens.cache_hit != null` guard; e2e `queryByRole` -> `getByRole('note')).toHaveCount(0)` | `pnpm typecheck` 0, `pnpm build` 0, `pnpm lint` 0 errors, vitest 114/114, e2e chromium 52/52 |
+| R2b no `strict` | `"strict": true` in `tsconfig.app.json` + `pnpm typecheck` script as a standalone CI step | forced full `tsc -b --force` 0 errors with strict on |
+| R2c fresh clone could not `pnpm install` | `pnpm-workspace.yaml` committed with `allowBuilds: { esbuild: true }` | `pnpm install --frozen-lockfile` exit 0 after removing the broken partial `node_modules` |
+| R5 98 tests errored at setup | `conftest.py` defaults `SMOLCODE_EXECUTOR=local`; `docker_executor` fixture added; the 8 module-local fixtures that re-cleared `SMOLCODE_*` re-assert the default; the two tests that pin the shipped `docker` default now delete the var explicitly | **full suite: 1332 passed, 1 skipped, 13 deselected, 0 failed, 0 errors** (was 12 failed / 86 errors); `ruff check` + `format --check` clean |
+| R6 CI blind to the product | `ci.yml` gains `web` (install/lint/typecheck/build/unit/e2e), `tier-images` (all three Dockerfiles build on a real daemon), `packaging` (wheel into a clean venv), `audit` (pip-audit + pnpm audit); stale header corrected (coverage is blocking; `full_access.Dockerfile` does build); `dependabot.yml` added | both YAML files parse; `uv export --no-emit-project` and the `smolcode` console-script invocation corrected against a local run |
+
+**Not yet verified (needs Docker / a hosted key / CI):** the `tier-images`
+and `packaging` jobs are new, so their first real run is unproven. Phase 4
+(retry/rerun/export/queue/cost caps) starts next.
 
 ---
 
