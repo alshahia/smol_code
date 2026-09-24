@@ -289,6 +289,40 @@ class Run:
     # the runner keeps the legacy behaviour (writes anchored to
     # settings.workspace via Run.workspace).
     anchor_to_project_root: bool = False
+    # Phase 4 (decision 0039, review R3/H7): retry / rerun lineage. These were
+    # being passed by the API layer to start_or_enqueue_run, which did not
+    # accept them -> TypeError -> HTTP 500 on both endpoints. They are real
+    # fields now, persisted at construction and surfaced in summary_dict +
+    # the run.started event. ``retry_count`` counts how many retries this
+    # run has spawned (the ADR increments it on the PARENT).
+    parent_retry_of: str | None = None
+    parent_rerun_of: str | None = None
+    retry_count: int = 0
+    # Phase 4 (decision 0039): private, never serialised. ``resume_active_agent``
+    # only receives the Run, so this is how it reaches the cost-cap tracker.
+    # Before this, resume passed None and pausing a run was a way to bypass
+    # per-step cap enforcement for the rest of that run.
+    _cost_cap_tracker: Any = None
+
+    @property
+    def tokens(self):
+        """TokenSummary-shaped view of this run's cumulative usage.
+
+        Phase 4 (decision 0039, review R4): the cost-cap check
+        (_check_cost_cap_or_raise), the dashboard, and the per-step cap guard
+        all read ``run.tokens``, but ``Run`` only ever had tokens_in /
+        tokens_out -- so every one of those reads silently took the
+        ``getattr(run, 'tokens', None) is None`` branch and the dashboard
+        always reported $0. A property gives one definition of "this run's
+        tokens" and keeps every existing call site working.
+        """
+        from .schemas import TokenSummary
+
+        return TokenSummary(
+            input=self.tokens_in,
+            output=self.tokens_out,
+            total=self.tokens_in + self.tokens_out,
+        )
 
     def record_touch(self, rel_path):
         if not isinstance(rel_path, str) or not rel_path:
@@ -655,7 +689,7 @@ class Run:
 
 
 class RunManager:
-    def __init__(self, cost_cap_tracker=None, audit_sink=None):
+    def __init__(self, cost_cap_tracker=None, audit_sink=None, settings=None):
         # Decision 0032: optional cap tracker. When set, ``start_run`` /
         # ``start_or_enqueue_run`` consults ``tracker.check_reached``
         # against today's per-provider USD spend BEFORE spinning up the
@@ -669,8 +703,25 @@ class RunManager:
         # it instead of silently skipping the audit trail. An explicit
         # per-call sink always wins.
         self._audit_sink = audit_sink
+        # Phase 4 (decision 0039): the manager owns its Settings instance.
+        # The queue drain used to reach back through REQUEST-scoped FastAPI
+        # dependencies (api.get_run_manager / deps.get_settings) from the
+        # runner thread, long after the request had been torn down -- which is
+        # why the queue silently never drained (the resulting TypeError was
+        # swallowed by a bare except + log.warning). Holding the settings here
+        # makes the drain self-contained.
+        self._settings = settings
+        # Last queue-drain failure, surfaced by GET /api/health (Phase 8 adds
+        # it to the response schema). The manager-side capture lands here so
+        # the failure is recorded rather than lost.
+        self.queue_drain_error: str | None = None
         self._runs = {}
         self._lock = threading.Lock()
+        # Phase 2 (decision 0025 §6.4): FIFO queue + its lock. Previously added
+        # by a module-level monkey-patch of __init__; folded in here (decision
+        # 0039) so the real class is the single definition.
+        self._queue = []
+        self._queue_lock = threading.Lock()
 
     def _effective_audit(self, audit):
         """Phase 2 (H5): per-call sink wins; else the manager default."""
@@ -748,6 +799,8 @@ class RunManager:
         session_id=None,
         project=None,
         anchor_to_project_root=False,
+        parent_retry_of=None,
+        parent_rerun_of=None,
     ):
         """Start one agent run.
 
@@ -850,6 +903,13 @@ class RunManager:
             project=effective_project,
             effective_cwd=effective_cwd,
             anchor_to_project_root=bool(anchor_to_project_root),
+            parent_retry_of=parent_retry_of,
+            parent_rerun_of=parent_rerun_of,
+            # Phase 4 (decision 0039): the resume path needs the tracker and
+            # resume_active_agent only has the Run to hand. Private (never
+            # serialised) so a resumed run keeps per-step cap enforcement
+            # instead of silently losing it on resume.
+            _cost_cap_tracker=self._cost_cap_tracker,
         )
         with self._lock:
             self._runs[run.id] = run
@@ -857,9 +917,10 @@ class RunManager:
 
         run.thread = threading.Thread(
             target=run_in_thread,
-            args=(run, settings),
+            args=(run, settings, self),
             name="smolcode-run-" + run.id[:8],
             daemon=True,
+            kwargs={"cost_cap_tracker": self._cost_cap_tracker},
         )
         run.thread.start()
         return run.id
@@ -877,6 +938,8 @@ class RunManager:
         session_id=None,
         project=None,
         anchor_to_project_root=False,
+        parent_retry_of=None,
+        parent_rerun_of=None,
     ):
         """Phase 2 (decision 0025 §6.4): same as ``start_run`` but
         auto-enqueues when a run is already active. Returns
@@ -958,6 +1021,9 @@ class RunManager:
                 project=effective_project,
                 effective_cwd=effective_cwd,
                 anchor_to_project_root=bool(anchor_to_project_root),
+                parent_retry_of=parent_retry_of,
+                parent_rerun_of=parent_rerun_of,
+                _cost_cap_tracker=self._cost_cap_tracker,
             )
             run.status = STATUS_QUEUED
             with self._lock:
@@ -971,6 +1037,11 @@ class RunManager:
                 provider_override=provider_override,
                 model_override=model_override,
                 api_key_value=ak,
+                # Phase 4 (decision 0039): the entry mirrors the original call so
+                # the drained run resolves effective_cwd the same way an
+                # immediate start_run would. QueueEntry already has the field;
+                # nothing was ever passing it.
+                anchor_to_project_root=bool(anchor_to_project_root),
             )
             return run.id, STATUS_QUEUED
         run_id = self.start_run(
@@ -984,6 +1055,8 @@ class RunManager:
             session_id=session_id,
             project=project,
             anchor_to_project_root=anchor_to_project_root,
+            parent_retry_of=parent_retry_of,
+            parent_rerun_of=parent_rerun_of,
         )
         return run_id, STATUS_RUNNING
 
@@ -1214,6 +1287,7 @@ class RunManager:
         provider_override=None,
         model_override=None,
         api_key_value=None,
+        anchor_to_project_root=False,
     ):
         """Append a QueueEntry to the FIFO list. ``run_id`` is the pre-allocated Run.id.
 
@@ -1240,6 +1314,7 @@ class RunManager:
             provider_override=provider_override,
             model_override=model_override,
             api_key_value=api_key_value if isinstance(api_key_value, str) else None,
+            anchor_to_project_root=bool(anchor_to_project_root),
         )
         with self._queue_lock:
             self._queue.append(entry)
@@ -1334,23 +1409,10 @@ class RunManager:
                     r.queue_position = None
 
 
-# Phase 2 (decision 0025 §6.4): add ``_queue`` + ``_queue_lock`` to the
-# RunManager constructor. Done in-place here so existing code that calls
-# ``RunManager()`` keeps working.
-_orig_runmanager_init = RunManager.__init__
-
-
-def _patched_runmanager_init(self, cost_cap_tracker=None, audit_sink=None):
-    # Decision 0032: thread the optional cost_cap_tracker through to the
-    # original init so callers (tests, CLI) can wire a custom tracker.
-    # None is the legacy default and disables enforcement.
-    # Phase 2 (H5): same for the manager-default audit sink.
-    _orig_runmanager_init(self, cost_cap_tracker=cost_cap_tracker, audit_sink=audit_sink)
-    self._queue = []
-    self._queue_lock = threading.Lock()
-
-
-RunManager.__init__ = _patched_runmanager_init  # type: ignore
+# Phase 2 (decision 0025 §6.4) originally added ``_queue`` +
+# ``_queue_lock`` via a module-level monkey-patch of ``RunManager.__init__``.
+# Decision 0039 folded that into the real constructor above and removed the
+# patch, so the class has exactly one definition of its state.
 
 
 __all__ = [

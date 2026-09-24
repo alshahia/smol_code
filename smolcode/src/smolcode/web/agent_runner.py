@@ -915,7 +915,7 @@ def _build_agent_for_run(run, settings):
     raise ValueError("unknown tier: " + str(run.tier))
 
 
-def run_in_thread(run, settings, cost_cap_tracker=None):
+def run_in_thread(run, settings, manager=None, cost_cap_tracker=None):
     # Decision 0032: optional ``cost_cap_tracker`` is consulted on
     # EVERY step callback. ``None`` keeps the legacy behaviour
     # (no per-step cap enforcement) -- the run-start check in
@@ -939,6 +939,10 @@ def run_in_thread(run, settings, cost_cap_tracker=None):
             # additive; older clients ignore unknown fields.
             "session_id": run.session_id,
             "project": run.project,
+            # Phase 4 (decision 0039): retry / rerun lineage, additive.
+            "parent_retry_of": run.parent_retry_of,
+            "parent_rerun_of": run.parent_rerun_of,
+            "retry_count": run.retry_count,
             "ts": _time_now_iso(),
         },
     )
@@ -1205,10 +1209,23 @@ def run_in_thread(run, settings, cost_cap_tracker=None):
         # Phase 2 (decision 0025 §6.4): drain the FIFO queue so the
         # next queued run starts. Done after EVT_RUN_ENDED so SSE
         # subscribers see the run ended before the next one starts.
-        try:
-            _drain_queue_after_run(run)
-        except Exception as _e:
-            _log.warning("queue drain failed after run %s: %s", run.id, _e)
+        #
+        # Phase 4 (decision 0039): the drain needs the manager that owns
+        # this run. ``run_in_thread`` receives it as a parameter, so the
+        # runner thread no longer reaches back through REQUEST-scoped
+        # FastAPI dependencies that are long gone by the time we get here.
+        if manager is not None:
+            try:
+                _drain_queue_after_run(run, manager)
+            except Exception as _e:
+                _log.warning("queue drain failed after run %s: %s", run.id, _e)
+                # Record the failure instead of only logging it. A silently
+                # stalled queue looks identical to "no work queued" from the
+                # outside; GET /api/health reports this (Phase 8 adds it to
+                # the response schema).
+                manager.queue_drain_error = str(_e)
+        elif getattr(run, "thread", None) is not None:
+            _log.warning("run %s finished without a manager reference; queue not drained", run.id)
 
 
 def resume_active_agent(run, settings):
@@ -1288,9 +1305,17 @@ def resume_active_agent(run, settings):
         new_steps.append(step)
     agent.memory.steps = new_steps
 
-    # Re-register step callback.
+    # Re-register step callback. Phase 4 (decision 0039): pass the cost-cap
+    # tracker + settings so a RESUMED run keeps the same per-step cap
+    # enforcement as a fresh one. This passed None, so pausing a run was a
+    # way to bypass the cap for the rest of that run.
     agent_ref = [agent]
-    cb = _make_step_callback(run, agent_ref=agent_ref)
+    cb = _make_step_callback(
+        run,
+        agent_ref=agent_ref,
+        cost_cap_tracker=getattr(run, "_cost_cap_tracker", None),
+        settings=settings,
+    )
     for step_cls in (ActionStep, PlanningStep, FinalAnswerStep):
         try:
             agent.step_callbacks.register(step_cls, cb)
@@ -1308,7 +1333,7 @@ def resume_active_agent(run, settings):
     return agent
 
 
-def _drain_queue_after_run(run):
+def _drain_queue_after_run(run, mgr):
     """Phase 2 (decision 0025 §6.4): pop the next queue entry and
     start its runner thread.
 
@@ -1317,10 +1342,13 @@ def _drain_queue_after_run(run):
     we still want to drain the queue so the next queued run can
     proceed). The queue entries are ``QueueEntry`` records that mirror
     the parameters of the original ``start_run`` call.
-    """
-    from . import api as _api_module  # late import to avoid cycle
 
-    mgr = _api_module.get_run_manager()
+    Phase 4 (decision 0039): ``mgr`` is passed in. This used to call
+    ``api.get_run_manager()`` and ``deps.get_settings()`` -- both are
+    REQUEST-scoped FastAPI dependencies, invoked from a runner thread
+    that outlives the request. They raised, the caller swallowed the
+    error with a bare ``except``, and the queue silently never drained.
+    """
     with mgr._queue_lock:
         if not mgr._queue:
             return None
@@ -1328,20 +1356,21 @@ def _drain_queue_after_run(run):
     # Update queue positions on remaining entries.
     mgr._refresh_queue_positions()
     # Look up the pre-allocated Run record (already in mgr._runs from
-    # the original ``start_run`` call) and start its runner thread.
+    # the original start_or_enqueue_run call) and start its runner thread.
     target = mgr.get(entry.id)
     if target is None:
         return None
-    # Settings + audit: the queue entry only carries overrides; we
-    # use the global ``get_settings`` because that's what the SPA
-    # was using when the original start_run call happened.
-    settings = _api_module.get_settings()
-    from . import deps as _deps
-
-    settings = _deps.get_settings()
+    # Phase 4 (decision 0039): settings come from the manager, which owns
+    # the instance create_app handed it -- not from a request dependency.
+    settings = getattr(mgr, "_settings", None)
+    if settings is None:
+        raise RuntimeError(
+            "RunManager has no Settings attached; cannot start queued run " + entry.id + ". "
+            "create_app() must construct the manager with settings=."
+        )
     # Decision 0032: pull the cost-cap tracker off the run manager so
     # queued runs (dequeued after the active run ends) get the same
-    # per-step cap enforcement as the initial start_run call.
+    # per-step cap enforcement as the initial start_or_enqueue_run call.
     # ``RunManager._cost_cap_tracker`` is set at construction time by
     # ``create_app`` and is the SAME instance the API endpoint mutates
     # via PUT /api/cost-caps -- so a PUT that lowers the cap during
@@ -1353,12 +1382,13 @@ def _drain_queue_after_run(run):
     target.status = STATUS_RUNNING
     target.thread = _threading.Thread(
         target=run_in_thread,
-        args=(target, settings),
+        args=(target, settings, mgr),
         kwargs={"cost_cap_tracker": cost_cap_tracker},
         name="smolcode-run-" + target.id[:8],
         daemon=True,
     )
     target.thread.start()
+    mgr.queue_drain_error = None
     return target.id
 
 

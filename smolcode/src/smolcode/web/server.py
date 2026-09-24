@@ -83,11 +83,22 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
     # manager also receives the default audit sink so queued runs,
     # retries and reruns started without an explicit audit argument
     # still land in the SAME tamper-evident log.
-    run_manager = RunManager(cost_cap_tracker=cost_cap_tracker, audit_sink=audit)
+    #
+    # Phase 4 (decision 0039): the manager also receives ``settings`` so the
+    # queue drain can start the next queued run without reaching back through
+    # request-scoped FastAPI dependencies. ``app.state.settings`` is replaced
+    # whenever a project is created/deleted, so sync that here too --
+    # otherwise a queued run would start against the boot-time settings.
+    run_manager = RunManager(cost_cap_tracker=cost_cap_tracker, audit_sink=audit, settings=settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
+        # Phase 4 (decision 0039): keep the manager's copy of settings in
+        # sync with the live one. create_project / delete_project replace
+        # app.state.settings; a queued run drained after that must see the
+        # new project list, not the boot-time snapshot.
+        run_manager._settings = settings
         app.state.uploads_store = uploads_store
         app.state.audit_sink = audit
         app.state.cost_cap_tracker = cost_cap_tracker

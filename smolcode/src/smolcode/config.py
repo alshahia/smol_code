@@ -250,8 +250,24 @@ class Settings:
             cost_caps=self.cost_caps,
         )
 
-    def with_overrides(self, provider=None, model=None, litellm_proxy=None, workspace=None):
-        """Return a new Settings with the given overrides applied."""
+    def with_overrides(
+        self,
+        provider=None,
+        model=None,
+        litellm_proxy=None,
+        workspace=None,
+        projects=None,
+    ):
+        """Return a new Settings with the given overrides applied.
+
+        Phase 4 (decision 0039): ``projects`` became overridable because the
+        web project create/delete endpoints were hand-rolling a second full
+        ``Settings(...)`` construction and silently dropped ``cost_rates`` /
+        ``cost_caps`` -- creating or deleting a project wiped the user's spend
+        caps for the rest of the server's life. Routing both endpoints through
+        this helper keeps the field list in one place; the regression test is
+        ``test_project_create_delete_preserve_cost_caps``.
+        """
         return Settings(
             workspace=workspace or self.workspace,
             executor=self.executor,
@@ -263,7 +279,7 @@ class Settings:
             uploads_dir=self.uploads_dir,
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
-            projects=self.projects,
+            projects=self.projects if projects is None else tuple(projects),
             cost_rates=self.cost_rates,
             cost_caps=self.cost_caps,
         )

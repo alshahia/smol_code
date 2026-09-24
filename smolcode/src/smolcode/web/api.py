@@ -66,7 +66,7 @@ from ..config import Project, Settings, as_dict
 
 # Phase 3 F2 (decision 0036): context-window resolver for the
 # Inspector.tsx fill bar denominator.
-from ..model_catalog import fetch_models, resolve_context_window
+from ..model_catalog import cost_for, fetch_models, resolve_context_window
 from ..model_catalog import get_providers as _catalog_get_providers
 from ..session import (
     create_session_file,
@@ -116,6 +116,7 @@ from .schemas import (
     QueueMoveRequest,
     QueueMoveResponse,
     RunListResponse,
+    RunRetryRequest,
     RunStartRequest,
     RunStartResponse,
     RunSummary,
@@ -378,23 +379,19 @@ def post_project(
         project = Project(name, root_path)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    # Mutate the live settings tuple (Settings is a frozen shape; we
-    # rebuild with the new projects list).
-    new_settings = Settings(
-        workspace=settings.workspace,
-        executor=settings.executor,
-        provider=settings.provider,
-        model=settings.model,
-        litellm_proxy=settings.litellm_proxy,
-        log_level=settings.log_level,
-        tiers=settings.tiers,
-        uploads_dir=settings.uploads_dir,
-        upload_max_bytes=settings.upload_max_bytes,
-        upload_allowed_mime=settings.upload_allowed_mime,
-        projects=tuple(list(settings.projects) + [project]),
-    )
+    # Mutate the live settings tuple (Settings is a frozen shape; we rebuild
+    # with the new projects list). Phase 4 (decision 0039): via
+    # ``with_overrides`` so ``cost_rates`` / ``cost_caps`` survive -- the old
+    # hand-rolled construction dropped them, wiping the user's spend caps on
+    # every project create.
+    new_settings = settings.with_overrides(projects=tuple(list(settings.projects) + [project]))
     # Update the app's stored settings so subsequent requests see the new project.
     request.app.state.settings = new_settings
+    # Phase 4 (decision 0039): keep the manager's copy in sync so a run drained
+    # from the queue after this point resolves project roots against the new list.
+    mgr = getattr(request.app.state, "run_manager", None)
+    if mgr is not None:
+        mgr._settings = new_settings
     return ProjectOut(name=project.name, root=str(project.root)).model_dump()
 
 
@@ -415,20 +412,14 @@ def delete_project(
     remaining = [p for p in settings.projects if p.name != project_name]
     if len(remaining) == len(settings.projects):
         raise HTTPException(status_code=404, detail="project not found: " + project_name)
-    new_settings = Settings(
-        workspace=settings.workspace,
-        executor=settings.executor,
-        provider=settings.provider,
-        model=settings.model,
-        litellm_proxy=settings.litellm_proxy,
-        log_level=settings.log_level,
-        tiers=settings.tiers,
-        uploads_dir=settings.uploads_dir,
-        upload_max_bytes=settings.upload_max_bytes,
-        upload_allowed_mime=settings.upload_allowed_mime,
-        projects=tuple(remaining),
-    )
+    # Phase 4 (decision 0039): via with_overrides so cost_rates / cost_caps
+    # survive the rebuild -- see the create_project note above.
+    new_settings = settings.with_overrides(projects=tuple(remaining))
     request.app.state.settings = new_settings
+    # Phase 4 (decision 0039): keep the manager's copy in sync (see create_project).
+    mgr = getattr(request.app.state, "run_manager", None)
+    if mgr is not None:
+        mgr._settings = new_settings
     return {"deleted": project_name}
 
 
@@ -658,7 +649,20 @@ def _run_summary(run: Run) -> dict:
             current_input=int(snap.get("current_input", 0) or 0),
             current_output=int(snap.get("current_output", 0) or 0),
             last_step_at=snap.get("last_step_at"),
+            # Phase 4 (decision 0039): same pricing the dashboard uses
+            # (model_catalog.cost_for). Without this field Pydantic stripped the
+            # cost out of every summary and the SPA rendered $0 for every run.
+            cost_usd=round(
+                cost_for(run.provider or None, run.model or None, run.tokens_in, run.tokens_out),
+                6,
+            )
+            if (run.tokens_in or run.tokens_out)
+            else None,
         ),
+        # Phase 4 (decision 0039): retry / rerun lineage.
+        parent_retry_of=run.parent_retry_of,
+        parent_rerun_of=run.parent_rerun_of,
+        retry_count=run.retry_count,
         step_count=int(snap["step_count"]),
         remaining_s=snap.get("remaining_s"),
         subagent=sub_summary,
@@ -702,11 +706,16 @@ def start_run(
                      Keys are NEVER persisted to disk. See
                      ``web/keys.py:extract_keys`` for the whitelist.
     """
-    if req.tier not in ("restricted", "elevated", "full_access", "orchestrator"):
-        raise HTTPException(status_code=400, detail="unknown tier: " + req.tier)
+    # Phase 4 (decision 0039): the 'restricted' default moved from
+    # RunStartRequest.tier to HERE, so that an omitted tier is observable as
+    # None instead of being indistinguishable from an explicit "restricted".
+    # The retry endpoint depends on that distinction to inherit a parent tier.
+    tier = req.tier or "restricted"
+    if tier not in ("restricted", "elevated", "full_access", "orchestrator"):
+        raise HTTPException(status_code=400, detail="unknown tier: " + tier)
     if not req.task or not req.task.strip():
         raise HTTPException(status_code=400, detail="task must be non-empty")
-    if req.tier == "full_access":
+    if tier == "full_access":
         # Per M4 + decision 0006: full_access requires an explicit y/N
         # prompt BEFORE the agent is built. The web flow does not have
         # a stdin to prompt on; require the SPA to set a per-request
@@ -759,7 +768,7 @@ def start_run(
         # ``(run_id, status)`` where status is "running" or "queued".
         run_id, status = mgr.start_or_enqueue_run(
             task=req.task.strip(),
-            tier=req.tier,
+            tier=tier,
             settings=settings,
             audit=audit,
             provider_override=req.provider,
@@ -1034,7 +1043,7 @@ _TERMINAL_STATUSES = frozenset({"done", "error", "stopped"})
 @router.post("/runs/{run_id}/retry", response_model=RunStartResponse)
 def post_retry(
     run_id: str,
-    req: RunStartRequest | None = None,
+    req: RunRetryRequest | None = None,
     settings: Settings = Depends(get_settings),
     mgr: RunManager = Depends(get_run_manager),
 ) -> dict:
@@ -1076,7 +1085,7 @@ def post_retry(
         api_key_value=api_key_value,
         parent_retry_of=parent.id,
     )
-    parent.retry_count = getattr(parent, "retry_count", 0) + 1
+    parent.retry_count = parent.retry_count + 1
     return RunStartResponse(run_id=new_id, status=status).model_dump()
 
 
@@ -1138,12 +1147,21 @@ def export_run(
                     if isinstance(o, str) and len(o) > 8192:
                         obs[i] = o[:8192] + "...[truncated]..."
         events_out.append(ev)
+    # Phase 4 (decision 0039): Run.summary_dict() already serialises the full
+    # sub-agent list (with per-sub-agent cost_usd derived at read time), so the
+    # export reads it from there. The old code did
+    # ``s.model_dump() if hasattr(s, "model_dump") else dict(s)``; a
+    # SubAgentSummary is a dataclass, not a Pydantic model, so it took the
+    # ``dict(s)`` branch and raised TypeError: 'SubAgentSummary' object is not
+    # iterable -> HTTP 500 for every run with sub-agent history.
+    try:
+        subagent_history = run.summary_dict().get("subagent_history", [])
+    except Exception:
+        subagent_history = []
     payload = {
         "summary": _run_summary(run),
         "events": events_out,
-        "subagent_history": [
-            s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in getattr(run, "subagent_history", [])
-        ],
+        "subagent_history": subagent_history,
         "exported_at": time.time(),
         "schema_version": 1,
     }

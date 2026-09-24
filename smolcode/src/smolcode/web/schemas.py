@@ -206,9 +206,34 @@ class CleanResponse(BaseModel):
 # --- M9: live execution ---------------------------------------------------
 
 
+class RunRetryRequest(BaseModel):
+    """All-optional body for POST /api/runs/{id}/retry.
+
+    Phase 4 (decision 0039): retry reused ``RunStartRequest``, whose ``task``
+    is REQUIRED. The SPA's ``retryRun`` sends ``{}``, so every empty-body retry
+    was rejected with 422 before it ever reached the parent-inheriting logic.
+    Every field here is optional; an omitted field means "inherit from the
+    parent run".
+    """
+
+    task: str | None = Field(default=None, description="Override the parent task; omit to reuse it.")
+    tier: str | None = Field(default=None, description="Override the parent tier; omit to inherit it.")
+    provider: str | None = Field(default=None, description="Override the parent provider.")
+    model: str | None = Field(default=None, description="Override the parent model.")
+    keys: dict[str, str] = Field(default_factory=dict, description="Whitelisted API keys, same as RunStartRequest.")
+    session_id: str | None = Field(default=None, description="Override the parent session id.")
+    project: str | None = Field(default=None, description="Override the parent project name.")
+
+
 class RunStartRequest(BaseModel):
     task: str = Field(..., description="Task description for the agent.")
-    tier: str = Field(default="restricted", description="restricted|elevated|full_access|orchestrator")
+    # Phase 4 (decision 0039): the default moved from here to the POST /api/runs
+    # endpoint. A non-optional "restricted" default made it impossible for the
+    # retry endpoint to distinguish "the caller asked for restricted" from "the
+    # caller said nothing", so an empty-body retry of an ELEVATED run silently
+    # downgraded it to restricted. The endpoint applies 'restricted' for a fresh
+    # start; retry/rerun inherit the parent tier when the body omits it.
+    tier: str | None = Field(default=None, description="restricted|elevated|full_access|orchestrator")
     upload_names: list[str] = Field(
         default_factory=list,
         description="Optional uploaded filenames to attach to the task as a header.",
@@ -337,6 +362,12 @@ class TokenSummary(BaseModel):
     current_input: int = 0
     current_output: int = 0
     last_step_at: float | None = None
+    # Phase 4 (decision 0039, review R4): the dashboard computes cost_usd per
+    # provider/run, but TokenSummary had no such field, so Pydantic stripped it
+    # out of every response and the SPA always rendered $0. Optional rather than
+    # defaulting to 0.0 so "not priced" (no rate for the provider) stays
+    # distinguishable from "priced at zero".
+    cost_usd: float | None = None
 
 
 class RunSummary(BaseModel):
@@ -388,6 +419,11 @@ class RunSummary(BaseModel):
     # at a glance.
     model: str = ""
     provider: str = ""
+    # Phase 4 (decision 0039): retry / rerun lineage. Additive; both default
+    # to None/0 so pre-existing clients and stored exports keep parsing.
+    parent_retry_of: str | None = None
+    parent_rerun_of: str | None = None
+    retry_count: int = 0
     # Phase 3 F2 (decision 0036): the model's max context window in tokens
     # (resolved via `model_catalog.resolve_context_window`). None when the provider/model pair
     # is unknown to the catalog. The SPA renders this as the denominator
