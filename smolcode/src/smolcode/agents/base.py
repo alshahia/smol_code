@@ -19,7 +19,9 @@ atexit handler is also armed.
 
 from __future__ import annotations
 
+import os
 import sys
+from pathlib import Path
 
 from smolagents import CodeAgent
 
@@ -113,6 +115,29 @@ def _executor_kwargs_for(executor_type, tier, settings):
             from ..container import INTERNAL_NETWORK_NAME
 
             run_kwargs["network"] = INTERNAL_NETWORK_NAME
+
+            # Phase 6 (6.3): the whole workspace is mounted rw, so a
+            # restricted container can reach -- and rewrite -- the uploads
+            # directory that lives inside it, even though the tier policy says
+            # uploads are read-only there. Policy that only the tool layer
+            # enforces is policy the model can route around, so the boundary
+            # is now enforced by Docker itself. A more specific nested mount
+            # wins over the parent, so /workspace stays rw and just the
+            # uploads subtree becomes ro.
+            uploads = getattr(settings, "uploads_dir", None)
+            if uploads is not None:
+                up = str(Path(str(uploads)).resolve())
+                ws_resolved = str(Path(host_ws).resolve())
+                # Only meaningful when uploads actually live under the
+                # workspace; if an operator points them elsewhere, mounting
+                # them ro would silently change a path the container was
+                # never given, so skip and leave policy to the tool layer.
+                if up == ws_resolved or up.startswith(ws_resolved + os.sep):
+                    rel = os.path.relpath(up, ws_resolved).replace(os.sep, "/")
+                    run_kwargs["volumes"][up] = {
+                        "bind": _CONTAINER_WORKSPACE + "/" + rel,
+                        "mode": "ro",
+                    }
         return {
             "image_name": tier.docker_image,
             # Phase 1 (C2): smolagents defaults to build_new_image=True and
