@@ -180,6 +180,12 @@ def check_sandbox_boundary(code, tier):
     parts.append(
         "`smolcode` lives on the HOST-side orchestrator and is NOT installed inside the sandbox Jupyter kernel."
     )
+    # Phase 6 (R8): this is now MEASURED rather than assumed. On a real daemon,
+    # docker run --rm smolcode:restricted python -c 'import smolcode' raises
+    # ModuleNotFoundError, and pip list in that image shows only jupyter /
+    # ipykernel / pytest / ruff. tools/shell.py and tools/git.py carried the
+    # opposite claim in a comment; both comments have been corrected.
+    # Enforced by smolcode/src/smolcode/tests/test_container_gate_phase6.py.
     parts.append(
         "Re-emit the cell WITHOUT the host-only import / pip install, and use the workspace tools (write_file, patch_file, run, git_push) instead."
     )

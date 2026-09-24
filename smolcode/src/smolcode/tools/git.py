@@ -412,10 +412,13 @@ class _GitPushTool(Tool):
 
         # M4.x / Phase 1 (C1): per-tool destructive gate. Fires on
         # is_destructive() regardless of the ambient session tier; the
-        # tool's OWN bound tier decides prompt vs auto-deny. Imports are
-        # absolute (not relative) so the emitted source survives
-        # smolagents' instance_to_source hoist into the remote Docker
-        # container, where the parent package IS importable on PYTHONPATH.
+        # tool's OWN bound tier decides prompt vs auto-deny.
+        #
+        # Phase 6 CORRECTION (R8): the comment here used to claim the package
+        # IS importable on PYTHONPATH inside the remote Docker container. It is
+        # not -- see the measured evidence and the full note in tools/shell.py,
+        # and docs/decisions/0041-*.md. Under the docker executor this import
+        # raises ImportError and git_push does not work.
         from smolcode.session import current_session
 
         kwargs = {"remote": remote, "branch": branch}

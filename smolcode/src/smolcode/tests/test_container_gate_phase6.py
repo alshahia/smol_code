@@ -24,6 +24,7 @@ import shutil
 
 import pytest
 
+
 docker_required = pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not on PATH")
 
 
@@ -70,15 +71,22 @@ class TestSmolcodeIsNotInstalledInTheSandbox:
 
     @docker_required
     @needs_daemon
-    def test_the_shell_py_comment_is_known_false(self):
-        """Pin the contradictory shell.py rationale as KNOWN-FALSE, so a future
-        edit that quietly makes it true has to come update this test."""
+    def test_shell_py_carries_the_correction_not_the_false_claim(self):
+        """Pins the CORRECTION in place. The original assertion here was that
+        the false claim (the parent package IS importable on PYTHONPATH) was
+        still present, so that making it true would force this test to be
+        revisited. Now that the comment is corrected, this asserts the
+        correction stays, so the false claim cannot quietly come back."""
         import inspect
 
         from smolcode.tools.shell import _RunTool
 
         src = inspect.getsource(_RunTool.forward)
-        assert "IS importable on PYTHONPATH" in src, "the contradictory shell.py comment changed; re-check ADR 0041"
+        assert "Phase 6 CORRECTION (R8)" in src, (
+            "the R8 correction note was removed from tools/shell.py -- the false"
+            " PYTHONPATH claim may have been restored; re-check ADR 0041"
+        )
+        assert "IS importable on PYTHONPATH" not in src
 
 
 class TestTheGateCannotRunInContainerToday:

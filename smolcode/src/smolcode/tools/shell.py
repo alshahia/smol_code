@@ -71,10 +71,24 @@ class _RunTool(Tool):
 
         # M4.x / Phase 1 (C1): per-tool destructive gate. The gate fires
         # on is_destructive() REGARDLESS of the ambient session tier; the
-        # tool's OWN (bound) tier decides prompt vs auto-deny. Imports are
-        # absolute (not relative) so the emitted source survives
-        # smolagents' instance_to_source hoist into the remote Docker
-        # container, where the parent package IS importable on PYTHONPATH.
+        # tool's OWN (bound) tier decides prompt vs auto-deny.
+        #
+        # Phase 6 CORRECTION (R8): this comment used to claim the absolute
+        # imports below were safe because "the parent package IS importable
+        # on PYTHONPATH" in the remote container. That is FALSE and has been
+        # measured, not assumed:
+        #
+        #   docker run --rm smolcode:restricted python -c "import smolcode.destructive"
+        #   -> ModuleNotFoundError: No module named 'smolcode'
+        #
+        # The tier images install only jupyter/ipykernel/pytest/ruff, exactly
+        # as sandbox_guard.py:181 already said. The consequence is not a silent
+        # bypass: smolagents serialises this source into the container, so the
+        # import below raises ImportError there and the run tool is BROKEN under
+        # the docker executor. See docs/decisions/0041-*.md and
+        # test_container_gate_phase6.py. Do not "fix" this by reverting to
+        # relative imports -- there is no relative package in the container
+        # either. ADR 0041 is the open decision.
         from smolcode.destructive import destructive_reason, is_destructive
         from smolcode.session import current_session
 
