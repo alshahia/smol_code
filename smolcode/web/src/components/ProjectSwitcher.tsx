@@ -71,12 +71,13 @@ export function ProjectSwitcher({ value, onChange, refreshTrigger, workspace }: 
   const [creating, setCreating] = useState<boolean>(false)
   const [newName, setNewName] = useState<string>('')
   const [newPath, setNewPath] = useState<string>('')
-  const [recents, setRecents] = useState<RecentProject[]>([])
+  // Read localStorage in a lazy initialiser rather than in a mount
+  // effect. The effect was the only set-state-in-effect here and it cost
+  // an extra render on every mount for a value that was already known.
+  const [recents, setRecents] = useState<RecentProject[]>(() => loadRecents())
   const [error, setError] = useState<string | null>(null)
   const [browseKey, setBrowseKey] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => { setRecents(loadRecents()) }, [])
 
   useEffect(() => {
     let cancelled = false

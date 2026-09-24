@@ -194,7 +194,7 @@ export function EventStream({ runId, status: runStatus, onApprovalRequest, onDif
         if (cancelled) return
         setEvents(snap.events)
         setStatus(snap.status)
-      } catch (e) {
+      } catch {
         if (cancelled) return
         // Fall back to the old behaviour rather than showing nothing:
         // a finished run with a failed snapshot should still try to

@@ -48,13 +48,24 @@ export function ApiKeyPanel({ provider, hasStoredKey, onKeyChange }: Props) {
     }
   }, [])
 
-  // Reset draft whenever the provider changes (don't carry a draft across).
-  useEffect(() => {
+  // Reset the draft whenever the provider changes, during render rather
+  // than in an effect: an effect keyed on a prop runs after the paint that
+  // used the previous provider's draft, so a draft could briefly be shown
+  // against the wrong provider. React re-renders without committing that
+  // frame. Only state is touched here -- reading forgetTimerRef during
+  // render is a separate violation, so the timer is cancelled in the
+  // effect below.
+  const [lastProviderId, setLastProviderId] = useState(provider.id)
+  if (provider.id !== lastProviderId) {
+    setLastProviderId(provider.id)
     setDraft('')
     setShow(false)
     setError(null)
     setSavedFlash(false)
     setConfirmForget(false)
+  }
+
+  useEffect(() => {
     if (forgetTimerRef.current !== null) {
       window.clearTimeout(forgetTimerRef.current)
       forgetTimerRef.current = null

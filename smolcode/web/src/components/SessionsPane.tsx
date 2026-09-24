@@ -43,9 +43,25 @@ export function SessionsPane({ project, activeSessionId, onSelect, refreshTrigge
     }
   }, [project])
 
+  // Fetch inline rather than through the refresh callback. Calling
+  // refresh() here routed a setState through a useCallback, which the
+  // set-state-in-effect rule cannot see past; inlining also adds the
+  // cancellation guard this effect was missing, so a project switch mid
+  // flight can no longer land the previous project's sessions.
   useEffect(() => {
-    void refresh()
-  }, [refresh, refreshTrigger])
+    let cancelled = false
+    void (async () => {
+      try {
+        const r = await apiListSessions(project)
+        if (!cancelled) setSessions(r.sessions)
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project, refreshTrigger])
 
   const handleCreate = async () => {
     setError(null)

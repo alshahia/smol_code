@@ -76,9 +76,15 @@ export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props)
   // there was no effect keyed on decisionId at all. Consequence: deny
   // decision A, then decision B arrives, and B renders A's edited diff.
   // The user then approves a file write containing text they never saw.
-  useEffect(() => {
+  // Done during render rather than in an effect: an effect that only
+  // resets state on a prop change runs after the paint that used the stale
+  // value, which is the set-state-in-effect cascading-render problem. React
+  // re-renders immediately without committing the stale frame.
+  const [lastDecisionId, setLastDecisionId] = useState(decisionId)
+  if (decisionId !== lastDecisionId) {
+    setLastDecisionId(decisionId)
     setEditedAfter(null)
-  }, [decisionId])
+  }
 
   // Phase 5 (ADR 0040 §3): a dialog that gates a destructive write must
   // be dismissible by keyboard. Escape denies, matching the visible

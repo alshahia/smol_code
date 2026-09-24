@@ -23,15 +23,20 @@ export function FilePreview({ path, project, onClose, maxBytes = 256 * 1024 }: P
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!path) {
-      setData(null)
-      setErr(null)
-      return
-    }
-    let cancelled = false
-    setLoading(true)
+  // Reset the pane during render when the path changes, not in the
+  // effect. The effect form painted one frame showing the previous file's
+  // contents, and setLoading/setErr were themselves set-state-in-effect.
+  const [lastPath, setLastPath] = useState(path)
+  if (path !== lastPath) {
+    setLastPath(path)
+    setData(null)
     setErr(null)
+    setLoading(path !== null)
+  }
+
+  useEffect(() => {
+    if (!path) return
+    let cancelled = false
     readFile({ path, project, maxBytes })
       .then((res) => {
         if (cancelled) return

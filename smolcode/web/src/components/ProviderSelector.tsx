@@ -52,27 +52,36 @@ export function ProviderSelector({ value, onChange }: Props) {
     }
   }, [])
 
-  // Refresh model count for the currently-selected provider whenever the
-  // selection changes.
+  // The model count is almost entirely DERIVED from props (providers +
+  // value), so the whole desired state is computed during render and only
+  // the genuinely async fetch needs an effect. Resetting ModelState in an
+  // effect on every prop change painted a frame with the previous
+  // provider's count and was the set-state-in-effect the linter flagged.
+  //
+  //   no selection / provider not loaded yet -> empty
+  //   model_count known                    -> that count, not loading
+  //   model_count null                     -> loading, effect fetches it
+  const selected = value ? providers.find((p) => p.id === value) : undefined
+  const desired: ModelState =
+    !selected || selected.model_count === null
+      ? { loading: selected !== undefined, count: null, error: null }
+      : { loading: false, count: selected.model_count, error: null }
+
+  const [lastModelKey, setLastModelKey] = useState<string | null>(null)
+  const modelKey = selected ? value + ':' + String(selected.model_count) : null
+  if (modelKey !== lastModelKey) {
+    setLastModelKey(modelKey)
+    setModel(desired)
+  }
+
+  // Fetch the model list only when the server has no in-process count yet.
+  // model_count is null: anthropic uses hardcoded presets, the rest fetch
+  // lazily. The result is written straight into state below.
   useEffect(() => {
-    if (!value) {
-      setModel({ loading: false, count: null, error: null })
-      return
-    }
+    if (!value) return
     const info = providers.find((p) => p.id === value)
-    if (!info) {
-      setModel({ loading: false, count: null, error: null })
-      return
-    }
-    if (info.model_count !== null) {
-      setModel({ loading: false, count: info.model_count, error: null })
-      return
-    }
-    // model_count is null: server has no in-process list yet (anthropic uses
-    // hardcoded presets, the rest fetch lazily). Trigger an async fetch so
-    // the user sees how many models are available for this provider.
+    if (!info || info.model_count !== null) return
     let cancelled = false
-    setModel({ loading: true, count: null, error: null })
     void (async () => {
       try {
         const r = await listProviderModels(value, false)
