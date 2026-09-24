@@ -67,6 +67,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -349,6 +350,65 @@ class UploadsStore:
             raise UploadsError("invalid stored_name: " + repr(stored_name))
         return self.dir / stored_name
 
+    @staticmethod
+    def _is_symlink(path: Path) -> bool:
+        """True when path exists AND is a symlink.
+
+        os.lstat does not follow the link, which is the entire point:
+        Path.is_symlink() and Path.exists() both resolve it first, so
+        existence alone can never distinguish "a real file" from "a link
+        to a file". A missing path is not a symlink.
+        """
+        try:
+            return stat.S_ISLNK(os.lstat(path).st_mode)
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+
+    def _write_new_file(self, target: Path, stored: str, data: bytes) -> None:
+        """Write bytes to target, refusing to follow a symlink.
+
+        Phase 6 section 6.4. A bare lstat check here would leave a
+        window: between the check and the write, anything with write
+        access to the directory can swap in a link. On POSIX, O_NOFOLLOW
+        makes the kernel refuse the open, which closes it. On Windows
+        there is no O_NOFOLLOW, so the check-then-write is the best
+        available and the residual window is documented rather than
+        papered over -- callers that need a hard guarantee should give
+        the uploads directory its own mount.
+        """
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        if nofollow:
+            try:
+                fd = os.open(target, flags | nofollow, 0o600)
+            except OSError as e:
+                raise UploadsError("could not write upload " + repr(stored) + ": " + str(e)) from e
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(data)
+            except OSError as e:
+                raise UploadsError("could not write upload " + repr(stored) + ": " + str(e)) from e
+            return
+        # No O_NOFOLLOW on this platform.
+        self._reject_symlink(target, stored)
+        try:
+            target.write_bytes(data)
+        except OSError as e:
+            raise UploadsError("could not write upload " + repr(stored) + ": " + str(e)) from e
+
+    def _reject_symlink(self, path: Path, stored_name: str) -> None:
+        """Refuse to act on a symlinked entry.
+
+        Phase 6 section 6.4 (R11 / H4). Every path here used to be handed
+        to a pathlib method that follows symlinks, so anyone able to
+        create one entry in the uploads directory could turn read /
+        delete / save into an arbitrary-file primitive. Model-written
+        code qualifies: the workspace is bind-mounted rw into the
+        sandbox and the uploads dir lives inside it.
+        """
+        if self._is_symlink(path):
+            raise UploadsError("refusing to follow a symlink in the uploads store: " + repr(stored_name))
+
     # -- public API -----------------------------------------------------------
 
     def save(
@@ -372,7 +432,7 @@ class UploadsStore:
         with self._lock:
             stored = self._resolve_collision(safe)
             target = self.dir / stored
-            target.write_bytes(data)
+            self._write_new_file(target, stored, data)
             meta = UploadMetadata(
                 ts=self._now_iso(),
                 original_name=original_name,
@@ -430,7 +490,14 @@ class UploadsStore:
                 if entry.get("event") != "add":
                     continue
                 stored = entry.get("stored_name", "")
-                if not stored or not (self.dir / stored).is_file():
+                if not stored:
+                    continue
+                candidate = self.dir / stored
+                # A symlinked entry is skipped rather than reported: the
+                # sidecar names it, but the thing on disk is not the file
+                # the sidecar recorded, and listing it would hand the
+                # caller a read that follows the link.
+                if self._is_symlink(candidate) or not candidate.is_file():
                     continue
                 out.append(
                     UploadMetadata(
@@ -448,6 +515,9 @@ class UploadsStore:
 
     def read(self, stored_name: str) -> bytes:
         p = self.path_for(stored_name)
+        # Check BEFORE exists()/is_file(), which would both resolve the
+        # link and happily return the target's metadata.
+        self._reject_symlink(p, stored_name)
         if not p.exists() or not p.is_file():
             raise UploadsError("upload not found: " + repr(stored_name))
         return p.read_bytes()
@@ -455,6 +525,7 @@ class UploadsStore:
     def delete(self, stored_name: str, *, deleted_by: str = "cli") -> None:
         p = self.path_for(stored_name)
         with self._lock:
+            self._reject_symlink(p, stored_name)
             if not p.exists():
                 raise UploadsError("upload not found: " + repr(stored_name))
             size = p.stat().st_size
