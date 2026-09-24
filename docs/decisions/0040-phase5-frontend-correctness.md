@@ -188,3 +188,100 @@ Each item above is written test-first, and the pre-fix failure is
 recorded before the implementation lands. This is the Phase 3 rule
 applied to the frontend: a green suite that mocks below the seam
 certifies nothing, and Phase 4 showed exactly how that failure looks.
+
+## As built (shipped 2026-09-24)
+
+All seven sections above shipped, plus five findings that only surfaced
+while implementing them. Recording them here because the pattern is the
+point of this ADR, not any individual fix.
+
+### H13 — selecting a run left the Inspector empty for five seconds
+
+`refreshRuns` closes over `activeRunId`, so clicking a run changed the
+callback identity but nothing *called* it. The run detail behind the
+Inspector was only re-resolved by the next 5s poll tick. An effect now
+calls `refreshRuns` whenever its identity changes. This was found by the
+new e2e, not by any unit test — no unit test clicked a run row and then
+asserted the Inspector.
+
+### H14 — a null run status must still stream
+
+An intermediate implementation treated `status === null` as "wait for the
+status before opening a stream", on the reasoning that a stream opened
+before the status is known might connect to an already-finished run.
+That is wrong. `activeRun` is filled by the runs poll, so a run the list
+has not caught up with leaves the status null *indefinitely* — and an
+`approval.requested` frame only ever arrives over the stream. The full
+e2e run caught it: 5 chromium failures across `approval.spec.ts` and
+`auto-approve.spec.ts`, the modal never appearing.
+
+Null streams again. The cost is a brief connection to a run that turns
+out to be finished, which the snapshot then supersedes. Deleting the
+approval modal to avoid that is strictly worse, so the trade is
+deliberate and a unit test now guards it.
+
+This is the clearest instance of the whole phase: the first fix was
+plausible, type-correct, and passed every unit test. Only the
+browser-level suite disagreed.
+
+### H15 — duplicate `TokenSummary` interfaces merge
+
+Two `export interface TokenSummary` in one module do not shadow, they
+*merge*. A second declaration silently widened `cost_usd` from optional to
+required `number`, which TypeScript reported as `TS2352` the moment a
+null-cost test existed rather than as a duplicate declaration. Collapsed
+to one declaration.
+
+### Lint: 18 warnings to 0
+
+The recurring theme was an effect whose only job was to reset state when
+a prop had already changed. Those are also *late*: the effect runs after
+the paint that used the stale value. Every one was moved to React's
+own documented compare-during-render pattern.
+
+Three needed more than a move. `ProjectSwitcher` read localStorage in a
+mount effect, which is a lazy `useState` initialiser — the effect is gone
+and mount costs one fewer render. `SessionsPane` and three `App.tsx`
+fetch effects called a `useCallback`, which routed `setState` through a
+function the rule cannot see past; inlining each fetch also gave it the
+cancellation guard it was missing, so a project switch or run selection
+mid-flight can no longer land the previous result.
+
+One `setState`-in-effect is kept deliberately: the `projectRefreshTrigger`
+bump on a project switch. It is a cross-component invalidation signal
+passed as a `refreshTrigger` prop, and there is no value to compare
+during render because a project switch is an event, not a state. It
+carries a targeted disable with that reasoning written out, rather than
+being silenced globally.
+
+An intermediate version also read `forgetTimerRef` during render in
+`ApiKeyPanel`, which oxlint correctly caught as `react(refs)`. Refs are
+not render-safe; the timer cancellation went back into an effect and only
+state is touched during render.
+
+### Two pre-existing failures, not caused by this phase
+
+The first full backend run failed 7 tests in
+`test_audit_integrity_phase2` and `test_run_summary_phase3`. Both were
+stale fakes left over from Phase 4 — the pre-Phase-4 `run_in_thread`
+signature, and a `SimpleNamespace` run missing the lineage fields Phase 4
+added. Confirmed pre-existing by baselining against a reverted `api.py`.
+The Phase 3/4 pattern again: tests that pin a signature and go stale when
+the code moves.
+
+### Final validation
+
+```
+ruff check src scripts            # All checks passed
+ruff format --check src scripts   # 123 files already formatted
+pytest src/smolcode/tests         # 1374 passed, 13 skipped, 0 failed
+pnpm typecheck                    # 0 errors, strict: true
+pnpm build                        # 0 errors
+pnpm test                         # 139/139
+pnpm lint                         # 0 warnings, 0 errors
+pnpm test:e2e                     # 168/168 (Chromium, Firefox, WebKit)
+```
+
+**Still unverified:** the `tier-images` and `packaging` CI jobs, which
+have never had a real run because the Docker daemon is down on this host.
+Carried forward from Phases 3 and 4 unchanged.

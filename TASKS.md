@@ -227,7 +227,63 @@ fields with `getattr`, so a duck-typed run does not `AttributeError`.
 
 **Not yet verified (needs Docker / a hosted key / CI):** unchanged from
 Phase 3 — the `tier-images` and `packaging` jobs have not had a real run.
-Phase 5 (frontend correctness + strict TS) is next.
+Phase 5 (frontend correctness + strict TS) shipped below.
+
+### Phase 5 shipped (`ff4109e` + `a6b7aba` + `38b7800` + `5b6afda` + `da8b3dc` + `ba328f5` + `48ee6dc` + `d930b78`, decision 0040)
+
+Every finding here survived a green CI run for the same reason Phase 4's
+did: the SPA type-checks against types it supplies itself, so a wrong
+shape or a stale effect graph is invisible to `tsc`. ADR 0040 is written
+up at `docs/decisions/0040-phase5-frontend-correctness.md`.
+
+| Finding | Root cause | Resolution | Evidence |
+|---|---|---|---|
+| **H10** composer reset on every run click | The bootstrap effect was the boot sequence but depended on `refreshRuns`, which closes over `activeRunId` — so every run selection re-ran `getConfig()` and re-applied `c.provider` / `c.model` over the user's selection | `bootstrappedRef` guard; boot runs exactly once. `refreshRuns` keeps its `activeRunId` dep because re-resolving on selection is correct | `Phase5AppBoot` RED: selecting run 2 flipped the provider select `other-provider` → `srv-provider` |
+| **H11** any background failure blanked the app | One `error` state served `getConfig`, uploads, providers, open-path and post-approval. All five replaced the whole app with "Cannot reach the smolcode web server", and it was never cleared on success | Split into `fatalError` (`getConfig` only, full-screen) and `transientError` (dismissible `role="alert"` banner + Retry, app stays mounted). Every success clears the channel it could have set | `Phase5AppBoot` RED: a failing uploads fetch blanked the app |
+| **H12** finished-run history never appeared | `RunManager.events_snapshot` had no HTTP surface. Selecting a completed run opened an SSE stream the server had already finished sending — the client connected, received nothing, and waited forever | New additive `GET /api/runs/{id}/events/snapshot` → `{events, status}`. `EventStream` takes a `status` prop: terminal → render the log and open no stream; otherwise stream exactly as before | 8 backend tests + `Phase5EventReplay` + `e2e/finished-run-history.spec.ts` (SSE deliberately unmocked there, so a regression hangs and fails) |
+| **H13** Inspector empty for 5s after every click | `refreshRuns` closes over `activeRunId`, so clicking a run changed the callback's identity but nothing *called* it; the run detail was only re-resolved by the next 5s poll tick | An effect calls `refreshRuns` whenever its identity changes, with a cancellation guard | Surfaced by the new e2e, not by unit tests |
+| **H14** approval modal deleted by a null-status gate | An intermediate version treated `status === null` as "wait for the status before streaming". `activeRun` is filled by the runs poll, so a run the list has not caught up with leaves it null indefinitely — and `approval.requested` only ever arrives over the stream | Null streams again, as before. Recorded in the component with the trade-off spelled out | Caught by the full e2e run: 5 chromium failures in `approval.spec.ts` / `auto-approve.spec.ts` |
+| **H15** `TokenSummary` merge widened a field | Two `export interface TokenSummary` in one module MERGE rather than shadow. A second declaration silently widened `cost_usd` to required `number` | Collapsed to one declaration with `cost_usd?: number \| null` | Surfaced as `TS2352` once a null-cost test existed |
+
+Also shipped: countdown re-seed on server-tick change, `CostBadge` in the
+Inspector, `encodeURIComponent` on retry/rerun/export run ids, an empty
+`POST /api/runs/{id}/retry` body when there are no overrides, a
+`key={pending.decisionId}` on `ApprovalModal`, Escape-to-deny plus a focus
+trap, and an explicit `aria-label` on the `ProviderSelector` select (it
+previously had only a `title`, a weak accessible-name fallback).
+
+**Lint:** oxlint 18 warnings → **0 warnings, 0 errors**. The recurring
+theme was an effect whose only job was to reset state when a prop had
+already changed — which also means it ran *after* the paint that used the
+stale value. All were moved to React's documented compare-during-render
+pattern. `ProjectSwitcher` lost a mount effect (localStorage read became a
+lazy initialiser); `SessionsPane` and three `App.tsx` fetch effects were
+inlined, which also gave them the cancellation guards they lacked. One
+`setState`-in-effect is kept on purpose — the `projectRefreshTrigger` bump
+is a cross-component invalidation signal with no value to compare — and
+carries a targeted disable explaining why.
+
+**Two pre-existing failures were found and fixed here.** They were not
+caused by Phase 5 (confirmed by baselining against a reverted `api.py`),
+but they blocked a clean run: `test_audit_integrity_phase2`'s `fake_thread`
+still had the pre-Phase-4 `run_in_thread` signature, and
+`test_run_summary_phase3`'s `SimpleNamespace` run was missing the lineage
+fields Phase 4 added. Stale fakes, exactly the Phase 3/4 pattern.
+
+**Validation:** `ruff check src scripts` + `ruff format --check src scripts`
+clean; **pytest 1374 passed, 13 skipped, 0 failed**; **tsc 0**; **vitest
+139/139**; **oxlint 0 warnings / 0 errors**; **Playwright 168/168** across
+Chromium, Firefox and WebKit.
+
+**Known limitation carried forward:** for a run whose status is not yet
+resolved, `EventStream` may open a stream that the snapshot then
+supersedes. The alternative — waiting on a status that may never arrive —
+silently removes the approval modal (H14), so the trade is deliberate.
+
+**Not yet verified (needs Docker / a hosted key / CI):** unchanged from
+Phases 3 and 4 — the `tier-images` and `packaging` jobs have still not had
+a real run, because the Docker daemon is down on this host. Phase 6
+(remaining security/robustness items) is next.
 
 ---
 
