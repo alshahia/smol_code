@@ -115,6 +115,26 @@ describe('ADR0040-4 finished-run history', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('STREAMS when status is null -- the run is live but not yet resolved', async () => {
+    // Regression guard. App renders EventStream as soon as activeRunId is
+    // set, but activeRun is filled by the runs poll, so a run the list has
+    // not caught up with leaves status null indefinitely. The approval e2e
+    // suite is exactly that shape (runs: [], status awaiting_approval),
+    // and an approval.requested frame only ever arrives over the stream.
+    // Treating null as 'wait for a status' silently removed the approval
+    // modal, which is strictly worse than a brief connection to a run
+    // that turns out to be finished.
+    const fetchSpy = vi.fn(() => Promise.reject(new Error('no snapshot')))
+    vi.stubGlobal('fetch', fetchSpy)
+    render(<EventStream runId={'r-live'} status={null} />)
+
+    await waitFor(() => {
+      expect(FakeEventSource.instances).toHaveLength(1)
+    })
+    expect(FakeEventSource.instances[0].url).toContain('/api/runs/r-live/events')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('treats a missing status as live, preserving pre-Phase-5 behaviour', async () => {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('nope')))
     render(<EventStream runId={'r3'} />)

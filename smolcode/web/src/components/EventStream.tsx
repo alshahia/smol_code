@@ -166,20 +166,22 @@ export function EventStream({ runId, status: runStatus, onApprovalRequest, onDif
   // over: RunManager.subscribe drains run.events (a queue) while
   // events_snapshot reads run.events_log, so an event published between
   // the two requests would be rendered twice.
-  // Four cases, not two, and the distinction matters:
+  // Two cases, and the null case is deliberately NOT "wait":
   //
-  //   undefined        legacy caller that passes no status at all.
-  //                    Stream, exactly as before Phase 5.
-  //   null             the caller has the run but has not resolved its
-  //                    status yet (App renders EventStream on activeRunId
-  //                    and fills activeRun on the next poll). Opening a
-  //                    stream here would connect to a run that may
-  //                    already be finished, then sit there waiting --
-  //                    the exact symptom this phase fixes. Wait instead.
-  //   terminal         render the recorded log, open nothing.
-  //   non-terminal     open the stream.
+  //   terminal   render the recorded log, open nothing.
+  //   otherwise  open the stream.
+  //
+  // A null status means the caller has not resolved the run's status yet,
+  // and in practice it often never will: App renders EventStream as soon
+  // as activeRunId is set, but activeRun is filled by the runs poll, so a
+  // run that the list has not caught up with leaves status null
+  // indefinitely. The approval e2e suite is exactly that case (runs: [],
+  // status awaiting_approval) and an approval.requested frame only ever
+  // arrives over the stream. Treating null as "wait" silently deleted the
+  // approval modal, which is far worse than a short-lived connection to a
+  // run that turns out to be finished.
   const terminal = runStatus != null && TERMINAL_RUN_STATUSES.has(runStatus)
-  const shouldStream = runStatus === undefined || (runStatus != null && !terminal)
+  const shouldStream = !terminal
 
   useEffect(() => {
     if (!terminal) return

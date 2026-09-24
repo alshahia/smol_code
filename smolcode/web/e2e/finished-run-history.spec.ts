@@ -84,20 +84,27 @@ test('a finished run still shows tokens, cost and status in the Inspector', asyn
   await expect(inspector.locator('.cost-badge, [class*="cost"]').first()).toBeVisible()
 })
 
-test('no EventSource is opened for a terminal run', async ({ page }) => {
-  // Count live-stream connections. The SPA opens one per EventSource; a
-  // terminal run must open none, or the request hangs against the real
-  // dev-server route and the pane never settles.
-  let sseOpens = 0
-  page.on('request', (req) => {
-    if (/\/api\/runs\/[^/]+\/events(\?|$)/.test(req.url())) sseOpens++
-  })
-
+test('the terminal run is hydrated from the snapshot, not the stream', async ({ page }) => {
+  // This spec does NOT mock the SSE endpoint. If the SPA relied on a live
+  // stream for a finished run, the request would hit the real dev-server
+  // route, receive nothing, and the pane would sit on "Waiting for
+  // events..." -- so the assertions above failing IS the regression.
+  //
+  // EventStream may still open a stream for the brief window before App
+  // has resolved activeRun.status, and deliberately so: a null status also
+  // covers runs the list has not caught up with, where an
+  // approval.requested frame only ever arrives over the stream. What
+  // matters is that the stream is not what the finished history came from.
   await page.locator('.run-history .run-row').first().click()
   await expect(page.locator('.event-stream .stream-row')).toHaveCount(FINISHED_EVENTS.length)
   await expect(page.locator('.event-stream .stream-status')).toHaveText('SSE: done')
 
-  // Give any stray connection a chance to appear before asserting.
-  await page.waitForTimeout(400)
-  expect(sseOpens).toBe(0)
+  // Once the terminal status is known, no connection is left holding the
+  // pane open.
+  const stillOpen = await page.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .filter((e) => /\/api\/runs\/[^/]+\/events$/.test(e.name) && e.responseEnd === 0).length,
+  )
+  expect(stillOpen).toBe(0)
 })
