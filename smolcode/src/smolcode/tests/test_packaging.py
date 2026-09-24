@@ -21,10 +21,10 @@ built wheel into a throwaway venv and runs ``images hash restricted``.
 """
 
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
 from smolcode import images
 
