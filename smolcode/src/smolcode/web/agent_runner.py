@@ -1214,17 +1214,11 @@ def run_in_thread(run, settings, manager=None, cost_cap_tracker=None):
         # this run. ``run_in_thread`` receives it as a parameter, so the
         # runner thread no longer reaches back through REQUEST-scoped
         # FastAPI dependencies that are long gone by the time we get here.
+        # RunManager._drain_queue owns the try/except and records any
+        # failure on manager.queue_drain_error.
         if manager is not None:
-            try:
-                _drain_queue_after_run(run, manager)
-            except Exception as _e:
-                _log.warning("queue drain failed after run %s: %s", run.id, _e)
-                # Record the failure instead of only logging it. A silently
-                # stalled queue looks identical to "no work queued" from the
-                # outside; GET /api/health reports this (Phase 8 adds it to
-                # the response schema).
-                manager.queue_drain_error = str(_e)
-        elif getattr(run, "thread", None) is not None:
+            manager._drain_queue(run)
+        else:
             _log.warning("run %s finished without a manager reference; queue not drained", run.id)
 
 

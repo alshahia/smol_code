@@ -1321,6 +1321,26 @@ class RunManager:
         self._refresh_queue_positions()
         return entry
 
+    def _drain_queue(self, run):
+        """Phase 4 (decision 0039): drain the queue, RECORDING failures.
+
+        This is the single seam the runner thread calls. Keeping the
+        try/except here (rather than inline in ``run_in_thread``) is what
+        makes the failure observable: the old inline version logged a
+        warning and moved on, so a permanently stalled queue was
+        indistinguishable from an idle one. ``queue_drain_error`` now
+        holds the reason and is cleared on the next success.
+        """
+        from .agent_runner import _drain_queue_after_run
+
+        try:
+            result = _drain_queue_after_run(run, self)
+        except Exception as exc:
+            self.queue_drain_error = str(exc)
+            return None
+        self.queue_drain_error = None
+        return result
+
     def queue(self):
         """Return a snapshot copy of the FIFO queue."""
         with self._queue_lock:
