@@ -140,7 +140,7 @@ started, and the partial Phase-3 landing is runtime-broken.
 | Phase | Theme | ADR | Status | Findings |
 |---|---|---|---|---|
 | 3 | Build/install/test isolation + CI can see the product | 0038 | **shipped** (`7f284ff`) | R1, R2, R5, R6 |
-| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **next** | H7, H8, H9 |
+| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **shipped** (`9eea09f`, `55cf0f2`, `1c0b7dd`) | H7, H8, H9 |
 | 5 | Frontend correctness + strict TS | 0040 | pending (after 3, 4) | H10 + FE mediums |
 | 6 | Tool/MCP hardening + in-container plane truth | 0041 | pending (after 3; parallel with 4) | R8, H2, H3, H4, H11 |
 | 7 | Web/session robustness | 0042 | pending (after 6) | TOCTOU, Host, stop, eviction |
@@ -204,6 +204,30 @@ the START of the phase.
 **Not yet verified (needs Docker / a hosted key / CI):** the `tier-images`
 and `packaging` jobs are new, so their first real run is unproven. Phase 4
 (retry/rerun/export/queue/cost caps) starts next.
+
+### Phase 4 shipped (`9eea09f` + `55cf0f2` + `1c0b7dd`, decision 0039)
+
+H7, H8, H9 and R4. All four shipped with a green Phase 3 suite because
+the tests mocked below the seam; the fix was the seam, not the symptom.
+
+| Finding | Root cause | Resolution | Evidence |
+|---|---|---|---|
+| **H7** retry/rerun 500 | `RunManager.start_or_enqueue_run()` had no `parent_rerun_of` kwarg, so every call raised `TypeError`; the rerun body also reused `RunStartRequest`, whose `task` is required, so the SPA's `{}` body was rejected 422 | `Run` gains real `parent_retry_of` / `parent_rerun_of` / `retry_count` fields; both manager methods accept and persist them; a new all-optional `RunRetryRequest` is the retry body; `RunStartRequest.tier` is now `str \| None` with the `restricted` default applied at the endpoint so retry/rerun inherit the parent tier | `test_retry_rerun_export_phase4.py` (14 tests, RED first: `TypeError: ... unexpected keyword argument 'parent_rerun_of'`) |
+| **H8** export 500 | `dict(s)` on a `SubAgentSummary` dataclass → `TypeError: 'SubAgentSummary' object is not iterable` | export reads `subagent_history` from `Run.summary_dict()`, which already serialises it with per-sub-agent cost | same file, `TestExportEndpoint` (3 tests) |
+| **H8b** queue never drained | `_drain_queue_after_run` called `api.get_run_manager()` + `deps.get_settings()` — REQUEST-scoped FastAPI dependencies — from a runner thread that outlives the request. The resulting `TypeError` was swallowed by a bare `except` + `log.warning` | `RunManager` now owns its `Settings`; `_drain_queue_after_run(run, mgr)` takes the manager; the try/except moved to `RunManager._drain_queue`, which records `queue_drain_error` instead of losing it. The module-level `RunManager.__init__` monkey-patch is folded into the real class | `test_queue_cost_phase4.py::TestQueueDrain` (7 tests) — patches `api.get_run_manager` / `deps.get_settings` to raise and proves the drain never touches them |
+| **H9** cost caps never fired, dashboard always $0 | The dashboard reads `run.tokens`; a real `Run` had no such attribute, so `getattr(r, "tokens", None)` was `None` and every accumulator stayed 0. The old tests injected `SimpleNamespace` fakes that carried a hand-made `.tokens`, so the gap was invisible | `Run.tokens` is now a derived property over `tokens_in` / `tokens_out`; `TokenSummary` gains `cost_usd` (Pydantic had been silently dropping it, so even a correct computed value never reached the SPA); `resume_active_agent` now receives the cost-cap tracker instead of `None` | `test_queue_cost_phase4.py::TestCostWithRealRuns` (5 tests) using **real** `Run` objects: dashboard cost > 0, 429 `cost_cap_reached:`, `cost_usd` survives serialization |
+| **H9b** project create/delete wiped caps | Both endpoints hand-rolled a full `Settings(...)` construction and dropped `cost_rates` / `cost_caps` | `Settings.with_overrides` takes `projects`; both endpoints go through it and sync the manager's copy of settings | `TestCostCapsSurviveProjectChanges` (4 tests), caps seeded via the real `SMOLCODE_COST_*` env vars |
+
+**Validation:** `ruff check src scripts` + `ruff format --check src scripts`
+clean; **full suite 1366 passed, 13 skipped, 0 failed, 0 errors** (was 1332
++ 34 new). Seven tests failed on the first full run because their fakes
+pinned the old `run_in_thread` signature and a partial `SimpleNamespace`
+run; those fakes were updated and `_run_summary` now reads the new lineage
+fields with `getattr`, so a duck-typed run does not `AttributeError`.
+
+**Not yet verified (needs Docker / a hosted key / CI):** unchanged from
+Phase 3 — the `tier-images` and `packaging` jobs have not had a real run.
+Phase 5 (frontend correctness + strict TS) is next.
 
 ---
 
