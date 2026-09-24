@@ -16,7 +16,7 @@
 // followup endpoint; the client-side toggle only manages the
 // visible banner.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DiffViewer } from './DiffViewer'
 import type { DiffHunk, DiffStats } from '../api'
 
@@ -62,8 +62,67 @@ interface Props {
   onAutoApproveToggle?: (active: boolean) => void
 }
 
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props) {
   const [editedAfter, setEditedAfter] = useState<string | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const decisionId = pending?.decisionId ?? null
+
+  // Phase 5 (ADR 0040 §3): reset the edit whenever the decision
+  // CHANGES. The old code reset editedAfter only inside approve() and
+  // deny(), so the three outside_root dismiss paths left it set and
+  // there was no effect keyed on decisionId at all. Consequence: deny
+  // decision A, then decision B arrives, and B renders A's edited diff.
+  // The user then approves a file write containing text they never saw.
+  useEffect(() => {
+    setEditedAfter(null)
+  }, [decisionId])
+
+  // Phase 5 (ADR 0040 §3): a dialog that gates a destructive write must
+  // be dismissible by keyboard. Escape denies, matching the visible
+  // Deny button so the two never disagree about what Escape means.
+  useEffect(() => {
+    if (!pending) return undefined
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onDecide(false, 'user-denied', null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pending, onDecide])
+
+  // Phase 5 (ADR 0040 §3): focus trap. Without it, Tab walks out of the
+  // dialog into the page behind it, and a screen-reader user can land on
+  // controls for a run whose approval they have not given.
+  useEffect(() => {
+    if (!pending) return undefined
+    const node = cardRef.current
+    if (!node) return undefined
+    const first = node.querySelector<HTMLElement>(FOCUSABLE)
+    if (first) first.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE))
+      if (items.length === 0) return
+      const firstEl = items[0]
+      const lastEl = items[items.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey && (active === firstEl || !node.contains(active))) {
+        e.preventDefault()
+        lastEl.focus()
+      } else if (!e.shiftKey && active === lastEl) {
+        e.preventDefault()
+        firstEl.focus()
+      }
+    }
+    node.addEventListener('keydown', onKey)
+    return () => node.removeEventListener('keydown', onKey)
+  }, [pending])
+
   if (!pending) return null
   const isDiff = pending.kind === 'diff'
   // Phase 3 F3 (decision 0036): outside_root variant renders a
@@ -104,6 +163,7 @@ export function ApprovalModal({ pending, onDecide, onAutoApproveToggle }: Props)
   return (
     <div className="approval-modal" role="dialog" aria-modal="true">
       <div
+        ref={cardRef}
         className={
           'approval-card ' +
           (isDiff || isOutsideRoot ? 'approval-card-wide' : '')

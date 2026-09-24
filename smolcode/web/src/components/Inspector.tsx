@@ -20,6 +20,7 @@ import { TierBadge } from './TierBadge'
 import { WorkspaceTree } from './WorkspaceTree'
 import { AuditPanel } from './AuditPanel'
 import { SubAgentList } from './SubAgentList'
+import { CostBadge } from './CostBadge'
 import type { ConfigResponse, ProjectInfo, RunSummary } from '../api'
 
 interface Props {
@@ -84,16 +85,47 @@ export function Inspector({
     return () => window.clearInterval(id)
   }, [inFlight, activeRun?.id])
 
+  const remainingServer = activeRun?.remaining_s ?? null
+
+  // Phase 5 (ADR 0040 §5): nowTick counted up from mount and was NEVER
+  // reset, so every refreshRuns() pushed a fresh remaining_s underneath a
+  // counter that had already run for minutes. The displayed value drifted
+  // further from the truth the longer a run stayed open. Re-seed on every
+  // server change so remainingServer is the base and nowTick is only the
+  // offset since the last refresh.
+  //
+  // This is React's documented "adjust state when a prop changes"
+  // pattern: compare against the previous value during render and reset
+  // inline. An effect would work too, but it costs an extra render pass
+  // and trips react(set-state-in-effect), which is exactly the kind of
+  // cascading render this change exists to avoid.
+  const [lastRemainingS, setLastRemainingS] = useState<number | null>(remainingServer)
+  if (remainingServer !== lastRemainingS) {
+    setLastRemainingS(remainingServer)
+    setNowTick(0)
+  }
+
+  // Phase 5 (ADR 0040 §5): when the server reports no remaining_s, fall
+  // back to the RUNNING TIER's timeout_s from /api/config, not the
+  // hardcoded 900 (which is the web wall-clock default, a different
+  // budget). 900 remains the last resort when the tier is unknown.
+  const tierTimeoutS: number | null = (() => {
+    if (!activeRun) return null
+    const tier = config?.tiers?.find((t) => t.name === activeRun.tier)
+    return tier?.timeout_s ?? null
+  })()
+  const budgetS = tierTimeoutS ?? MAX_RUN_WALL_S_FALLBACK
+
   // Compute the displayed remaining seconds locally so the value updates
   // every tick without round-tripping to the server. The server value
   // is the authoritative starting point on each refreshRuns() call; we
   // tick it down locally by the nowTick counter (1Hz from useEffect).
   // No Date.now() in the render body -- that would be an impure read.
-  const remainingServer = activeRun?.remaining_s ?? null
+  const remainingBase: number | null = remainingServer ?? (inFlight ? budgetS : null)
   const remainingDisplay: number | null = (() => {
-    if (remainingServer === null || remainingServer === undefined) return null
+    if (remainingBase === null || remainingBase === undefined) return null
     if (!inFlight) return remainingServer
-    return Math.max(-60, remainingServer - nowTick)
+    return Math.max(-60, remainingBase - nowTick)
   })()
 
   const isTerminal =
@@ -171,6 +203,16 @@ export function Inspector({
               <div className="kv">
                 <span>steps:</span> <code>{stepCount}</code>
               </div>
+              {/* Phase 5 (ADR 0040 §5): the ship report claimed the
+                  Inspector rendered per-run cost and it never did --
+                  CostBadge existed with its own passing test and was
+                  simply never imported. cost_usd arrives from Phase 4's
+                  TokenSummary; pass it straight through so an unpriced
+                  provider shows CostBadge's "--" placeholder rather than
+                  a "$0.00" that reads as "this run was free". */}
+              <div className="kv">
+                <span>cost:</span> <CostBadge costUsd={tokens.cost_usd} />
+              </div>
               {/* Phase 3 F2 (decision 0036): cache_hit badge. The field is
                   optional and additive; pre-F2 servers omit it entirely and
                   the SPA renders nothing. Guard for undefined, not just 0 --
@@ -241,13 +283,13 @@ export function Inspector({
           ) : inFlight ? (
             remainingDisplay <= 0 ? (
               <div className="warn-banner">
-                Run timed out after {formatHMS(MAX_RUN_WALL_S_FALLBACK)} -- the runner is
+                Run timed out after {formatHMS(budgetS)} -- the runner is
                 forcibly stopping the executor.
               </div>
             ) : (
               <div className="kv">
                 <span>remaining:</span> <code>{formatHMS(remainingDisplay)}</code>
-                <span className="muted small"> (budget {formatHMS(MAX_RUN_WALL_S_FALLBACK)})</span>
+                <span className="muted small"> (budget {formatHMS(budgetS)})</span>
               </div>
             )
           ) : isTerminal ? (

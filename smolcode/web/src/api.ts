@@ -147,6 +147,19 @@ export interface TokenSummary {
   current_output?: number
   // Wall-clock epoch seconds of the most recent ActionStep, or null.
   last_step_at?: number | null
+  // Phase 5 (ADR 0040 §5): aggregated USD cost. The backend sends null
+  // when no rate is configured for the provider/model, which is NOT the
+  // same as 0. A $0.00 badge reads as "this run was free"; null renders
+  // CostBadge's "--" placeholder. Optional so pre-Phase-4 servers that
+  // omit the field entirely do not break the SPA.
+  //
+  // This used to be declared on a SECOND "interface TokenSummary" further
+  // down this file. TypeScript merges same-named interfaces in one
+  // module, so that declaration silently widened this one with a REQUIRED
+  // cost_usd: number -- which did not match the wire (the backend sends
+  // null) and broke the Inspector's null test under strict mode. The
+  // duplicate is removed and the field is declared here, once.
+  cost_usd?: number | null
 }
 
 // Phase 0 (decision 0025): latest sub-agent invocation.
@@ -803,13 +816,10 @@ export async function listAudit(opts: AuditListOptions = {}): Promise<AuditListR
 // Phase 3 (decision 0025 sec 6.5): Dashboard + cost + retry / rerun / export.
 // ============================================================================
 
-export interface TokenSummary {
-  input: number
-  output: number
-  total: number
-  /** Decision 0032: aggregated USD cost for the bucket. */
-  cost_usd: number
-}
+// Phase 5 (ADR 0040 §5): the duplicate TokenSummary that used to live
+// here is gone. It merged with the RunSummary one above and forced a
+// non-nullable cost_usd onto a field the backend sends as null. Dashboard
+// payloads use the SAME TokenSummary.
 
 export interface DashboardResponse {
   runs_today: number
@@ -877,15 +887,21 @@ export async function retryRun(
     keys?: Record<string, string>
   },
 ): Promise<RunStartResponse> {
-  return jsonOrThrow(await fetch('/api/runs/' + id + '/retry', {
+  // Phase 5 (ADR 0040 §6): encode the id, and send NO body at all
+  // when the caller passed no overrides. Sending '{}' makes "the caller
+  // explicitly asked for restricted" indistinguishable from "the caller
+  // said nothing", which is why the backend now has to guess whether to
+  // inherit the parent tier.
+  const init: RequestInit = overrides ? {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(overrides ?? {}),
-  }))
+    body: JSON.stringify(overrides),
+  } : { method: 'POST' }
+  return jsonOrThrow(await fetch('/api/runs/' + encodeURIComponent(id) + '/retry', init))
 }
 
 export async function rerunRun(id: string): Promise<RunStartResponse> {
-  return jsonOrThrow(await fetch('/api/runs/' + id + '/rerun', { method: 'POST' }))
+  return jsonOrThrow(await fetch('/api/runs/' + encodeURIComponent(id) + '/rerun', { method: 'POST' }))
 }
 
 export interface ExportPayload {
@@ -897,7 +913,7 @@ export interface ExportPayload {
 }
 
 export async function exportRun(id: string): Promise<ExportPayload> {
-  return jsonOrThrow(await fetch('/api/runs/' + id + '/export'))
+  return jsonOrThrow(await fetch('/api/runs/' + encodeURIComponent(id) + '/export'))
 }
 
 export function downloadExport(id: string, payload: ExportPayload): void {

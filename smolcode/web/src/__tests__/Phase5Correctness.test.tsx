@@ -8,7 +8,7 @@
 // supplies itself.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ApprovalModal, type PendingApproval } from '../components/ApprovalModal'
@@ -56,7 +56,8 @@ describe('ADR0040-3 ApprovalModal edit isolation', () => {
     // A: user edits the diff and applies it. B: a different decision
     // arrives WITHOUT any editing. B must show its own original, not
     // A's edit.
-    const { rerender } = render(<ApprovalModal pending={DIFF_A} onDecide={vi.fn()} />)
+    const onDecide = vi.fn()
+    const { rerender } = render(<ApprovalModal pending={DIFF_A} onDecide={onDecide} />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: /edit proposed content/i }))
@@ -191,7 +192,7 @@ const RUNNING_RUN = {
   snapshot_at: null,
   subagent_history: [],
   queue_position: null,
-} as unknown as Parameters<typeof Inspector>[0]['activeRun']
+} as unknown as NonNullable<Parameters<typeof Inspector>[0]['activeRun']>
 
 describe('ADR0040-5 Inspector countdown + cost', () => {
   beforeEach(() => {
@@ -202,24 +203,29 @@ describe('ADR0040-5 Inspector countdown + cost', () => {
   })
 
   it('resets the countdown when the server remaining_s changes', () => {
-    // Fresh server value of 100. Tick 10s -> 90. Server then refreshes
-    // remaining_s to 100; the display must go back to 100, not continue
-    // from 90.
+    // Server says 100. Tick 10s locally -> the display shows 90 (01:30).
+    // The server then refreshes to 95, which is the new authoritative
+    // base. nowTick must re-seed to 0 so the display is 95 (01:35).
+    //
+    // Without the reset it would read 95 - 10 = 85 (01:25), and the error
+    // would grow for as long as the run stayed open.
     const { rerender } = render(
       <Inspector activeRun={RUNNING_RUN} config={makeConfig(120)} />,
     )
     act(() => {
       vi.advanceTimersByTime(10_000)
     })
-    expect(screen.getByText('00:90')).toBeTruthy()
+    // 100s - 10 ticks = 90s = 01:30
+    expect(screen.getByText('01:30')).toBeTruthy()
 
     rerender(
       <Inspector
-        activeRun={{ ...RUNNING_RUN, remaining_s: 100 } as typeof RUNNING_RUN}
+        activeRun={{ ...RUNNING_RUN, remaining_s: 95 } as typeof RUNNING_RUN}
         config={makeConfig(120)}
       />,
     )
-    expect(screen.getByText('01:40')).toBeTruthy()
+    // 95s from a re-seeded counter = 01:35, NOT 01:25.
+    expect(screen.getByText('01:35')).toBeTruthy()
   })
 
   it('falls back to the tier timeout_s, not the hardcoded 900', () => {

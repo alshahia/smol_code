@@ -111,7 +111,13 @@ export function Dashboard(): React.JSX.Element {
             <tbody>
               {Object.entries(data.by_provider).map(([prov, t]) => {
                 const cap = caps?.caps.find((c) => c.provider === prov)?.cap_usd ?? 0
-                const todayUsd = t.cost_usd
+                // Phase 5 (ADR 0040 §5): the backend sends null when no
+                // rate is configured. Default it to 0 for the cap
+                // arithmetic only; the cell below already renders "--"
+                // for a falsy value, so an unpriced provider shows no
+                // dollar figure and never false-positives the over-cap
+                // styling.
+                const todayUsd = t.cost_usd ?? 0
                 const pct = cap > 0 ? Math.min(100, Math.round((todayUsd / cap) * 100)) : 0
                 const over = cap > 0 && todayUsd >= cap
                 return (
