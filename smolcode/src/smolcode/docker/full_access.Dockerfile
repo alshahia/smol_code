@@ -66,6 +66,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Vendor repositories (signed keys; standard upstream recipes) --------
+#
+# The vendor suites below are named by Debian codename and MUST match the
+# codename of PYTHON_BASE, or apt-get update fails outright. When PYTHON_BASE
+# changes this is the other half of that change. One ARG drives both so the
+# two cannot drift apart again.
+ARG DEBIAN_CODENAME=bookworm
 RUN mkdir -p /etc/apt/keyrings /usr/share/keyrings
 
 # kubectl from pkgs.k8s.io (community-owned, replaces deprecated
@@ -94,7 +100,7 @@ RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
 #   curl -sS -o /dev/null -w '%{http_code}\n' https://apt.releases.hashicorp.com/gpg
 RUN wget -qO- https://apt.releases.hashicorp.com/gpg \
       | gpg --dearmor --yes -o /usr/share/keyrings/hashicorp-archive-keyring.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bullseye main" \
+    && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com ${DEBIAN_CODENAME} main" \
        > /etc/apt/sources.list.d/hashicorp.list
 
 # google-cloud-cli (gcloud + friends) from Google Cloud SDK apt repo.
@@ -106,7 +112,7 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 # azure-cli from Microsoft.
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
       | gpg --dearmor --yes -o /usr/share/keyrings/microsoft.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ bullseye main" \
+    && echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ ${DEBIAN_CODENAME} main" \
        > /etc/apt/sources.list.d/azure-cli.list
 
 RUN apt-get update \
