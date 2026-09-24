@@ -62,6 +62,12 @@ def _fake_run(*, model="deepseek-v4-flash", provider="opencode-go", tokens_in=10
         subagent_history=[],
         result=None,
         error=None,
+        # Phase 4 (decision 0039) added retry/rerun lineage; _run_summary
+        # reads these directly off the run, so the stand-in has to carry
+        # them too or it stops being a stand-in for a real Run.
+        parent_retry_of=None,
+        parent_rerun_of=None,
+        retry_count=0,
         touched_list=lambda: [],
         summary_dict=lambda max_wall_s=900: _fake_summary_dict(tokens_in, tokens_out),
     )

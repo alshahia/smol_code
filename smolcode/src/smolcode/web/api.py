@@ -806,6 +806,23 @@ def get_run(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
     return _run_summary(run)
 
 
+# Phase 5 (ADR 0040 sec 4). Additive: /runs/{id}/events/snapshot is a
+# sibling of /runs/{id}/events, not a replacement. The manager already had
+# events_snapshot() (decision 0025 sec 6.5 / B5) for the export path, but it
+# had no HTTP surface, so the SPA could not hydrate a finished run's
+# history -- it reset to [] and opened an SSE stream the server had already
+# finished sending, leaving the user waiting forever.
+#
+# The response also carries the run status so the client can decide whether
+# to open a live stream at all.
+@router.get("/runs/{run_id}/events/snapshot")
+def run_events_snapshot(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> dict:
+    run = mgr.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return {"events": mgr.events_snapshot(run_id), "status": run.status}
+
+
 @router.get("/runs/{run_id}/events")
 def run_events(run_id: str, mgr: RunManager = Depends(get_run_manager)) -> StreamingResponse:
     """SSE stream for a run. Emits events as they are produced by the

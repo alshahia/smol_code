@@ -216,7 +216,7 @@ class TestCreateAppAuditSink:
         mgr = RunManager(audit_sink=sink)
         captured = {}
 
-        def fake_thread(run, settings, cost_cap_tracker=None):
+        def fake_thread(run, settings, manager=None, cost_cap_tracker=None):
             captured["run"] = run
 
         monkeypatch.setattr(ar, "run_in_thread", fake_thread)
@@ -235,7 +235,7 @@ class TestCreateAppAuditSink:
         mgr = RunManager(audit_sink=default_sink)
         captured = {}
 
-        def fake_thread(run, settings, cost_cap_tracker=None):
+        def fake_thread(run, settings, manager=None, cost_cap_tracker=None):
             captured["run"] = run
 
         monkeypatch.setattr(ar, "run_in_thread", fake_thread)

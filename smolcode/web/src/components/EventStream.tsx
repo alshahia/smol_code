@@ -25,7 +25,7 @@
 // payload, no SSE-frame parsing needed.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { StreamEvent } from '../api'
+import { getRunEventsSnapshot, type StreamEvent } from '../api'
 
 // Phase 0 (decision 0025, FE-3): one rendered row in the stream list.
 // Either a single stream event OR a SubAgentBlock wrapping the events
@@ -77,6 +77,18 @@ function groupRows(events: StreamEvent[]): Row[] {
 
 interface Props {
   runId: string
+  // Phase 5 (ADR 0040 sec 4): the run's status, when the caller already
+  // knows it. A terminal run cannot be hydrated by the live stream --
+  // the server finished emitting before the user selected the run, so the
+  // client connects, receives nothing and waits forever. When status is
+  // terminal the component renders the recorded log instead and opens no
+  // stream at all.
+  //
+  // Left undefined, the component behaves exactly as it did before
+  // Phase 5: open the stream, render nothing until frames arrive. App.tsx
+  // passes activeRun.status so the common live case keeps opening its
+  // stream synchronously, with no extra round trip in the way.
+  status?: string | null
   onApprovalRequest?: (
     decisionId: string,
     tool: string,
@@ -118,6 +130,11 @@ const KNOWN_EVENT_TYPES: StreamEvent['type'][] = [
   'end',
 ]
 
+// Mirrors _TERMINAL_STATUSES in smolcode/src/smolcode/web/runs.py. Keep
+// these two sets in step: the client uses this one to decide whether a
+// live stream is still worth opening.
+const TERMINAL_RUN_STATUSES = new Set(['done', 'error', 'stopped'])
+
 function parseEventData(type: StreamEvent['type'], dataStr: string): StreamEvent | null {
   if (!dataStr) return null
   let data: Record<string, unknown>
@@ -130,7 +147,7 @@ function parseEventData(type: StreamEvent['type'], dataStr: string): StreamEvent
   return { ...data, type } as StreamEvent
 }
 
-export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal }: Props) {
+export function EventStream({ runId, status: runStatus, onApprovalRequest, onDiffProposed, onFinal }: Props) {
   const [events, setEvents] = useState<StreamEvent[]>([])
   const [status, setStatus] = useState<string>('connecting')
   const esRef = useRef<EventSource | null>(null)
@@ -139,7 +156,44 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
   // event count, which is bounded by the 15-min run).
   const rows = useMemo<Row[]>(() => groupRows(events), [events])
 
+  // Phase 5 (ADR 0040 sec 4): a finished run used to render as an
+  // empty "Waiting for events..." list forever. The live SSE stream had
+  // already been fully emitted before the user selected the run, so the
+  // client connected, received nothing, and waited.
+  //
+  // The recorded log is fetched ONLY for a run the caller says is
+  // terminal. Fetching it for a live run as well would be wrong twice
+  // over: RunManager.subscribe drains run.events (a queue) while
+  // events_snapshot reads run.events_log, so an event published between
+  // the two requests would be rendered twice.
+  const terminal = runStatus != null && TERMINAL_RUN_STATUSES.has(runStatus)
+
   useEffect(() => {
+    if (!terminal) return
+    let cancelled = false
+    setEvents([])
+    setStatus('connecting')
+    void (async () => {
+      try {
+        const snap = await getRunEventsSnapshot(runId)
+        if (cancelled) return
+        setEvents(snap.events)
+        setStatus(snap.status)
+      } catch (e) {
+        if (cancelled) return
+        // Fall back to the old behaviour rather than showing nothing:
+        // a finished run with a failed snapshot should still try to
+        // stream, exactly as it did before Phase 5.
+        setStatus('error')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [runId, terminal])
+
+  useEffect(() => {
+    if (terminal) return
     setEvents([])
     setStatus('connecting')
     const url = '/api/runs/' + encodeURIComponent(runId) + '/events'
@@ -216,7 +270,7 @@ export function EventStream({ runId, onApprovalRequest, onDiffProposed, onFinal 
       es.close()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId])
+  }, [runId, terminal])
 
   return (
     <div className="event-stream">

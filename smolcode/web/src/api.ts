@@ -408,6 +408,20 @@ export async function getRun(runId: string): Promise<RunSummary> {
   return jsonOrThrow(await fetch("/api/runs/" + encodeURIComponent(runId)))
 }
 
+// Phase 5 (ADR 0040 section 4). The recorded event log for a run, as of
+// now. The client uses the returned status to decide whether opening a live
+// EventSource is worth it: for a terminal run the stream would open, emit
+// nothing, and close, which is what made a finished run look like it was
+// still running.
+export interface EventsSnapshotResponse {
+  events: StreamEvent[]
+  status: string
+}
+
+export async function getRunEventsSnapshot(runId: string): Promise<EventsSnapshotResponse> {
+  return jsonOrThrow(await fetch("/api/runs/" + encodeURIComponent(runId) + "/events/snapshot"))
+}
+
 export async function postApproval(
   runId: string,
   decisionId: string,

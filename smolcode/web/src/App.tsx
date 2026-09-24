@@ -676,6 +676,7 @@ function App() {
           {activeRunId ? (
             <EventStream
               runId={activeRunId}
+              status={activeRun?.status ?? null}
               onApprovalRequest={onApprovalRequest}
               onDiffProposed={onDiffProposed}
               onFinal={onFinal}
