@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-08-27 (decision 0034 session, post 0033 ship; 2026-08-27 web UI feedback batch added - see section 0a)
+**Date:** 2026-09-24 (full-app review #2 + remediation plan #2 added - see section 0b; sections 0 and 0a preserved as the 2026-08-27 snapshot)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -113,6 +113,81 @@ ADRs are written at the START of each phase, not before.
 - Validation gates at ship: vitest 114/114 pass + pytest 1311/1311 pass (5 docker/shellcheck skip) + ruff check + format clean + tsc -b clean + pnpm build clean
 - Working tree clean post-push
 - Phase 4 added 22 net new FE tests (7 ProjectSwitcher + 14 ProjectSwitcherOutside + 1 EventStream trailing-arg sync) and 5 new e2e tests via `e2e/_helpers.ts` + `e2e/project-switcher.spec.ts`
+
+---
+
+## 0b. Full-app review #2 + remediation plan #2 (2026-09-24)
+
+Per `docs/reviews/2026-09-24-full-app-review/REMEDIATION-PLAN.md` —
+addressing the 2026-09-24 review at `3cebcde` (branch
+`fix/review-remediation`, 2 commits ahead of `main`).
+
+**Review documents:**
+
+- `docs/reviews/2026-09-24-full-app-review/REVIEW-REPORT.md` —
+  consolidated findings (`R1`–`R12` new; `C1`/`C2`/`H1`–`H11` carried
+  forward with updated status), full validation table, root-cause
+  analysis, and the unverified-with-reasons table.
+- `docs/reviews/2026-09-24-full-app-review/REMEDIATION-PLAN.md` —
+  Phases 3–9 with tasks, exit criteria, test-first requirements,
+  effort estimates, and the v1.0 release checklist.
+
+**Verdict:** NOT PRODUCTION READY. Strong single-developer local
+tool; Phases 0–2 of the 2026-08-26 remediation are genuinely
+shipped (C1, C2, H1 wiring, H5, H6, F1–F4). Phases 3–7 were never
+started, and the partial Phase-3 landing is runtime-broken.
+
+| Phase | Theme | ADR | Status | Findings |
+|---|---|---|---|---|
+| 3 | Build/install/test isolation + CI can see the product | 0038 | **next** | R1, R2, R5, R6 |
+| 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | pending (after 3) | H7, H8, H9 |
+| 5 | Frontend correctness + strict TS | 0040 | pending (after 3, 4) | H10 + FE mediums |
+| 6 | Tool/MCP hardening + in-container plane truth | 0041 | pending (after 3; parallel with 4) | R8, H2, H3, H4, H11 |
+| 7 | Web/session robustness | 0042 | pending (after 6) | TOCTOU, Host, stop, eviction |
+| 8 | Ops & release plumbing | 0043 | pending (after 3) | host Dockerfile, shutdown, scans |
+| 9 | Docs alignment + release evidence | 0044 | pending (after 3-8) | doc drift table |
+
+**Release-blocking (4 critical, all independently verified):**
+
+1. **R1** — wheel excludes `docker/*.Dockerfile` + `iptables-init.sh`
+   → any non-editable install cannot build tier images (verified by
+   installing the built wheel into a clean venv).
+2. **R2** — `pnpm build` fails with 8 TypeScript errors; the SPA does
+   not compile. `StreamEvent` is missing `absolute_target` /
+   `effective_cwd` / `allowed_actions`; `tokens.cache_hit` used
+   without a guard. `tsconfig.app.json` has no `strict`.
+3. **R3/R4** — retry/rerun/export 500 (unexpected kwargs; `dict(dataclass)`);
+   queue never drains (request-scoped deps from a worker thread);
+   cost caps never fire and the dashboard always reports $0
+   (`run.tokens` does not exist). All shipped with green tests because
+   the tests mock below the seam.
+4. **R5/R6** — 98 Python tests error at setup because `conftest.py`
+   does not set `SMOLCODE_EXECUTOR=local`; CI has no frontend job, no
+   tier-image job, and no dependency/security scanning.
+
+**Root cause (the thing to actually fix):** the dominant failure mode
+has shifted from "controls not wired" (2026-08-26) to "tests that
+mock below the seam, so green CI certified code that cannot run."
+Phase 3 makes the build/install/test/CI machinery able to fail before
+any feature fix is trusted.
+
+**Newly surfaced during this review (not in the 2026-08-26 plan):**
+
+- **R7** — the web server never calls `ensure_internal_network()`
+  (`server.py:98-112`), so restricted web runs fail on a fresh Docker
+  host. Fail-closed but the default web path is broken.
+- **R8** — the serialized destructive gate imports `smolcode` inside
+  the container, but the tier images never install it and the project's
+  own `prompting.py` / `sandbox_guard.py` say it is not there. No
+  bypass, but ADR 0035's "every plane" guarantee is unsubstantiated.
+
+**Explicitly deferred (documented as accepted risk in the plan):**
+auth/CSRF/non-loopback binding, full process-global `SessionState`
+removal, multi-user collab, Monaco, touch DnD, dark mode.
+
+**Reporting convention (unchanged):** each shipped phase updates this
+block with its commit ref + ADR (0038–0044), and writes its ADR at
+the START of the phase.
 
 ---
 

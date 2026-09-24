@@ -287,6 +287,13 @@ export interface StreamEvent {
   approved?: boolean
   reason?: string
   timeout_s?: number
+  // Phase 3 F3 (decision 0036): approval.requested outside_root hints.
+  // The backend sends these on every `approval.requested` frame with
+  // kind === 'outside_root' (web/agent_runner.py:756-758). All three are
+  // optional so pre-F3 / legacy servers (which omit them) still type-check.
+  absolute_target?: string
+  effective_cwd?: string | null
+  allowed_actions?: string[]
   // M10: diff proposal fields
   path?: string
   rel_path?: string

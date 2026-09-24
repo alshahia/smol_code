@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Python dependencies resolved through uv.lock (smolcode/pyproject.toml).
+  - package-ecosystem: pip
+    directory: /smolcode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python-minor:
+        update-types:
+          - minor
+          - patch
+  # Frontend dependencies resolved through pnpm-lock.yaml (smolcode/web).
+  - package-ecosystem: npm
+    directory: /smolcode/web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      web-minor:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

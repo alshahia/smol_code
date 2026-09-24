@@ -45,6 +45,9 @@ def client(tmp_path, monkeypatch):
             "HF_TOKEN",
         ):
             monkeypatch.delenv(k, raising=False)
+    # Phase 3 (decision 0038, R5): re-apply the local executor default;
+    # the clear loop above removes it (the autouse fixture set it first).
+    monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")
     from smolcode.model_catalog import clear_cache

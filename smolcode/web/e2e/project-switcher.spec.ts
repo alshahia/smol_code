@@ -1,4 +1,4 @@
-﻿// Phase 4 F4 (decision 0037): Playwright spec for the outside-workspace project selector.
+// Phase 4 F4 (decision 0037): Playwright spec for the outside-workspace project selector.
 
 import { test, expect } from '@playwright/test'
 import { mockBackend, waitForAppShell } from './_helpers'
@@ -52,7 +52,9 @@ test('outside-workspace notice does NOT appear for in-workspace path', async ({ 
   await page.goto('/')
   await waitForAppShell(page)
   await page.getByLabel(/New project root path/i).fill('C:/smolcode/ws/sub/file.py')
-  await expect(page.queryByRole('note')).resolves.toBeNull()
+  // A locator, not a Page method: queryByRole lives on testing-library
+  // queries, not on Playwright's Page. Assert the note element has no match.
+  await expect(page.getByRole('note')).toHaveCount(0)
 })
 
 test('Browse + Path inputs are present (Phase 4 affordance)', async ({ page }) => {

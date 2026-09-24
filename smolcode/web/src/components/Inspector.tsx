@@ -171,10 +171,12 @@ export function Inspector({
               <div className="kv">
                 <span>steps:</span> <code>{stepCount}</code>
               </div>
-              {/* Phase 3 F2 (decision 0036): cache_hit badge. Only render
-                  when > 0 -- the field is additive; pre-F2 servers omit it
-                  entirely and the SPA renders nothing. */}
-              {tokens.cache_hit > 0 && (
+              {/* Phase 3 F2 (decision 0036): cache_hit badge. The field is
+                  optional and additive; pre-F2 servers omit it entirely and
+                  the SPA renders nothing. Guard for undefined, not just 0 --
+                  `undefined > 0` is false but reading .toLocaleString() on
+                  undefined is a TypeError (tsc TS18048 under strict). */}
+              {tokens.cache_hit != null && tokens.cache_hit > 0 && (
                 <div className="kv">
                   <span>cache:</span> <code>{tokens.cache_hit.toLocaleString()}</code>
                 </div>

@@ -444,9 +444,13 @@ class TestSettings:
 
 class TestUploadsCli:
     def setup_method(self):
+        # Phase 3 (decision 0038): raw os.environ deletion (no monkeypatch
+        # in setup_method) also removed the executor default, so re-apply
+        # it -- the CLI path under test must not reach for tier images.
         for k in list(os.environ):
             if k.startswith("SMOLCODE_"):
                 del os.environ[k]
+        os.environ["SMOLCODE_EXECUTOR"] = "local"
 
     def test_uploads_path(self, tmp_path, capsys):
         os.environ["SMOLCODE_WORKSPACE"] = str(tmp_path)

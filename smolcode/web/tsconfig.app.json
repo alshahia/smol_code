@@ -8,6 +8,14 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
+    /* Phase 3 (decision 0038): the 8 errors the 2026-09-24 review found
+       (StreamEvent.absolute_target / effective_cwd / allowed_actions +
+       tokens.cache_hit) were possible only because strict was off and
+       vitest does not type-check. Strict is the gate that keeps the next
+       set from shipping. `noUncheckedIndexedAccess` is deferred: it is a
+       follow-up, not part of this adoption. */
+    "strict": true,
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

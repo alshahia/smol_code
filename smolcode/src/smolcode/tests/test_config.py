@@ -8,7 +8,11 @@ from smolcode.config import (
 )
 
 
-def test_defaults_resolve_when_no_env_set(_isolate_env):
+def test_defaults_resolve_when_no_env_set(_isolate_env, monkeypatch):
+    # This test pins the *shipped* defaults, so drop the test-suite
+    # executor default (_isolate_env sets local) and let load_settings
+    # resolve its own default.
+    monkeypatch.delenv("SMOLCODE_EXECUTOR", raising=False)
     s = load_settings()
     assert s.provider == "opencode-go"
     assert s.model == "deepseek-v4-flash"

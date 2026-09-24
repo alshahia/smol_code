@@ -38,6 +38,9 @@ class TestCreateApp:
         for k in list(os.environ):
             if k.startswith("SMOLCODE_"):
                 monkeypatch.delenv(k, raising=False)
+        # Phase 3 (decision 0038, R5): re-apply the local executor default;
+        # the clear loop above removes it (the autouse fixture set it first).
+        monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
         with tempfile.TemporaryDirectory() as tmp:
             monkeypatch.setenv("SMOLCODE_WORKSPACE", tmp)
             app = create_app()

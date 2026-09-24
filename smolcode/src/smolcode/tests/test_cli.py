@@ -7,7 +7,11 @@ import yaml
 from smolcode.cli import main
 
 
-def test_print_config_prints_yaml(_isolate_env, capsys):
+def test_print_config_prints_yaml(_isolate_env, monkeypatch, capsys):
+    # This test pins the *shipped* defaults, so drop the test-suite
+    # executor default (_isolate_env sets local) and let load_settings
+    # resolve its own default.
+    monkeypatch.delenv("SMOLCODE_EXECUTOR", raising=False)
     rc = main(["--print-config"])
     assert rc == 0
     out = capsys.readouterr().out

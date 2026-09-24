@@ -14,6 +14,9 @@ def client(tmp_path, monkeypatch):
     for k in list(os.environ):
         if k.startswith("SMOLCODE_"):
             monkeypatch.delenv(k, raising=False)
+    # Phase 3 (decision 0038, R5): re-apply the local executor default;
+    # the clear loop above removes it (the autouse fixture set it first).
+    monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
     ws = tmp_path / "ws"
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(ws))
     monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")

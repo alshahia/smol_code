@@ -1,16 +1,18 @@
-# Continuous integration for smolcode (Phase 0 of the 2026-08-26 remediation plan).
+# Continuous integration for smolcode.
 #
-# Job layout mirrors docs/reviews/2026-08-26-full-app-review/REMEDIATION-PLAN.md:
-#   lint            - ruff check + format check on src (same as `make quality`)
-#   tests           - unit suite, docker/shellcheck-marked tests excluded or self-skipped
-#   sandbox-contract- shellcheck on iptables-init.sh + elevated firewall contract
-#                     tests (they build their own smolcode:elevated-test image)
-#   coverage        - full suite with the coverage gate; NON-BLOCKING until the
-#                     real baseline is measured after Phase 0 (see TODO below).
+# Phase 0 (2026-08-26 plan): lint / tests / sandbox-contract / coverage.
+# Phase 3 (decision 0038, 2026-09-24 review R2/R5/R6) added:
+#   web         - frontend install + lint + typecheck + build + unit + e2e
+#                 (R2: `pnpm build` failed with 8 TS errors and vitest did not
+#                  type-check, so 114/114 tests passed on an uncompilable tree)
+#   tier-images - every sandboxed tier image BUILDS on a real daemon (R6: CI
+#                 never built full_access; decision 0035 proved it builds)
+#   packaging   - the wheel installs in a clean venv and carries the tier
+#                 Dockerfiles (R1: `images hash` failed with build input missing)
+#   audit       - pip-audit against the lockfile + pnpm audit (R6: no scanning)
 #
-# NOTE: docker/full_access.Dockerfile does not build as written (review finding
-# C2) so image builds are intentionally left to the contract tests' own scoped
-# build of the elevated image only.
+# The suite defaults to SMOLCODE_EXECUTOR=local (tests/conftest.py), so every
+# job here runs without a Docker daemon except tier-images and sandbox-contract.
 
 name: CI
 
@@ -60,6 +62,8 @@ jobs:
       - name: Unit suite (docker-marked tests deselected)
         # shellcheck-marked tests self-skip when the binary is absent
         # (windows); ubuntu runners ship shellcheck so they run there.
+        # No Docker daemon is required: conftest defaults the suite to the
+        # local executor (decision 0038, review R5).
         run: uv run pytest src/smolcode/tests -m "not docker" -q
 
   sandbox-contract:
@@ -88,7 +92,8 @@ jobs:
     timeout-minutes: 40
     # Baseline verified locally 2026-08-26: full suite exits 0 under
     # --cov-fail-under=80 (1227 passed / 5 skipped), so 80 blocks
-    # regressions without blocking green builds.
+    # regressions. This gate is BLOCKING (an earlier header called it
+    # non-blocking, which was stale).
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -100,3 +105,155 @@ jobs:
         run: >
           uv run pytest src/smolcode/tests -m "not docker" -q
           --cov=smolcode --cov-report=term-missing --cov-fail-under=80
+
+  web:
+    name: web (install, lint, typecheck, build, unit, e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: smolcode/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: smolcode/web/pnpm-lock.yaml
+      - name: Install (frozen lockfile)
+        # Fails if pnpm-workspace.yaml (allowBuilds: esbuild) is missing or
+        # the lockfile drifts from package.json -- the review found a fresh
+        # clone could not install at all (ERR_PNPM_IGNORED_BUILDS).
+        run: pnpm install --frozen-lockfile
+      - name: Lint (oxlint)
+        run: pnpm lint
+      - name: Typecheck (tsc -b, strict)
+        # Standalone so a future change to `build` cannot mask type errors;
+        # `strict: true` landed with decision 0038.
+        run: pnpm typecheck
+      - name: Production build
+        run: pnpm build
+      - name: Unit tests (vitest)
+        run: pnpm test
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: E2E (chromium on PRs, full matrix on main)
+        # The e2e suite mocks the backend API; it is a frontend smoke layer,
+        # not an integration test against the FastAPI server (see Phase 5/7).
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pnpm test:e2e --project=chromium
+          else
+            pnpm test:e2e
+          fi
+
+  tier-images:
+    name: tier images (docker build of all three tiers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Docker daemon reachable
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::error::docker CLI missing on runner"
+            exit 1
+          fi
+          docker version
+      - name: Tier image contract tests
+        # test_tier_images_docker.py builds each tier and checks the
+        # source-hash label, command allowlist, and the internal-network
+        # egress posture; test_network_posture.py asserts the bridge
+        # topology. Both self-skip only when the daemon is unreachable.
+        run: >
+          uv run pytest -m docker
+          src/smolcode/tests/test_tier_images_docker.py
+          src/smolcode/tests/test_network_posture.py -v
+      - name: All three tier images build
+        # The contract tests above skip per-tier when a build fails (host
+        # egress constraints), so this explicit gate is what makes a broken
+        # full_access.Dockerfile red. R6: CI previously never built it.
+        run: |
+          uv run python -m smolcode.images ensure --tier restricted
+          uv run python -m smolcode.images ensure --tier elevated
+          uv run python -m smolcode.images ensure --tier full_access
+
+  packaging:
+    name: packaging (wheel installs in a clean venv)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+      - name: Install wheel into a throwaway venv
+        run: |
+          uv venv /tmp/smolcode-wheel
+          uv pip install --python /tmp/smolcode-wheel/bin/python dist/*.whl
+      - name: Tier build context ships in the wheel
+        # R1: this failed with "build input missing: .../docker/restricted.
+        # Dockerfile" for every pip-installed smolcode until package-data
+        # was declared. This step is the regression guard.
+        run: |
+          /tmp/smolcode-wheel/bin/python -m smolcode.images hash restricted
+          /tmp/smolcode-wheel/bin/python -m smolcode.images hash elevated
+          /tmp/smolcode-wheel/bin/python -m smolcode.images hash full_access
+      - name: CLI runs from the wheel with no provider key
+        # The console script, not `python -m smolcode.cli`: the module has no
+        # __main__ guard, so running it as a module prints argparse help and
+        # exits 2 regardless of the arguments.
+        run: /tmp/smolcode-wheel/bin/smolcode --print-config
+      - name: images ensure exits 6 (not a traceback) with no daemon
+        # The module CLI used to print a raw DockerException traceback when
+        # the daemon was down; decision 0038 routes it through ImageBuildError.
+        run: |
+          set +e
+          /tmp/smolcode-wheel/bin/python -m smolcode.images ensure --tier restricted
+          rc=$?
+          set -e
+          if [ "$rc" -ne 6 ]; then
+            echo "::error::expected exit 6 from images ensure, got $rc"
+            exit 1
+          fi
+
+  audit:
+    name: audit (pip-audit, pnpm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: smolcode/web/pnpm-lock.yaml
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: pip-audit (locked python dependencies)
+        # Advisory gate: report findings, do not block the build. Triage in
+        # Phase 9 (patch / pinned exception / accept with expiry).
+        continue-on-error: true
+        run: |
+          uv export --frozen --no-emit-project --no-hashes -o /tmp/req.txt
+          uv run --with pip-audit pip-audit -r /tmp/req.txt
+      - name: pnpm audit (high severity or worse)
+        continue-on-error: true
+        working-directory: smolcode/web
+        run: pnpm audit --audit-level=high

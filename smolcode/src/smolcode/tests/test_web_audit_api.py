@@ -40,6 +40,9 @@ def _make_client_with_audit(tmp_path, monkeypatch, *, with_sink: bool = True):
     for k in list(os.environ):
         if k.startswith("SMOLCODE_"):
             monkeypatch.delenv(k, raising=False)
+    # Phase 3 (decision 0038, R5): re-apply the local executor default;
+    # the clear loop above removes it (the autouse fixture set it first).
+    monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("SMOLCODE_UPLOAD_MAX_BYTES", "1048576")
     # Phase 2 (H5): create_app builds its own sink by default; keep

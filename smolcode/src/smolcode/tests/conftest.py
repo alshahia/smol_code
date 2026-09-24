@@ -42,6 +42,15 @@ def _isolate_env(monkeypatch, tmp_path):
         monkeypatch.delenv(var, raising=False)
     # Point workspace at a fresh tmp dir
     monkeypatch.setenv("SMOLCODE_WORKSPACE", str(tmp_path / "ws"))
+    # Phase 3 (decision 0038, review R5): default the suite to the local
+    # executor. create_app()'s lifespan calls ensure_tier_images when the
+    # executor is docker, so every TestClient(app) boot tried to build the
+    # tier images; with no Docker daemon that surfaced as ~98 setup
+    # errors/failures on any Docker-less machine (including CI's
+    # windows-latest / ubuntu-latest runners) rather than as real test
+    # results. Tests that genuinely need the docker executor request the
+    # docker_executor fixture below and are marked @pytest.mark.docker.
+    monkeypatch.setenv("SMOLCODE_EXECUTOR", "local")
     # Phase 2 (H5): create_app now builds a real AuditSink; keep the
     # default log inside tmp so tests never write logs/audit.jsonl
     # into the repo working tree.
@@ -49,3 +58,16 @@ def _isolate_env(monkeypatch, tmp_path):
     # Disable dotenv loading so tests do not pick up the real parent .env
     monkeypatch.setattr(_config_module, "load_dotenv_into_environ", lambda *a, **kw: None)
     return tmp_path
+
+
+@pytest.fixture
+def docker_executor(monkeypatch):
+    """Opt back in to the docker executor for tests that need it.
+
+    _isolate_env runs first (autouse) and sets SMOLCODE_EXECUTOR=local;
+    this fixture flips it back for the duration of one test. Pair it with
+    @pytest.mark.docker so the test is deselected in Docker-less runs
+    instead of failing at setup.
+    """
+    monkeypatch.setenv("SMOLCODE_EXECUTOR", "docker")
+    return "docker"

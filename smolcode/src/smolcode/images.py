@@ -142,7 +142,22 @@ def _get_client(docker_client=None):
         return docker_client
     import docker
 
-    return docker.from_env()
+    # Phase 3 (decision 0038, review R1): docker.from_env() raises a raw
+    # DockerException (e.g. "pipe dockerDesktopLinuxEngine not found") when
+    # the daemon is down. It used to escape both the module CLI and
+    # ensure_tier_images as an unhandled traceback because the try/except
+    # in _main only covered ImageBuildError. Wrap it here so every caller
+    # gets the documented ImageBuildError -> exit code 6 path. Message says
+    # "docker" explicitly so operators can tell an unreachable daemon from
+    # a build-context problem.
+    try:
+        return docker.from_env()
+    except Exception as e:
+        raise ImageBuildError(
+            "cannot reach the Docker daemon (" + type(e).__name__ + ": " + str(e) + "). "
+            "Start Docker (or set DOCKER_HOST) and retry; smolcode refuses to run "
+            "sandboxed tiers on unverified images."
+        ) from e
 
 
 def image_is_current(client, tag, expected_hash):

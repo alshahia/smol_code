@@ -54,6 +54,21 @@ dev-dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Phase 3 (decision 0038, review R1): the tier Dockerfiles + iptables-init.sh
+# are the build CONTEXT that images.py resolves relative to the installed
+# package (`Path(__file__).parent / "docker"`). Without package-data they
+# were absent from the wheel, so `images hash <tier>` / `ensure` failed with
+# "build input missing" for every pip-installed smolcode. List every file
+# in _TIER_CONTEXT_FILES (images.py) explicitly -- a *.Dockerfile glob would
+# also work but an explicit list keeps the contract visible next to the code.
+[tool.setuptools.package-data]
+smolcode = [
+    "docker/restricted.Dockerfile",
+    "docker/elevated.Dockerfile",
+    "docker/full_access.Dockerfile",
+    "docker/iptables-init.sh",
+]
+
 [tool.pytest.ini_options]
 # Coverage is enforced by the Makefile `test` target and the CI coverage
 # job, NOT here: a global --cov-fail-under makes every subset/partial run
