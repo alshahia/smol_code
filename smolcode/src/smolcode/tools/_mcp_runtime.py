@@ -81,6 +81,13 @@ class MCPStdioServer:
     command: str
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    # Phase 6 (6.5): host env var NAMES this server is permitted to see.
+    # Default-deny -- see _build_child_env. Previously connect() copied the
+    # entire host environment, handing every MCP server every API key the
+    # operator had exported.
+    env_allow: tuple[str, ...] = ()
+    # Phase 6 (6.5): this field existed but nothing read it. _recv_line did a
+    # blocking readline(), so a wedged server hung the agent indefinitely.
     timeout_s: float = 30.0
 
     # Filled in on connect().
@@ -91,12 +98,60 @@ class MCPStdioServer:
 
     # --- lifecycle ---
 
+    # Variables any subprocess needs in order to start at all. This is a
+    # launch floor, not a policy grant: dropping PATH would make every MCP
+    # server fail to spawn, which is an outage, not a security win. Nothing
+    # here carries a credential.
+    _BASE_ENV = (
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        "SystemRoot",
+        "PATHEXT",
+        "ComSpec",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "ProgramFiles",
+        "ProgramW6432",
+        "ProgramData",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+    )
+
+    def _build_child_env(self) -> dict:
+        # Phase 6, 6.5: build the child environment, DEFAULT-DENY.
+        #
+        # The pre-fix line was 'env = dict(os.environ)', which handed every
+        # MCP server -- third-party code that the model can invoke -- the
+        # full host environment, including OPENAI_API_KEY, AWS_* and
+        # anything else the operator had exported. An MCP server is
+        # untrusted input; it must receive what the operator declared, not
+        # everything.
+        #
+        # Explicit env entries are literal values and win last, so an
+        # operator can always override an inherited var deliberately.
+        env = {}
+        for key in self._BASE_ENV:
+            val = os.environ.get(key)
+            if val is not None:
+                env[key] = val
+        for key in self.env_allow:
+            val = os.environ.get(key)
+            if val is not None:
+                env[key] = val
+        env.update(self.env)
+        return env
+
     def connect(self) -> None:
         """Spawn the subprocess and run the MCP initialize handshake."""
         if self._proc is not None and self._proc.poll() is None:
             return  # already connected
-        env = dict(os.environ)
-        env.update(self.env)
+        env = self._build_child_env()
         # text=True + bufsize=1 -> line-buffered text I/O.
         # stderr=DEVNULL: the MCP server logs go to stderr, we drop them.
         self._proc = subprocess.Popen(
@@ -164,7 +219,33 @@ class MCPStdioServer:
         proc = self._proc
         if proc is None or proc.stdout is None:
             raise MCPRuntimeError("MCP server " + repr(self.name) + ": not connected")
-        line = proc.stdout.readline()
+        # Phase 6 (6.5): enforce timeout_s, which used to be a field nothing
+        # read. A blocking readline() against a wedged server hung the whole
+        # agent with no way out. A daemon reader thread gives us a deadline
+        # on both POSIX and Windows, because select() does not work on
+        # Windows pipes. On timeout we abandon the connection deliberately:
+        # the late response can no longer be matched to its request, so the
+        # stream is desynchronised anyway and close() is the honest move.
+        result = {}
+        done = threading.Event()
+
+        def _read() -> None:
+            try:
+                result["line"] = proc.stdout.readline()
+            except BaseException as exc:
+                result["error"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=_read, daemon=True, name="mcp-recv").start()
+        budget = self.timeout_s if self.timeout_s and self.timeout_s > 0 else None
+        if not done.wait(budget):
+            raise MCPRuntimeError(
+                "MCP server " + repr(self.name) + ": read timed out after " + str(self.timeout_s) + "s"
+            )
+        if "error" in result:
+            raise result["error"]
+        line = result.get("line", "")
         if not line:
             raise MCPRuntimeError("MCP server " + repr(self.name) + ": closed stdout unexpectedly")
         return line.rstrip("\n").rstrip("\r")

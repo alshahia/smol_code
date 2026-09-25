@@ -84,9 +84,16 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
     # sandbox container where SessionState.confirm_callback is unreachable.
     # Restricted and elevated deny by default; a session that has been
     # explicitly auto-approved is the only thing that grants "allow".
-    from ..session import get_auto_approve
+    #
+    # Note: current_session() returns a default session with
+    # auto_approve_destructive=False when none is scoped, so an agent with no
+    # active session correctly gets "deny" rather than an AttributeError.
+    # get_auto_approve() is NOT the right accessor here -- it is keyed by
+    # run_id, and calling it with no argument raised TypeError inside
+    # build_tools, which cascaded into every test that builds a toolset.
+    from ..session import current_session
 
-    _session_policy = "allow" if get_auto_approve() else "deny"
+    _session_policy = "allow" if current_session().auto_approve_destructive else "deny"
     tools.extend(
         build_shell_tools(
             command_policy,
@@ -105,7 +112,7 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
         )
     )
     if mcp_configs:
-        tools.extend(build_mcp_tools(tier, mcp_configs))
+        tools.extend(build_mcp_tools(tier, mcp_configs, destructive_policy=_session_policy))
     return tools
 
 

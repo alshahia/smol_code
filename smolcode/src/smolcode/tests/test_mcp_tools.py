@@ -30,8 +30,8 @@ from smolcode.tools.mcp_tools import (
     _json_schema_to_inputs,
     _MCPToolBase,
     build_mcp_tools,
-    classify_tool_name,
     load_mcp_config,
+    tool_is_allowed,
 )
 
 
@@ -45,30 +45,49 @@ def _clean_registry():
     close_all()
 
 
-# --- classify_tool_name ----------------------------------------------------
+# --- tool_is_allowed (Phase 6, 6.5) ---------------------------------------
+#
+# This replaces the old TestClassify block, which asserted the
+# get_/search_/read_/list_ prefix heuristic. The heuristic is gone: it
+# inferred safety from a name the MCP SERVER chooses, so it was a
+# permission check performed using attacker-controlled input. Exposure is
+# now an explicit operator allowlist. See test_mcp_hardening_phase6.py.
 
 
-class TestClassify:
-    def test_readonly_prefix_ok(self):
-        for name in ("get_doc", "search_docs", "read_file", "list_items"):
-            assert classify_tool_name(name, "readonly") == "ok"
+class TestAllowlist:
+    def _cfg(self, allow=(), mode="readonly"):
+        return MCPServerConfig(
+            name="srv",
+            transport="stdio",
+            command=("echo",),
+            url=None,
+            tools_mode=mode,
+            allow=allow,
+        )
 
-    def test_readonly_non_prefix_violates(self):
-        for name in ("delete_user", "create_doc", "fetch", "lookup"):
-            assert classify_tool_name(name, "readonly") == "violates_mode"
+    def test_empty_allowlist_exposes_nothing(self):
+        cfg = self._cfg()
+        for name in ("get_doc", "search_docs", "read_file", "delete_user"):
+            assert not tool_is_allowed(cfg, name), name
 
-    def test_readwrite_accepts_any_non_shadowed(self):
-        assert classify_tool_name("delete_user", "readwrite") == "ok"
-        assert classify_tool_name("create_doc", "readwrite") == "ok"
+    def test_allowlisted_names_are_exposed(self):
+        cfg = self._cfg(allow=("get_doc", "search_docs"))
+        assert tool_is_allowed(cfg, "get_doc")
+        assert tool_is_allowed(cfg, "search_docs")
 
-    def test_full_accepts_any_non_shadowed(self):
-        assert classify_tool_name("rm_rf", "full") == "ok"
-        assert classify_tool_name("execute_shell_command", "full") == "ok"
+    def test_mode_no_longer_grants_access_by_itself(self):
+        # readwrite/full used to mean 'any non-shadowed name is ok'. They
+        # now still require an explicit allowlist entry.
+        for mode in ("readwrite", "full"):
+            cfg = self._cfg(mode=mode)
+            assert not tool_is_allowed(cfg, "delete_user")
+            assert tool_is_allowed(self._cfg(allow=("delete_user",), mode=mode), "delete_user")
 
-    def test_shadowed_rejects_under_any_mode(self):
+    def test_shadowed_rejects_even_when_allowlisted(self):
         for mode in TOOLS_MODES:
-            assert classify_tool_name("final_answer", mode) == "shadowed"
-            assert classify_tool_name("python_interpreter", mode) == "shadowed"
+            cfg = self._cfg(allow=("final_answer", "python_interpreter"), mode=mode)
+            assert not tool_is_allowed(cfg, "final_answer")
+            assert not tool_is_allowed(cfg, "python_interpreter")
 
     def test_shadow_set_contents(self):
         assert "final_answer" in SHADOWED_TOOL_NAMES
@@ -335,18 +354,23 @@ class TestBuildMCPTools:
             docker_image="x:y",
         )
 
+    def _demo_config(self, mode="readonly", allow=("get_doc", "search_docs")):
+        # allow is now REQUIRED to expose anything (Phase 6, 6.5, default-deny).
+        # Listing the two demo tools is the operator explicitly reviewing this
+        # server inventory, which is exactly the step the prefix heuristic
+        # used to skip.
+        return MCPServerConfig(
+            name="docs",
+            transport="stdio",
+            command=tuple(DEMO_CMD),
+            url=None,
+            tools_mode=mode,
+            allow=allow,
+        )
+
     def test_build_returns_two_demo_tools(self, tmp_path):
         tier = self._restricted_tier(tmp_path)
-        configs = [
-            MCPServerConfig(
-                name="docs",
-                transport="stdio",
-                command=tuple(DEMO_CMD),
-                url=None,
-                tools_mode="readonly",
-            )
-        ]
-        tools = build_mcp_tools(tier, configs)
+        tools = build_mcp_tools(tier, [self._demo_config()])
         names = sorted(t.name for t in tools)
         assert names == ["docs__get_doc", "docs__search_docs"]
         for t in tools:
@@ -354,18 +378,22 @@ class TestBuildMCPTools:
             assert t.inputs  # both demo tools have inputs
             assert "description" in dir(t)  # set on instance
 
+    def test_no_allowlist_exposes_nothing(self, tmp_path):
+        # The regression this replaces: a server with no allowlist used to
+        # expose every get_/search_/read_/list_-prefixed tool it happened to
+        # serve. Default-deny means the inventory is reviewed, not inferred.
+        tier = self._restricted_tier(tmp_path)
+        tools = build_mcp_tools(tier, [self._demo_config(allow=())])
+        assert tools == []
+
+    def test_partial_allowlist_exposes_only_listed_tools(self, tmp_path):
+        tier = self._restricted_tier(tmp_path)
+        tools = build_mcp_tools(tier, [self._demo_config(allow=("search_docs",))])
+        assert [t.name for t in tools] == ["docs__search_docs"]
+
     def test_forward_returns_real_text(self, tmp_path):
         tier = self._restricted_tier(tmp_path)
-        configs = [
-            MCPServerConfig(
-                name="docs",
-                transport="stdio",
-                command=tuple(DEMO_CMD),
-                url=None,
-                tools_mode="readonly",
-            )
-        ]
-        tools = build_mcp_tools(tier, configs)
+        tools = build_mcp_tools(tier, [self._demo_config()])
         search = next(t for t in tools if t.name == "docs__search_docs")
         out = search(query="docker")
         assert "docker executor" in out

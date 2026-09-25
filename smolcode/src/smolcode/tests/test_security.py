@@ -31,6 +31,7 @@ import sys
 import pytest
 
 from smolcode import audit as audit_mod
+from smolcode import destructive
 from smolcode import redact as redact_mod
 from smolcode.config import _default_tiers, load_settings
 from smolcode.tools import mcp_tools, policy, shell
@@ -209,33 +210,55 @@ def test_path_policy_rejects_absolute_outside(tmp_path):
         pol.resolve_under_workspace("/etc/passwd")
 
 
-# --- SEC-4: MCP readonly mode rejects delete_* (and other write names) ----
+# --- SEC-4: MCP exposure is an operator allowlist, not a name guess -------
+#
+# Phase 6 (6.5) replaced the get_/search_/read_/list_ prefix check. The
+# prefix check was SEC-4 as originally written, and it was also the hole:
+# the name is chosen by the MCP server, the untrusted side of the boundary,
+# so a destructive tool named get_nuke satisfied it. Exposure is now
+# default-deny -- only names the operator listed are exposed at all -- and
+# destructive-looking names are routed through smolcode.destructive.
 
 
-def test_mcp_readonly_rejects_delete_prefix():
-    """A tool named delete_anything must be rejected by readonly."""
-    assert mcp_tools.classify_tool_name("delete_file", "readonly") == "violates_mode"
-    assert mcp_tools.classify_tool_name("delete_anything", "readonly") == "violates_mode"
-    assert mcp_tools.classify_tool_name("drop_table", "readonly") == "violates_mode"
-    assert mcp_tools.classify_tool_name("write_file", "readonly") == "violates_mode"
+def _cfg(allow=(), mode="readonly"):
+    return mcp_tools.MCPServerConfig(
+        name="srv",
+        transport="stdio",
+        command=("echo",),
+        url=None,
+        tools_mode=mode,
+        allow=allow,
+    )
 
 
-def test_mcp_readonly_accepts_safe_prefixes():
-    for name in ("get_user", "search_docs", "read_file", "list_items", "list_all"):
-        assert mcp_tools.classify_tool_name(name, "readonly") == "ok", name
+def test_mcp_unlisted_tools_are_never_exposed():
+    """Default-deny: no allowlist means no tools, whatever their name."""
+    for name in ("delete_file", "get_nuke", "read_file", "drop_table"):
+        assert not mcp_tools.tool_is_allowed(_cfg(), name), name
 
 
-def test_mcp_readwrite_accepts_delete_prefix():
-    """Readwrite mode (elevated tier) permits delete_*."""
-    assert mcp_tools.classify_tool_name("delete_file", "readwrite") == "ok"
-    assert mcp_tools.classify_tool_name("delete_file", "full") == "ok"
+def test_mcp_only_allowlisted_tools_are_exposed():
+    cfg = _cfg(allow=("get_user", "search_docs"))
+    assert mcp_tools.tool_is_allowed(cfg, "get_user")
+    assert mcp_tools.tool_is_allowed(cfg, "search_docs")
+    assert not mcp_tools.tool_is_allowed(cfg, "delete_user")
+    assert not mcp_tools.tool_is_allowed(cfg, "get_everything_else")
 
 
-def test_mcp_shadowed_names_rejected_regardless_of_mode():
-    """Names that would shadow a smolagents built-in are always rejected."""
+def test_mcp_destructive_names_are_gated_even_when_allowlisted():
+    """An allowlisted delete_* is exposed, but the gate still catches it."""
+    cfg = _cfg(allow=("delete_file", "drop_table", "write_file"))
+    for name in ("delete_file", "drop_table", "write_file"):
+        assert mcp_tools.tool_is_allowed(cfg, name), name
+        assert destructive.is_destructive("srv__" + name, {}), name
+
+
+def test_mcp_shadowed_names_rejected_even_if_allowlisted():
+    """A server must not be able to shadow a built-in, even by accident."""
     for mode in ("readonly", "readwrite", "full"):
-        assert mcp_tools.classify_tool_name("final_answer", mode) == "shadowed"
-        assert mcp_tools.classify_tool_name("python_interpreter", mode) == "shadowed"
+        cfg = _cfg(allow=("final_answer", "python_interpreter"), mode=mode)
+        assert not mcp_tools.tool_is_allowed(cfg, "final_answer")
+        assert not mcp_tools.tool_is_allowed(cfg, "python_interpreter")
 
 
 # --- SEC-5: RedactSecretsFilter redacts the four prefixes ------------------

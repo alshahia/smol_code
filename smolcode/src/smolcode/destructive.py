@@ -22,8 +22,10 @@ NOT destructive in v1:
     git_clone / git_fetch / git_checkout (without --).
   - run with python / pytest / ruff / make / pip / npm / node / jq
     (build/test/lint; safe).
-  - All MCP tools (already tier-filtered; don't have host-side
-    power beyond the MCP server's own scope).
+  - All MCP tools -- Phase 6 (6.5) changed this. They were previously
+    skipped here on the grounds that they were already tier-filtered, but
+    that filtering was a name-prefix guess over server-supplied input. They
+    are now filtered by an operator-curated allowlist AND classified here.
 
 Heuristic philosophy: narrow is safer than wide. False negatives
 ("should have prompted but didn't") are recoverable (the user
@@ -33,6 +35,8 @@ side of false positives.
 """
 
 from __future__ import annotations
+
+import re
 
 
 # --- The pattern table -----------------------------------------------------
@@ -108,10 +112,60 @@ _DESTRUCTIVE_FS_FLAGS = frozenset(
 )
 
 
+# Phase 6 (6.5): leading verbs that make an MCP tool destructive.
+#
+# MCP tool names are supplied by the MCP SERVER, i.e. by the untrusted side
+# of the boundary. The pre-fix readonly gate guessed safety from that same
+# name with a get/search/read/list_ prefix regex, so a server could call a
+# destructive tool get_nuke and sail through. This table is deliberately a
+# SECOND line of defence rather than the only one: the operator-curated
+# allowlist is the primary control, and an operator can also mark a tool
+# destructive explicitly via destructive_override.
+_MCP_DESTRUCTIVE_VERBS = frozenset(
+    {
+        "apply",
+        "create",
+        "delete",
+        "deploy",
+        "destroy",
+        "disable",
+        "drop",
+        "enable",
+        "eval",
+        "exec",
+        "execute",
+        "grant",
+        "install",
+        "kill",
+        "merge",
+        "migrate",
+        "publish",
+        "purge",
+        "push",
+        "rebase",
+        "reindex",
+        "remove",
+        "reset",
+        "revoke",
+        "rollback",
+        "rotate",
+        "run",
+        "shutdown",
+        "stop",
+        "terminate",
+        "truncate",
+        "uninstall",
+        "update",
+        "wipe",
+        "write",
+    }
+)
+
+
 # --- The public classifier -------------------------------------------------
 
 
-def is_destructive(tool_name, kwargs):
+def is_destructive(tool_name, kwargs, destructive_override=False):
     """Return True iff the given tool call is destructive.
 
     Args:
@@ -126,8 +180,14 @@ def is_destructive(tool_name, kwargs):
     """
     if not isinstance(tool_name, str) or not isinstance(kwargs, dict):
         return False
+    if destructive_override:
+        return True
     if tool_name in _ALWAYS_DESTRUCTIVE_TOOLS:
         return True
+    if "__" in tool_name:
+        # Phase 6 (6.5): MCP tools are exposed as server__tool. The
+        # server-supplied part is the last segment.
+        return _is_destructive_mcp(tool_name)
     if tool_name == "run":
         return _is_destructive_run(kwargs)
     if tool_name in ("git_reset", "git_checkout"):
@@ -220,6 +280,13 @@ def _is_destructive_run(kwargs):
         return args_str[0].lower() in ("push", "reset")
 
     return False
+
+
+def _is_destructive_mcp(tool_name):
+    """Phase 6 (6.5): classify an exposed MCP tool name."""
+    local = tool_name.split("__", 1)[-1]
+    toks = [t for t in re.split(r"[^a-z0-9]+", local.lower()) if t]
+    return bool(toks) and toks[0] in _MCP_DESTRUCTIVE_VERBS
 
 
 def _is_destructive_git_via_run(kwargs):

@@ -82,8 +82,25 @@ class TestGateDoesNotDrift:
 
     def test_every_case_agrees(self):
         policy = CommandPolicy(
-            ("python", "pytest", "ruff", "git", "rm", "rmdir", "del", "ssh", "scp", "rsync",
-             "docker", "kubectl", "terraform", "ansible", "aws", "gcloud", "az")
+            (
+                "python",
+                "pytest",
+                "ruff",
+                "git",
+                "rm",
+                "rmdir",
+                "del",
+                "ssh",
+                "scp",
+                "rsync",
+                "docker",
+                "kubectl",
+                "terraform",
+                "ansible",
+                "aws",
+                "gcloud",
+                "az",
+            )
         )
         # policy "allow" means a destructive call PROCEEDS. So with
         # allow=True the tool must succeed exactly when is_destructive is

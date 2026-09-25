@@ -6,8 +6,8 @@ Public surface
         Dataclass for one entry in mcp_config.json.
     load_mcp_config(path) -> list[MCPServerConfig]
         JSON loader. Raises MCPConfigError on schema violations.
-    classify_tool_name(name, mode) -> str
-        Returns one of: ok, shadowed, violates_mode.
+    tool_is_allowed(cfg, name) -> bool
+        Phase 6 (6.5) replacement for the old name-prefix classifier.
     SHADOWED_TOOL_NAMES = frozenset({final_answer, python_interpreter})
     build_mcp_tools(tier, configs) -> list[Tool]
         Opens each server, fetches tool list, applies the readonly /
@@ -33,10 +33,11 @@ docs/decisions/0005-m3-mcp-integration.md.
 
 from __future__ import annotations
 
+import fnmatch
 import json
-import re
 import sys
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from typing import Literal
 
 from smolagents.tools import Tool
@@ -48,7 +49,7 @@ from ._bind import bind_attrs
 __all__ = [
     "MCPServerConfig",
     "load_mcp_config",
-    "classify_tool_name",
+    "tool_is_allowed",
     "SHADOWED_TOOL_NAMES",
     "TOOLS_MODES",
     "TIER_ALLOWED_MODES",
@@ -70,19 +71,38 @@ TIER_ALLOWED_MODES: dict[str, tuple[str, ...]] = {
     "full_access": ("readonly", "readwrite", "full"),
 }
 
-# Readonly tool-name prefix check.
-_READONLY_PREFIX_RE = re.compile(r"^(get|search|read|list)_")
+# Phase 6 (6.5): the readonly tool-name prefix check is GONE.
+#
+# It read 'a name beginning get_/search_/read_/list_ is safe', but the name
+# comes from the MCP server, which is the untrusted side of the boundary. A
+# server could ship a destructive tool called get_nuke and pass the gate
+# unimpeded. Safety is now an explicit operator-curated allowlist per
+# server (cfg.allow), and a tool the operator allowlists that still looks
+# destructive is routed through smolcode.destructive instead of trusted.
+# _READONLY_PREFIX_RE was removed rather than left beside the new control,
+# so it cannot be quietly re-adopted.
 
 
 @dataclass(frozen=True)
 class MCPServerConfig:
-    """One MCP server entry from mcp_config.json."""
+    """One MCP server entry from mcp_config.json.
+
+    Phase 6 (6.5) added three fields, all of them default-deny:
+      allow      exact tool names (or shell globs) the operator exposes.
+                Empty means NOTHING is exposed from this server.
+      env        literal env values for the child process.
+      env_allow  host env var NAMES the child may read.
+    """
 
     name: str
     transport: Literal["stdio", "streamable-http"]
     command: tuple[str, ...] | None
     url: str | None
     tools_mode: str
+    allow: tuple[str, ...] = ()
+    env: dict[str, str] = field(default_factory=dict)
+    env_allow: tuple[str, ...] = ()
+    timeout_s: float = 30.0
 
 
 class MCPConfigError(ValueError):
@@ -98,6 +118,15 @@ def _require_str(obj, key, ctx):
 
 def _require_list_of_str(obj, key, ctx):
     val = obj.get(key)
+    if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+        raise MCPConfigError(ctx + ": '" + key + "' must be a list of strings, got " + type(val).__name__)
+    return tuple(val)
+
+
+def _optional_list_of_str(obj, key, ctx):
+    val = obj.get(key)
+    if val is None:
+        return ()
     if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
         raise MCPConfigError(ctx + ": '" + key + "' must be a list of strings, got " + type(val).__name__)
     return tuple(val)
@@ -145,26 +174,66 @@ def load_mcp_config(path):
             command = _require_list_of_str(srv, "command", ctx)
         else:
             url = _require_str(srv, "url", ctx)
-        out.append(MCPServerConfig(name=name, transport=transport, command=command, url=url, tools_mode=mode))
+        # Phase 6 (6.5). allow/env/env_allow/timeout_s are all optional and
+        # all default-deny: an entry that omits them exposes no tools and
+        # passes the child no credentials.
+        allow = _optional_list_of_str(srv, "allow", ctx)
+        env_allow = _optional_list_of_str(srv, "env_allow", ctx)
+        env = {}
+        raw_env = srv.get("env")
+        if raw_env is not None:
+            if not isinstance(raw_env, dict):
+                raise MCPConfigError(ctx + ": 'env' must be an object, got " + type(raw_env).__name__)
+            for k, v in raw_env.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise MCPConfigError(ctx + ": 'env' keys and values must be strings")
+            env = dict(raw_env)
+        timeout_s = 30.0
+        raw_timeout = srv.get("timeout_s")
+        if raw_timeout is not None:
+            if isinstance(raw_timeout, bool) or not isinstance(raw_timeout, (int, float)):
+                raise MCPConfigError(ctx + ": 'timeout_s' must be a number, got " + type(raw_timeout).__name__)
+            if raw_timeout <= 0:
+                raise MCPConfigError(ctx + ": 'timeout_s' must be positive, got " + repr(raw_timeout))
+            timeout_s = float(raw_timeout)
+        out.append(
+            MCPServerConfig(
+                name=name,
+                transport=transport,
+                command=command,
+                url=url,
+                tools_mode=mode,
+                allow=allow,
+                env=env,
+                env_allow=env_allow,
+                timeout_s=timeout_s,
+            )
+        )
     return out
 
 
-def classify_tool_name(name, mode):
-    """Classify an MCP tool name against a server's declared mode.
+def tool_is_allowed(cfg, name):
+    """Phase 6 (6.5): may this server expose this tool to the agent?
 
-    Returns:
-        ok              name is allowed under mode.
-        shadowed        name collides with a smolagents built-in.
-        violates_mode   name does not satisfy the mode's prefix rule.
+    Default-deny. A tool is exposed only if the operator listed it in
+    cfg.allow, either exactly or through a shell glob. An empty allow
+    list exposes NOTHING, which is the correct outcome for a server whose
+    tool inventory the operator has not reviewed.
 
-    Note: violates_mode only ever fires for readonly servers.
+    Returns False for smolagents-reserved names regardless of cfg.allow:
+    a server declaring final_answer must not be able to shadow it, and
+    that must hold even if an operator allowlists it by mistake.
     """
+    if not isinstance(name, str) or not name:
+        return False
     if name in SHADOWED_TOOL_NAMES:
-        return "shadowed"
-    if mode == "readonly":
-        if not _READONLY_PREFIX_RE.match(name):
-            return "violates_mode"
-    return "ok"
+        return False
+    if name in cfg.allow:
+        return True
+    for pattern in cfg.allow:
+        if pattern != name and fnmatch.fnmatchcase(name, pattern):
+            return True
+    return False
 
 
 class _MCPToolBase(Tool):
@@ -188,6 +257,13 @@ class _MCPToolBase(Tool):
     output_type = "string"
     server_id = ""
     tool_name = ""
+    # Phase 6 (6.5): host-decided destructive policy, same contract as the
+    # shell and git tools. Only an explicit "allow" permits a call that
+    # smolcode.destructive classifies as destructive.
+    destructive_policy = "deny"
+    # Operator-declared: this tool mutates or destroys even if its name
+    # does not look like it. Forces the gate regardless of the verb table.
+    force_destructive = False
     # The forward signature is **kwargs (MCP tools can have any schema);
     # smolagents normally rejects this when 'inputs' lists specific keys,
     # but we own the call path on the host and pass kwargs as a dict to
@@ -196,6 +272,24 @@ class _MCPToolBase(Tool):
 
     def forward(self, **kwargs):
         import sys as _sys
+
+        # Phase 6 (6.5): MCP calls are routed through the destructive
+        # classifier. They previously had no gate at all, on the reasoning
+        # that tier filtering already covered them -- but that filtering was
+        # a prefix guess over server-supplied names. MCP tools execute on
+        # the HOST, outside every container, so an ungated one is the worst
+        # case in the system rather than a marginal one.
+        from smolcode.destructive import is_destructive as _is_dest
+
+        if _is_dest(self.name, kwargs, destructive_override=self.force_destructive):
+            if self.destructive_policy != "allow":
+                raise PermissionError(
+                    "destructive MCP tool blocked: "
+                    + str(self.name)
+                    + " (policy="
+                    + repr(self.destructive_policy)
+                    + ")"
+                )
 
         runtime_mod = _sys.modules.get("smolcode.tools._mcp_runtime")
         if runtime_mod is None:
@@ -239,14 +333,33 @@ def _exposed_tool_name(server_name, tool_name):
     return server_name + "__" + tool_name
 
 
+# Phase 6 (6.5): registry ids must be globally unique.
+#
+# The pre-fix form was server_name + '-' + str(counter), and counter was a
+# local that restarted at 0 on every build_mcp_tools() call. Building tools
+# twice for the same server therefore produced the SAME id, and
+# _mcp_runtime.register() silently rebound every already-built Tool to the
+# second server object -- the first agent's tools then called a different
+# server, or a closed one. The counter is kept in the signature only so
+# callers and logs still read naturally; uniqueness comes from uuid4.
+_ID_SALT = uuid.uuid4().hex[:6]
+
+
 def _server_id_for(server_name, counter):
-    return server_name + "-" + str(counter)
+    # counter is deliberately still accepted: it keeps the id readable in
+    # logs and keeps existing call sites honest about which server this is.
+    return server_name + "-" + str(counter) + "-" + _ID_SALT + "-" + uuid.uuid4().hex[:8]
 
 
-def build_mcp_tools(tier, configs):
-    """Open each MCP server, fetch tools, classify, build host-side Tools.
+def build_mcp_tools(tier, configs, destructive_policy="deny"):
+    """Open each MCP server, fetch tools, filter, build host-side Tools.
 
     Per decision 0005 section 4: failures are partial.
+
+    Phase 6 (6.5): destructive_policy is bound into every built tool, so a
+    destructive MCP call obeys the same host-decided contract as run and
+    git_push. MCP tools run on the HOST, outside any container, so this is
+    the boundary that matters most.
     """
     if not configs:
         return []
@@ -270,6 +383,9 @@ def build_mcp_tools(tier, configs):
             name=cfg.name,
             command=cfg.command[0],
             args=list(cfg.command[1:]),
+            env=dict(cfg.env),
+            env_allow=cfg.env_allow,
+            timeout_s=cfg.timeout_s,
         )
         try:
             server.connect()
@@ -297,10 +413,13 @@ def build_mcp_tools(tier, configs):
             raw_name = info.get("name", "")
             if not isinstance(raw_name, str) or not raw_name:
                 continue
-            cls = classify_tool_name(raw_name, cfg.tools_mode)
-            if cls != "ok":
+            if not tool_is_allowed(cfg, raw_name):
                 print(
-                    "mcp: server " + repr(cfg.name) + " tool " + repr(raw_name) + " rejected (" + cls + ")",
+                    "mcp: server "
+                    + repr(cfg.name)
+                    + " tool "
+                    + repr(raw_name)
+                    + " not in the operator allowlist; refusing to expose it",
                     file=sys.stderr,
                 )
                 continue
@@ -322,6 +441,7 @@ def build_mcp_tools(tier, configs):
                     "output_type": output_type,
                     "server_id": server_id,
                     "tool_name": raw_name,
+                    "destructive_policy": str(destructive_policy or "deny"),
                 },
             )
             tools.append(new_cls())
