@@ -285,9 +285,34 @@ Phases 3 and 4 — the `tier-images` and `packaging` jobs have still not had
 a real run, because the Docker daemon is down on this host. Phase 6
 (remaining security/robustness items) is next.
 
-### Phase 6 shipped (`128ae26` + `f5e561a` + `f090b93` + `4fe747b` + `5d84285` + `e8a5726` + `45c93be` + `7681468` + `34b6b42` + `8181ead` + `af33be8`)
+### Phase 6 — PARTIALLY COMPLETE (`128ae26` + `f5e561a` + `f090b93` + `4fe747b` + `5d84285` + `e8a5726` + `45c93be` + `7681468` + `34b6b42` + `8181ead` + `af33be8` + `7c9a74d`)
 
-**Owner:** shipped 2026-09-24. ADR: `docs/decisions/0041-tool-mcp-hardening-and-trust-boundary.md`.
+**Owner:** 2026-09-24. ADR: `docs/decisions/0041-tool-mcp-hardening-and-trust-boundary.md`.
+
+> **Corrected 2026-09-24 after self-audit.** This row was first written as
+> "Phase 6 shipped", and R10/R12 were struck in the review report. Auditing
+> the work against the plan's own checklist — rather than against my memory
+> of what I had done — showed six sub-items undone. The claim was wrong and
+> is now recorded as wrong. The code that shipped is sound; the *description*
+> of it was not.
+
+**Not done, and still open:**
+
+| Plan item | Gap | Severity |
+|---|---|---|
+| 6.1 #2 | No docker-marked test runs a **real `CodeAgent` tool call** inside `smolcode:restricted`. Substituted a `__import__` simulation. The container path is argued and unit-tested, never executed by a real container. | high (unproven core claim) |
+| 6.2 #3 | `remote` is dash-rejected but not validated against `git remote -v`. | medium |
+| 6.2 #4 | No `GIT_CONFIG_GLOBAL=/dev/null`, no `-c core.hooksPath=`. A hostile repo can supply config or hooks. | **high** |
+| 6.2 #5 | No `.git/` write block in `tools/fs.py` — verified absent, the file has no `git` reference at all. | **high** |
+| 6.4 #2 | `UploadsStore.save()` still buffers the whole body; cap is HTTP-layer only. | medium |
+| 6.5 #1 | MCP tools run **on the host** while model code runs in a container. Not sandboxed. Raised as **R13**. | **high** |
+| 6.5 #4/#5 | Superseded servers are not closed; configs not resolved once per run; single-flight lock undocumented. | low |
+
+**Deliberate deviation from the plan:** 6.5 #3 said *keep the prefix regex as
+a second gate*. I deleted it instead and argued the case in code and commit
+— a regex over server-controlled input presented as a security gate is worse
+than no gate, because it reads as defence. Flagged rather than buried; the
+call is reversible if you disagree.
 
 **The headline finding: the sandboxed executor could not start at all.**
 All three tier images sat on `python:3.12-bullseye`, whose pinned `git`
@@ -341,8 +366,10 @@ prompt; container path falls back to the inlined classifier and the bound
   wedged server hung the agent forever.
 
 **Validation:** ruff clean; **pytest 1463 passed, 6 skipped, 0 failed**;
-frontend unchanged this phase and still at **tsc 0 / vitest 139/139 / oxlint
-0 / Playwright 168/168** from Phase 5.
+frontend re-run this phase at **tsc 0 / vitest 139/139 / oxlint 0 warnings**.
+**Playwright e2e was NOT re-run this phase** — the 168/168 figure quoted in
+the first version of this row was carried forward from Phase 5 and should
+not have been presented as current.
 
 **Known limitations, stated rather than buried:**
 
