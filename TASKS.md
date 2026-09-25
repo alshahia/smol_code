@@ -285,6 +285,79 @@ Phases 3 and 4 — the `tier-images` and `packaging` jobs have still not had
 a real run, because the Docker daemon is down on this host. Phase 6
 (remaining security/robustness items) is next.
 
+### Phase 6 shipped (`128ae26` + `f5e561a` + `f090b93` + `4fe747b` + `5d84285` + `e8a5726` + `45c93be` + `7681468` + `34b6b42` + `8181ead` + `af33be8`)
+
+**Owner:** shipped 2026-09-24. ADR: `docs/decisions/0041-tool-mcp-hardening-and-trust-boundary.md`.
+
+**The headline finding: the sandboxed executor could not start at all.**
+All three tier images sat on `python:3.12-bullseye`, whose pinned `git`
+version has been superseded, so `apt-get install git` 404s. This was hidden
+because the docker-marked tests were *skipping* — the daemon was down, and
+a skip is not a failure. Fixed in `128ae26` (bookworm, with the vendor apt
+suite names bound to a `DEBIAN_CODENAME` ARG so they cannot drift again).
+With the daemon up, `test_tier_images_docker.py` genuinely runs: restricted
+and elevated build and execute.
+
+**R8 — the destructive gate did not cross the container boundary.** `run`
+and `git_push` imported `smolcode.destructive` inside `forward()`.
+smolagents serialises that source into the sandbox, where `smolcode` is not
+installed, so the gate raised `ImportError` and **both tools were broken**
+rather than merely unguarded. ADR 0041 considered moving the gate host-side,
+recommended it, and then withdrew it: under `CodeAgent` + `DockerExecutor`
+the host never observes an individual call, so there is no hook at which a
+per-call host gate could run. Option **(b)** was chosen — the tool source
+carries its own enforcement and the host binds the policy.
+
+The gate ended up with **two paths**, because the first cut of (b) was wrong
+in a way the suite caught: it deleted the import outright and took the web
+approval modal's `confirm_callback` with it (8 failures in
+`test_gate_context.py`). The `smolcode` import is now wrapped in
+`try/except ImportError` — host path keeps the real classifier and the real
+prompt; container path falls back to the inlined classifier and the bound
+`destructive_policy`, and **fails closed**.
+
+**What actually shipped, by item:**
+
+- **§6.2 (H2/R10)** flag-shaped operands refused in all nine git tools. Live
+  holes closed included `git diff --output=<path>` (arbitrary file write) and
+  `git clone --upload-pack=<cmd>` / `ext::` URLs (RCE).
+- **§6.3 (H3/R9)** restricted containers get a read-only mount of the
+  uploads subtree. `run` now clamps `timeout`, caps output at 1 MiB, and
+  binds `cwd` — `build_shell_tools` had no `cwd` parameter at all, so every
+  `run` inherited the *server's* working directory.
+- **§6.3 (trust model)** `SMOLCODE_EXECUTOR=local` prints a `NOT SANDBOXED`
+  banner before the model is built, so it still appears when startup fails
+  for an unrelated reason.
+- **§6.4 (R11/H4)** the uploads store refuses to follow symlinks. Every path
+  went through pathlib methods that follow links, so one crafted entry was
+  an arbitrary-file read/delete/write primitive.
+- **§6.5 (R12/H11)** five MCP defects. `dict(os.environ)` handed every MCP
+  server every credential the operator had exported. Readonly mode was a
+  **name-prefix guess over server-supplied input** — a permission check
+  performed using the untrusted side of the boundary — now an explicit
+  default-deny operator allowlist. MCP tools are routed through
+  `is_destructive` (they run on the host, outside every container). Server
+  ids collided across builds. `timeout_s` was a field nothing read, so a
+  wedged server hung the agent forever.
+
+**Validation:** ruff clean; **pytest 1463 passed, 6 skipped, 0 failed**;
+frontend unchanged this phase and still at **tsc 0 / vitest 139/139 / oxlint
+0 / Playwright 168/168** from Phase 5.
+
+**Known limitations, stated rather than buried:**
+
+1. `full_access` **cannot build** — `apt.releases.hashicorp.com` returns
+   HTTP 404 for every path (verified from host and container, DNS
+   resolving, the other three vendor repos returning 200). This is an
+   upstream outage and was deliberately **not** worked around; the only ways
+   to force a green build would be trusting an unverified key, dropping
+   `signed-by`, or removing terraform. It was already unbuildable before
+   this phase, so nothing regressed — but it is skipped, **not** passing.
+2. Per-call interactive approval is unavailable to **in-container** tools
+   (the callback lives on the host). The host path is unaffected.
+3. The `tier-images` and `packaging` CI jobs have still never had a real run;
+   this host has no hosted key to exercise them.
+
 ---
 
 ## 1. Current state (2026-08-26, end of decision 0034 session)
