@@ -182,6 +182,33 @@ def main(argv=None):
         print(f"config error: {e}", file=sys.stderr)
         return 2
 
+    # Phase 6 (6.3): the local executor is NOT a sandbox. smolagents
+    # LocalPythonExecutor runs model-written Python directly in this
+    # process, on this host, as this user, with this user credentials and
+    # filesystem. Tier allowlists still gate the TOOL layer, but model code
+    # that never calls a tool bypasses every one of them. Saying nothing here
+    # let an operator believe they were sandboxed when they were not.
+    #
+    # Printed before the model is built, so it appears even when startup
+    # fails for an unrelated reason such as a missing API key -- otherwise
+    # the one run where an operator most needs the warning is the one that
+    # never reaches it.
+    if not args.smoke and settings.executor == "local":
+        print(
+            """
+  ############################################################
+  #  WARNING: SMOLCODE_EXECUTOR=local is NOT SANDBOXED         #
+  #                                                          #
+  #  Model-written Python runs directly on this host, as this  #
+  #  user, with this user's credentials and filesystem access. #
+  #  Tier command/import/path allowlists still gate the TOOLS,  #
+  #  but model-authored code need not use a tool at all.       #
+  #                                                          #
+  #  Use the default executor (docker) for anything untrusted.  #
+  ############################################################""",
+            file=sys.stderr,
+        )
+
     if args.smoke:
         settings = settings.with_executor("local")
         model = _StubLiteLLMModel()

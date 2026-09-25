@@ -411,31 +411,59 @@ class _GitPushTool(Tool):
         if branch and branch.startswith("-"):
             raise PermissionError("refusing branch that looks like a git flag: " + repr(branch))
 
-        # Phase 6 (6.1, ADR 0041 option b): the destructive gate, INLINED.
+        # Phase 6 (6.1, ADR 0041 option b): the gate has TWO paths, and the
+        # reason is the same as in tools/shell.py.
         #
-        # This used to import smolcode.destructive and smolcode.session, which
-        # cannot work: smolagents serialises this source into the sandbox
-        # container and the tier images contain no smolcode, so the import
-        # raised ImportError there and git_push did not work at all. The
-        # comment above those imports used to claim the opposite. Full
-        # measurement and rationale in tools/shell.py and ADR 0041.
+        # HOST PATH: smolcode is importable, so the real classifier and the
+        # real SessionState decide, including the interactive
+        # confirm_callback the web approval modal drives.
         #
-        # git_push is in _ALWAYS_DESTRUCTIVE_TOOLS, so there is no classifier
-        # to duplicate here -- the call is destructive by definition and the
-        # only question is the host-decided policy. The policy is bound at
-        # build time because SessionState.confirm_callback lives on the host
-        # and is unreachable from inside the container. Only an explicit
-        # "allow" proceeds; everything else fails CLOSED.
-        if self.destructive_policy != "allow":
-            raise PermissionError(
-                "destructive git_push blocked: remote="
-                + repr(remote)
-                + " branch="
-                + repr(branch or "<current>")
-                + " (policy="
-                + repr(self.destructive_policy)
-                + ")"
-            )
+        # CONTAINER PATH: smolagents serialises this source into the sandbox,
+        # where smolcode does not exist, so the import raises and we fall
+        # back to the host-bound policy. git_push is unconditionally
+        # destructive by definition, so there is no classifier to inline --
+        # only the policy to honour. Fails CLOSED.
+        try:
+            from smolcode.destructive import destructive_reason, is_destructive
+            from smolcode.session import current_session
+        except ImportError:
+            is_destructive = None
+
+        kwargs = {"remote": remote, "branch": branch}
+        if is_destructive is not None and is_destructive("git_push", kwargs):
+            sess = current_session()
+            if self.tier_name == "restricted":
+                raise PermissionError(
+                    "destructive git_push denied at restricted tier: " + (destructive_reason("git_push", kwargs) or "")
+                )
+            if not sess.auto_approve_destructive:
+                summary = destructive_reason("git_push", kwargs) or ""
+                if sess.confirm_callback is None:
+                    raise PermissionError("destructive git_push denied: no confirm session")
+                decision = sess.confirm_callback("git_push", kwargs, summary)
+                if decision.auto_approve_now:
+                    sess.auto_approve_destructive = True
+                if decision.auto_approve_off:
+                    sess.auto_approve_destructive = False
+                if not decision.approved:
+                    raise PermissionError("destructive git_push denied: " + decision.reason)
+        elif is_destructive is None:
+            # Container path. git_push is in _ALWAYS_DESTRUCTIVE_TOOLS, so
+            # there is no classifier to duplicate here -- the call is
+            # destructive by definition and the only question is the
+            # host-decided policy. Only an explicit "allow" proceeds;
+            # everything else fails CLOSED. Full measurement and rationale
+            # in tools/shell.py and ADR 0041.
+            if self.destructive_policy != "allow":
+                raise PermissionError(
+                    "destructive git_push blocked: remote="
+                    + repr(remote)
+                    + " branch="
+                    + repr(branch or "<current>")
+                    + " (policy="
+                    + repr(self.destructive_policy)
+                    + ")"
+                )
 
         cmd_args = ["git", "push", remote]
         if branch:

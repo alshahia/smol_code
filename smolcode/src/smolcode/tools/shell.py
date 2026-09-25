@@ -127,52 +127,102 @@ class _RunTool(Tool):
         # test_container_gate_phase6.py. Do not "fix" this by reverting to
         # relative imports -- there is no relative package in the container
         # either. ADR 0041 is the open decision.
-        # Phase 6 (6.1, ADR 0041 option b): the destructive gate, INLINED.
+        rk = {"cmd": cmd, "args": list(args)}
+        # Phase 6 (6.1, ADR 0041 option b): the gate has TWO paths.
         #
-        # The two imports that used to be here cannot work: smolagents
-        # serialises this source into the sandbox container, and the tier
-        # images contain no smolcode.
-        #     docker run --rm smolcode:restricted python -c "import smolcode.destructive"
-        #     -> ModuleNotFoundError: No module named 'smolcode'
-        # The comment above those imports claimed the opposite; it was wrong,
-        # and test_container_gate_phase6.py now pins the measurement.
+        # HOST PATH -- smolcode is importable (the local executor, MCP
+        # tools, and every other host-side caller). The real classifier
+        # and the real SessionState are used, INCLUDING the interactive
+        # confirm_callback. This is the pre-Phase-6 behaviour, and it is
+        # what the web approval modal actually drives. Deleting it would
+        # have silently removed a product feature.
         #
-        # So the classifier is duplicated here, self-contained. The price is
-        # that smolcode/destructive.py and this block can drift, which is
-        # what test_inlined_gate_phase6.py::TestGateDoesNotDrift pays: one
-        # case table through BOTH, requiring identical verdicts. If you
-        # change one, change both or that test goes red.
+        # CONTAINER PATH -- smolagents serialises this source into the
+        # sandbox, where smolcode does not exist:
+        #     docker run --rm smolcode:restricted python -c import-smolcode-probe
+        #     -> ModuleNotFoundError: No module named smolcode
+        # The import raises there, and we fall through to the classifier
+        # inlined below plus the host-bound destructive_policy. A confirm
+        # callback cannot be reached from in there at all, so this path can
+        # only permit what the host already authorised -- it fails CLOSED.
         #
-        # The approval half cannot be duplicated at all. SessionState.
-        # confirm_callback lives on the host and is unreachable from inside
-        # the container, so an in-container tool cannot prompt the user. The
-        # host decides the policy at build time and binds it as
-        # self.destructive_policy; only an explicit "allow" proceeds. That
-        # fails CLOSED, which is the right direction for a security gate, but
-        # it does mean per-call interactive approval remains a host-side
-        # feature. Recorded in ADR 0041.
-        _c = cmd.lower()
-        for _ext in (".exe", ".bat", ".cmd", ".com"):
-            if _c.endswith(_ext):
-                _c = _c[: -len(_ext)]
-                break
-        _a = [str(x) for x in args]
-        _destructive = False
-        if _c in ("ssh", "scp", "rsync", "docker", "kubectl", "terraform", "ansible", "aws", "gcloud", "az"):
-            _destructive = True
-        elif _c in ("rm", "rd", "del", "rmdir"):
-            if _c == "rmdir":
+        # A previous cut of this change removed the host path outright and
+        # kept only the inlined copy. That made the 8 approval tests in
+        # test_gate_context.py fail, which was the correct signal that a
+        # user-facing feature had been removed rather than secured.
+        try:
+            from smolcode.destructive import destructive_reason, is_destructive
+            from smolcode.session import current_session
+        except ImportError:
+            is_destructive = None
+
+        if is_destructive is not None and is_destructive("run", rk):
+            sess = current_session()
+            if self.tier_name == "restricted":
+                # Restricted may auto-deny instead of prompting: its
+                # allowlist has no legitimate destructive surface.
+                raise PermissionError(
+                    "destructive run denied at restricted tier: " + (destructive_reason("run", rk) or "")
+                )
+            if not sess.auto_approve_destructive:
+                summary = destructive_reason("run", rk) or ""
+                if sess.confirm_callback is None:
+                    raise PermissionError("destructive run denied: no confirm session")
+                decision = sess.confirm_callback("run", rk, summary)
+                if decision.auto_approve_now:
+                    sess.auto_approve_destructive = True
+                if decision.auto_approve_off:
+                    sess.auto_approve_destructive = False
+                if not decision.approved:
+                    raise PermissionError("destructive run denied: " + decision.reason)
+        elif is_destructive is None:
+            #
+            # The two imports that used to be here cannot work: smolagents
+            # serialises this source into the sandbox container, and the tier
+            # images contain no smolcode.
+            #     docker run --rm smolcode:restricted python -c "import smolcode.destructive"
+            #     -> ModuleNotFoundError: No module named 'smolcode'
+            # The comment above those imports claimed the opposite; it was wrong,
+            # and test_container_gate_phase6.py now pins the measurement.
+            #
+            # So the classifier is duplicated here, self-contained. The price is
+            # that smolcode/destructive.py and this block can drift, which is
+            # what test_inlined_gate_phase6.py::TestGateDoesNotDrift pays: one
+            # case table through BOTH, requiring identical verdicts. If you
+            # change one, change both or that test goes red.
+            #
+            # The approval half cannot be duplicated at all. SessionState.
+            # confirm_callback lives on the host and is unreachable from inside
+            # the container, so an in-container tool cannot prompt the user. The
+            # host decides the policy at build time and binds it as
+            # self.destructive_policy; only an explicit "allow" proceeds. That
+            # fails CLOSED, which is the right direction for a security gate, but
+            # it does mean per-call interactive approval remains a host-side
+            # feature. Recorded in ADR 0041.
+            _c = cmd.lower()
+            for _ext in (".exe", ".bat", ".cmd", ".com"):
+                if _c.endswith(_ext):
+                    _c = _c[: -len(_ext)]
+                    break
+            _a = [str(x) for x in args]
+            _destructive = False
+            if _c in ("ssh", "scp", "rsync", "docker", "kubectl", "terraform", "ansible", "aws", "gcloud", "az"):
                 _destructive = True
-            else:
-                for _x in _a:
-                    if _x.lower() in ("-rf", "-fr", "-r", "-f", "/q", "/s", "/f", "--force", "--recursive"):
-                        _destructive = True
-                    if _c in ("rm", "del") and ("*" in _x or "?" in _x):
-                        _destructive = True
-        elif _c == "git" and _a:
-            _destructive = _a[0].lower() in ("push", "reset")
-        if _destructive and self.destructive_policy != "allow":
-            raise PermissionError("destructive run blocked: " + _c + " (policy=" + repr(self.destructive_policy) + ")")
+            elif _c in ("rm", "rd", "del", "rmdir"):
+                if _c == "rmdir":
+                    _destructive = True
+                else:
+                    for _x in _a:
+                        if _x.lower() in ("-rf", "-fr", "-r", "-f", "/q", "/s", "/f", "--force", "--recursive"):
+                            _destructive = True
+                        if _c in ("rm", "del") and ("*" in _x or "?" in _x):
+                            _destructive = True
+            elif _c == "git" and _a:
+                _destructive = _a[0].lower() in ("push", "reset")
+            if _destructive and self.destructive_policy != "allow":
+                raise PermissionError(
+                    "destructive run blocked: " + _c + " (policy=" + repr(self.destructive_policy) + ")"
+                )
 
         try:
             proc = subprocess.run(
