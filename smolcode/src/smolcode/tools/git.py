@@ -418,6 +418,54 @@ class _GitPushTool(Tool):
         if branch and branch.startswith("-"):
             raise PermissionError("refusing branch that looks like a git flag: " + repr(branch))
 
+        # Plan 6.2 #3: the remote must be one this repository actually has.
+        # The dash-guard above stops `--receive-pack=...`, but a plain NAME
+        # like "upstream" -- or a name planted in .git/config before the run
+        # started -- was still accepted, so the model could publish the
+        # workspace to a third party the user never chose.
+        #
+        # This deliberately runs BEFORE the destructive gate. A name the
+        # repository does not have is a user error, and the same rationale
+        # that put the dash-guards before the gate applies: errors should
+        # not cost the user an approval dialog.
+        _allow = [s for s in self.allowlist.split("|") if s]
+        if "git" not in _allow:
+            raise PermissionError("command git not in allowlist " + repr(_allow))
+        try:
+            _rp = subprocess.run(
+                ["git", "-c", "core.hooksPath=", "remote"],
+                shell=False,
+                check=False,
+                timeout=15,
+                capture_output=True,
+                text=True,
+                cwd=self.cwd or None,
+                env=self.git_env,
+            )
+        except Exception as _e:
+            raise PermissionError(
+                "cannot list remotes for " + repr(self.cwd or ".") + ": " + repr(str(_e)) + "; "
+                "refusing to use an unverified remote"
+            )
+        if _rp.returncode != 0:
+            raise PermissionError(
+                "not a git repository (or git failed) at "
+                + repr(self.cwd or ".")
+                + ": "
+                + repr((_rp.stderr or "").strip()[:200])
+                + "; refusing to use an unverified remote"
+            )
+        _remotes = {ln.strip() for ln in (_rp.stdout or "").splitlines() if ln.strip()}
+        if not _remotes:
+            raise PermissionError(
+                "this repository has no configured remotes; refusing to push or fetch to " + repr(remote)
+            )
+        if remote not in _remotes:
+            raise PermissionError(
+                "remote " + repr(remote) + " is not configured in this repository; "
+                "configured remotes are " + repr(sorted(_remotes))
+            )
+
         # Phase 6 (6.1, ADR 0041 option b): the gate has TWO paths, and the
         # reason is the same as in tools/shell.py.
         #
@@ -625,6 +673,54 @@ class _GitFetchTool(Tool):
             raise PermissionError("remote is required")
         if remote.startswith("-"):
             raise PermissionError("refusing remote that looks like a git flag: " + repr(remote))
+
+        # Plan 6.2 #3: the remote must be one this repository actually has.
+        # The dash-guard above stops `--receive-pack=...`, but a plain NAME
+        # like "upstream" -- or a name planted in .git/config before the run
+        # started -- was still accepted, so the model could publish the
+        # workspace to a third party the user never chose.
+        #
+        # This deliberately runs BEFORE the destructive gate. A name the
+        # repository does not have is a user error, and the same rationale
+        # that put the dash-guards before the gate applies: errors should
+        # not cost the user an approval dialog.
+        _allow = [s for s in self.allowlist.split("|") if s]
+        if "git" not in _allow:
+            raise PermissionError("command git not in allowlist " + repr(_allow))
+        try:
+            _rp = subprocess.run(
+                ["git", "-c", "core.hooksPath=", "remote"],
+                shell=False,
+                check=False,
+                timeout=15,
+                capture_output=True,
+                text=True,
+                cwd=self.cwd or None,
+                env=self.git_env,
+            )
+        except Exception as _e:
+            raise PermissionError(
+                "cannot list remotes for " + repr(self.cwd or ".") + ": " + repr(str(_e)) + "; "
+                "refusing to use an unverified remote"
+            )
+        if _rp.returncode != 0:
+            raise PermissionError(
+                "not a git repository (or git failed) at "
+                + repr(self.cwd or ".")
+                + ": "
+                + repr((_rp.stderr or "").strip()[:200])
+                + "; refusing to use an unverified remote"
+            )
+        _remotes = {ln.strip() for ln in (_rp.stdout or "").splitlines() if ln.strip()}
+        if not _remotes:
+            raise PermissionError(
+                "this repository has no configured remotes; refusing to push or fetch to " + repr(remote)
+            )
+        if remote not in _remotes:
+            raise PermissionError(
+                "remote " + repr(remote) + " is not configured in this repository; "
+                "configured remotes are " + repr(sorted(_remotes))
+            )
         cmd_args = ["git", "-c", "core.hooksPath=", "fetch", remote]
         for a in cmd_args:
             if not isinstance(a, str):

@@ -200,6 +200,12 @@ class TestGateFailsClosed:
         tool = _GitPushTool()
         tool.allowlist = "git"
         tool.destructive_policy = "allow"
+        # build_git_tools binds a hardened env; the container receives it as a
+        # class attribute through instance_to_source. Without it the remote
+        # check (6.2 #3) has no environment to run git in.
+        from smolcode.tools.git import _hardened_git_env
+
+        tool.git_env = _hardened_git_env()
         with no_smolcode():
             out = tool.forward(remote="origin", branch="")
         assert "returncode:" in out

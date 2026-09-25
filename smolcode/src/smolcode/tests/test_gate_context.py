@@ -170,7 +170,14 @@ def fake_push(monkeypatch):
     calls = []
 
     class _P:
-        stdout = ""
+        # The git tools now verify the requested remote against
+        # `git remote` BEFORE consulting the destructive gate (plan 6.2 #3),
+        # so this double has to answer that question the way a real
+        # repository would. The tests ask for remote="origin", so origin is
+        # what the repository has. An empty stdout here would mean "this
+        # repository has no remotes", which is a different scenario and is
+        # covered by test_git_remote_validation_phase6.py.
+        stdout = "origin\n"
         stderr = ""
         returncode = 0
 
@@ -182,6 +189,18 @@ def fake_push(monkeypatch):
     return calls
 
 
+def _pushed(calls):
+    """True if any captured call actually ran a push.
+
+    The remote check (6.2 #3) runs `git remote` BEFORE the destructive gate.
+    That is a read-only query, not the operation the gate governs, so
+    "the gate stopped it" means no PUSH was issued -- not that the process
+    was never touched. Asserting on the push specifically keeps the test
+    testing the gate rather than the number of subprocesses.
+    """
+    return any("push" in list(c[0] if c else c) for c in calls)
+
+
 def test_restricted_git_push_denied_without_prompt(fake_push, tmp_path):
     """C1 #1 concrete case: restricted-tier git_push used to execute silently."""
     cb = _RecordingCallback()
@@ -189,7 +208,7 @@ def test_restricted_git_push_denied_without_prompt(fake_push, tmp_path):
     tool = _push_tool("restricted", tmp_path)
     with pytest.raises(PermissionError, match="restricted"):
         tool.forward(remote="origin")
-    assert fake_push == []  # nothing executed
+    assert not _pushed(fake_push)  # no push was issued
     assert cb.calls == []
 
 
@@ -199,7 +218,7 @@ def test_elevated_git_push_prompts(fake_push, tmp_path):
     tool = _push_tool("elevated", tmp_path)
     with pytest.raises(PermissionError, match="denied"):
         tool.forward(remote="origin")
-    assert fake_push == []
+    assert not _pushed(fake_push)
     assert len(cb.calls) == 1
     assert cb.calls[0][0] == "git_push"
 
@@ -209,7 +228,7 @@ def test_full_access_git_push_under_ambient_restricted_session_prompts(fake_push
     tool = _push_tool("full_access", tmp_path)
     with pytest.raises(PermissionError, match="no confirm"):
         tool.forward(remote="origin")
-    assert fake_push == []
+    assert not _pushed(fake_push)
 
 
 # --- orchestrator execution-context threading -------------------------------
