@@ -386,6 +386,9 @@ class _GitPushTool(Tool):
     cwd = ""
     # Phase 1 (C1): the EXECUTING tool's effective tier (bound per build).
     tier_name = ""
+    # Phase 6 (6.1, ADR 0041 option b): host-decided destructive policy.
+    # "allow" is the only value that permits a push; anything else blocks.
+    destructive_policy = "deny"
 
     def __init__(self):
         super().__init__()
@@ -408,37 +411,31 @@ class _GitPushTool(Tool):
         if branch and branch.startswith("-"):
             raise PermissionError("refusing branch that looks like a git flag: " + repr(branch))
 
-        from smolcode.destructive import destructive_reason, is_destructive
-
-        # M4.x / Phase 1 (C1): per-tool destructive gate. Fires on
-        # is_destructive() regardless of the ambient session tier; the
-        # tool's OWN bound tier decides prompt vs auto-deny.
+        # Phase 6 (6.1, ADR 0041 option b): the destructive gate, INLINED.
         #
-        # Phase 6 CORRECTION (R8): the comment here used to claim the package
-        # IS importable on PYTHONPATH inside the remote Docker container. It is
-        # not -- see the measured evidence and the full note in tools/shell.py,
-        # and docs/decisions/0041-*.md. Under the docker executor this import
-        # raises ImportError and git_push does not work.
-        from smolcode.session import current_session
-
-        kwargs = {"remote": remote, "branch": branch}
-        if is_destructive("git_push", kwargs):
-            sess = current_session()
-            if self.tier_name == "restricted":
-                raise PermissionError(
-                    "destructive git_push denied at restricted tier: " + (destructive_reason("git_push", kwargs) or "")
-                )
-            if not sess.auto_approve_destructive:
-                summary = destructive_reason("git_push", kwargs) or ""
-                if sess.confirm_callback is None:
-                    raise PermissionError("destructive git_push denied: no confirm session")
-                decision = sess.confirm_callback("git_push", kwargs, summary)
-                if decision.auto_approve_now:
-                    sess.auto_approve_destructive = True
-                if decision.auto_approve_off:
-                    sess.auto_approve_destructive = False
-                if not decision.approved:
-                    raise PermissionError("destructive git_push denied: " + decision.reason)
+        # This used to import smolcode.destructive and smolcode.session, which
+        # cannot work: smolagents serialises this source into the sandbox
+        # container and the tier images contain no smolcode, so the import
+        # raised ImportError there and git_push did not work at all. The
+        # comment above those imports used to claim the opposite. Full
+        # measurement and rationale in tools/shell.py and ADR 0041.
+        #
+        # git_push is in _ALWAYS_DESTRUCTIVE_TOOLS, so there is no classifier
+        # to duplicate here -- the call is destructive by definition and the
+        # only question is the host-decided policy. The policy is bound at
+        # build time because SessionState.confirm_callback lives on the host
+        # and is unreachable from inside the container. Only an explicit
+        # "allow" proceeds; everything else fails CLOSED.
+        if self.destructive_policy != "allow":
+            raise PermissionError(
+                "destructive git_push blocked: remote="
+                + repr(remote)
+                + " branch="
+                + repr(branch or "<current>")
+                + " (policy="
+                + repr(self.destructive_policy)
+                + ")"
+            )
 
         cmd_args = ["git", "push", remote]
         if branch:
@@ -716,14 +713,22 @@ _GIT_TOOL_CLASSES = [
 ]
 
 
-def build_git_tools(command_policy, cwd=None, tier_name=""):
-    """Build git Tool wrappers, bound to command_policy.allowlist, cwd + tier."""
+def build_git_tools(command_policy, cwd=None, tier_name="", destructive_policy="deny"):
+    """Build git Tool wrappers, bound to allowlist, cwd, tier + policy."""
     if command_policy is None:
         raise PermissionError("command_policy is required")
     allowlist = "|".join(command_policy.allowlist) if command_policy.allowlist else ""
     cwd_str = str(cwd) if cwd is not None else ""
     tools = []
     for cls in _GIT_TOOL_CLASSES:
-        bound = bind_attrs(cls, {"allowlist": allowlist, "cwd": cwd_str, "tier_name": str(tier_name or "")})
+        bound = bind_attrs(
+            cls,
+            {
+                "allowlist": allowlist,
+                "cwd": cwd_str,
+                "tier_name": str(tier_name or ""),
+                "destructive_policy": str(destructive_policy or "deny"),
+            },
+        )
         tools.append(bound())
     return tools

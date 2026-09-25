@@ -79,15 +79,31 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
     # command was not bound to the workspace. The ceiling reuses the tier's
     # existing timeout_s so one number governs a run's total budget rather
     # than each subprocess getting its own model-chosen budget.
+    # Phase 6 (6.1): the host decides the destructive policy at BUILD time
+    # and binds it into the tool, because the tool body executes inside the
+    # sandbox container where SessionState.confirm_callback is unreachable.
+    # Restricted and elevated deny by default; a session that has been
+    # explicitly auto-approved is the only thing that grants "allow".
+    from ..session import get_auto_approve
+
+    _session_policy = "allow" if get_auto_approve() else "deny"
     tools.extend(
         build_shell_tools(
             command_policy,
             tier_name=tier.name,
             cwd=workspace,
             max_timeout=int(getattr(tier, "timeout_s", 600) or 600),
+            destructive_policy=_session_policy,
         )
     )
-    tools.extend(build_git_tools(command_policy, cwd=workspace, tier_name=tier.name))
+    tools.extend(
+        build_git_tools(
+            command_policy,
+            cwd=workspace,
+            tier_name=tier.name,
+            destructive_policy=_session_policy,
+        )
+    )
     if mcp_configs:
         tools.extend(build_mcp_tools(tier, mcp_configs))
     return tools

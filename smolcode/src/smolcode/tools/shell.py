@@ -127,29 +127,52 @@ class _RunTool(Tool):
         # test_container_gate_phase6.py. Do not "fix" this by reverting to
         # relative imports -- there is no relative package in the container
         # either. ADR 0041 is the open decision.
-        from smolcode.destructive import destructive_reason, is_destructive
-        from smolcode.session import current_session
-
-        rk = {"cmd": cmd, "args": list(args)}
-        if is_destructive("run", rk):
-            sess = current_session()
-            if self.tier_name == "restricted":
-                # Restricted may auto-deny instead of prompting: its
-                # allowlist has no legitimate destructive surface.
-                raise PermissionError(
-                    "destructive run denied at restricted tier: " + (destructive_reason("run", rk) or "")
-                )
-            if not sess.auto_approve_destructive:
-                summary = destructive_reason("run", rk) or ""
-                if sess.confirm_callback is None:
-                    raise PermissionError("destructive run denied: no confirm session")
-                decision = sess.confirm_callback("run", rk, summary)
-                if decision.auto_approve_now:
-                    sess.auto_approve_destructive = True
-                if decision.auto_approve_off:
-                    sess.auto_approve_destructive = False
-                if not decision.approved:
-                    raise PermissionError("destructive run denied: " + decision.reason)
+        # Phase 6 (6.1, ADR 0041 option b): the destructive gate, INLINED.
+        #
+        # The two imports that used to be here cannot work: smolagents
+        # serialises this source into the sandbox container, and the tier
+        # images contain no smolcode.
+        #     docker run --rm smolcode:restricted python -c "import smolcode.destructive"
+        #     -> ModuleNotFoundError: No module named 'smolcode'
+        # The comment above those imports claimed the opposite; it was wrong,
+        # and test_container_gate_phase6.py now pins the measurement.
+        #
+        # So the classifier is duplicated here, self-contained. The price is
+        # that smolcode/destructive.py and this block can drift, which is
+        # what test_inlined_gate_phase6.py::TestGateDoesNotDrift pays: one
+        # case table through BOTH, requiring identical verdicts. If you
+        # change one, change both or that test goes red.
+        #
+        # The approval half cannot be duplicated at all. SessionState.
+        # confirm_callback lives on the host and is unreachable from inside
+        # the container, so an in-container tool cannot prompt the user. The
+        # host decides the policy at build time and binds it as
+        # self.destructive_policy; only an explicit "allow" proceeds. That
+        # fails CLOSED, which is the right direction for a security gate, but
+        # it does mean per-call interactive approval remains a host-side
+        # feature. Recorded in ADR 0041.
+        _c = cmd.lower()
+        for _ext in (".exe", ".bat", ".cmd", ".com"):
+            if _c.endswith(_ext):
+                _c = _c[: -len(_ext)]
+                break
+        _a = [str(x) for x in args]
+        _destructive = False
+        if _c in ("ssh", "scp", "rsync", "docker", "kubectl", "terraform", "ansible", "aws", "gcloud", "az"):
+            _destructive = True
+        elif _c in ("rm", "rd", "del", "rmdir"):
+            if _c == "rmdir":
+                _destructive = True
+            else:
+                for _x in _a:
+                    if _x.lower() in ("-rf", "-fr", "-r", "-f", "/q", "/s", "/f", "--force", "--recursive"):
+                        _destructive = True
+                    if _c in ("rm", "del") and ("*" in _x or "?" in _x):
+                        _destructive = True
+        elif _c == "git" and _a:
+            _destructive = _a[0].lower() in ("push", "reset")
+        if _destructive and self.destructive_policy != "allow":
+            raise PermissionError("destructive run blocked: " + _c + " (policy=" + repr(self.destructive_policy) + ")")
 
         try:
             proc = subprocess.run(
@@ -199,7 +222,7 @@ class _RunTool(Tool):
         return chr(10).join(out_parts)
 
 
-def build_shell_tools(command_policy, tier_name="", cwd=None, max_timeout=600):
+def build_shell_tools(command_policy, tier_name="", cwd=None, max_timeout=600, destructive_policy="deny"):
     """Return the run Tool bound to allowlist, tier, cwd and timeout ceiling.
 
     Phase 6 (6.3): cwd and max_timeout are new. cwd was absent entirely, so the
@@ -215,6 +238,7 @@ def build_shell_tools(command_policy, tier_name="", cwd=None, max_timeout=600):
             "tier_name": str(tier_name or ""),
             "cwd": str(cwd) if cwd is not None else "",
             "max_timeout": int(max_timeout or 600),
+            "destructive_policy": str(destructive_policy or "deny"),
         },
     )
     return [cls()]

@@ -127,15 +127,31 @@ class TestTheGateCannotRunInContainerToday:
 
 
 class TestWorkspaceMountIsCurrentlyRwForEveryTier:
-    """Evidence for section 6.3. agents/base.py hands every tier the same rw
-    bind mount of the whole workspace, uploads dir included."""
+    """Section 6.3 evidence. The ORIGINAL state was that every tier got the
+    same rw mount of the whole workspace, uploads directory included -- so a
+    restricted container could rewrite uploads that tier policy declares
+    read-only.
 
-    def test_base_py_mounts_the_whole_workspace_rw(self):
+    This assertion is now the post-fix invariant: the workspace stays rw
+    (the tier must remain usable) AND a narrower read-only mount covers
+    uploads. The full behavioural check lives in
+    test_composition_boundary_phase6.py, which asserts the kwargs a real
+    container would receive.
+    """
+
+    def test_workspace_is_mounted_rw(self):
         import pathlib
 
         p = pathlib.Path(__file__).resolve().parents[1] / "agents" / "base.py"
         src = p.read_text(encoding="utf-8")
         q = chr(34)
         assert q + "mode" + q + ": " + q + "rw" + q in src
-        # No :ro mount for uploads exists yet -- that is the 6.3 work.
-        assert "uploads" not in src
+
+    def test_a_read_only_uploads_mount_now_exists(self):
+        import pathlib
+
+        p = pathlib.Path(__file__).resolve().parents[1] / "agents" / "base.py"
+        src = p.read_text(encoding="utf-8")
+        assert "uploads" in src, "section 6.3 removed the uploads mount again"
+        q = chr(34)
+        assert q + "mode" + q + ": " + q + "ro" + q in src
