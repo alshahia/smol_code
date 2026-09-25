@@ -112,6 +112,28 @@ def build_tools(tier, settings, workspace_path=None, mcp_configs=None):
         )
     )
     if mcp_configs:
+        # R13: MCP tools execute on the HOST, in the MCP server process, outside
+        # every container. Under the docker executor the model can reach them,
+        # so accepting that is an explicit operator decision rather than a side
+        # effect of having a server block in mcp_config.json.
+        #
+        # A refusal, not a warning. This path is reachable by default (any
+        # configured server), so a banner printed here would be scrolled past
+        # on every run -- which is the same as not saying it.
+        if settings.executor == "docker" and not getattr(settings, "allow_unsandboxed_mcp", False):
+            names = sorted({str(getattr(c, "name", "?")) for c in mcp_configs})
+            raise PermissionError(
+                "refusing to start "
+                + str(len(mcp_configs))
+                + " MCP server(s) "
+                + repr(names)
+                + " under SMOLCODE_EXECUTOR=docker: MCP tools run on this host, outside the "
+                + "container, so accepting them gives the model a host-side capability "
+                + "the docker executor exists to remove. Re-run with "
+                + "--allow-unsandboxed-mcp (or SMOLCODE_ALLOW_UNSANDBOXED_MCP=1) if that "
+                + "is intended, or use SMOLCODE_EXECUTOR=local where the whole run is "
+                + "already unsandboxed and says so."
+            )
         tools.extend(build_mcp_tools(tier, mcp_configs, destructive_policy=_session_policy))
     return tools
 

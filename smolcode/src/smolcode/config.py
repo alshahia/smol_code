@@ -192,6 +192,9 @@ class Settings:
         # "no caps configured". Caps are mutable at runtime via
         # PUT /api/cost-caps (the CostCapTracker owns the live state).
         "cost_caps",
+        # R13: operator acceptance that MCP tools run on the host even when
+        # the executor is docker. Default False = refused.
+        "allow_unsandboxed_mcp",
     )
 
     def __init__(
@@ -209,6 +212,7 @@ class Settings:
         projects=(),
         cost_rates=None,
         cost_caps=None,
+        allow_unsandboxed_mcp=False,
     ):
         self.workspace = Path(workspace)
         self.executor = executor
@@ -231,6 +235,9 @@ class Settings:
         # CostCapTracker.get_state() exposes ``defaults`` separately so the SPA
         # can show the original caps even after a PUT clears them.
         self.cost_caps = dict(cost_caps) if cost_caps is not None else {}
+        # R13: default-deny. Enabling MCP under the docker executor runs
+        # model-reachable code on this host, outside every container.
+        self.allow_unsandboxed_mcp = bool(allow_unsandboxed_mcp)
 
     def with_executor(self, executor):
         """Return a new Settings with the executor swapped."""
@@ -248,6 +255,7 @@ class Settings:
             projects=self.projects,
             cost_rates=self.cost_rates,
             cost_caps=self.cost_caps,
+            allow_unsandboxed_mcp=self.allow_unsandboxed_mcp,
         )
 
     def with_overrides(
@@ -257,6 +265,7 @@ class Settings:
         litellm_proxy=None,
         workspace=None,
         projects=None,
+        allow_unsandboxed_mcp=None,
     ):
         """Return a new Settings with the given overrides applied.
 
@@ -280,6 +289,11 @@ class Settings:
             upload_max_bytes=self.upload_max_bytes,
             upload_allowed_mime=self.upload_allowed_mime,
             projects=self.projects if projects is None else tuple(projects),
+            # R13: None means "not overridden", so an explicit False can still be
+            # forced from a CLI override over a truthy env var.
+            allow_unsandboxed_mcp=(
+                self.allow_unsandboxed_mcp if allow_unsandboxed_mcp is None else bool(allow_unsandboxed_mcp)
+            ),
             cost_rates=self.cost_rates,
             cost_caps=self.cost_caps,
         )
@@ -547,6 +561,16 @@ def _parse_cost_caps(raw):
     return out
 
 
+def _env_truthy(raw):
+    """True iff a raw env string is a recognised truthy value.
+
+    R13. Matches cli._env_flag so the env var and the CLI flag agree; two
+    spellings of "true" in one product is how a security toggle gets
+    accidentally left off.
+    """
+    return (raw or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _parse_projects(raw, workspace):
     if not raw:
         return ()
@@ -645,6 +669,9 @@ def load_settings(cli_overrides=None, dotenv_paths=None):
         projects=_parse_projects(os.environ.get("SMOLCODE_PROJECTS", ""), workspace),
         cost_rates=_parse_cost_rates(os.environ.get("SMOLCODE_COST_RATES", "")),
         cost_caps=_parse_cost_caps(os.environ.get("SMOLCODE_COST_CAPS", "")),
+        # R13: MCP tools run on the host regardless of executor. Under docker
+        # that is an explicit opt-in, never a default.
+        allow_unsandboxed_mcp=_env_truthy(os.environ.get("SMOLCODE_ALLOW_UNSANDBOXED_MCP", "")),
     )
 
     if cli_overrides:
@@ -707,4 +734,7 @@ def as_dict(s):
     # (even when empty) so callers can distinguish "no caps configured" from
     # "caps config not present at all".
     out["cost_caps"] = dict(s.cost_caps)
+    # R13: always surface the MCP sandbox acknowledgement so --print-config
+    # tells the operator which plane their MCP tools actually run on.
+    out["allow_unsandboxed_mcp"] = bool(s.allow_unsandboxed_mcp)
     return out

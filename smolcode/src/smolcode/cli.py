@@ -122,6 +122,14 @@ def _build_parser():
             "decide. If both are set, --orchestrator wins (D11)."
         ),
     )
+    p.add_argument(
+        "--allow-unsandboxed-mcp",
+        action="store_true",
+        help=(
+            "Run configured MCP servers under the docker executor. MCP tools execute on "
+            "this host, outside the container; this flag is the explicit acceptance of that."
+        ),
+    )
     p.add_argument("--version", action="version", version=f"smolcode {__version__}")
     return p
 
@@ -205,6 +213,30 @@ def main(argv=None):
   #  but model-authored code need not use a tool at all.       #
   #                                                          #
   #  Use the default executor (docker) for anything untrusted.  #
+  ############################################################""",
+            file=sys.stderr,
+        )
+
+    # R13 option A: when the operator HAS accepted unsandboxed MCP, say so at
+    # the point of use. The refusal in tools/__init__.py stops the silent case;
+    # this makes the deliberate case visible rather than assumed.
+    if (
+        not args.smoke
+        and settings.executor == "docker"
+        and getattr(settings, "allow_unsandboxed_mcp", False)
+        and _mcp_is_configured()
+    ):
+        print(
+            """
+  ############################################################
+  #  NOTICE: MCP TOOLS ARE NOT SANDBOXED                     #
+  #                                                          #
+  #  SMOLCODE_EXECUTOR=docker sandboxes MODEL-WRITTEN CODE   #
+  #  only. MCP tool calls run on this host, in the MCP server #
+  #  process, outside every container. Anything those tools  #
+  #  can reach is reachable by the model.                   #
+  #                                                          #
+  #  Accepted via --allow-unsandboxed-mcp.                  #
   ############################################################""",
             file=sys.stderr,
         )
@@ -477,6 +509,19 @@ def main(argv=None):
     return rc
 
 
+def _mcp_is_configured():
+    """True iff an MCP config file with at least one server is present."""
+    try:
+        from .tools import load_mcp_config
+
+        return bool(load_mcp_config())
+    except Exception:
+        # A missing or malformed config is not this notice business. The
+        # loader reports that separately, and the operator does not need two
+        # errors for one mistake.
+        return False
+
+
 def _cli_overrides(args):
     out = {}
     if args.provider:
@@ -487,6 +532,8 @@ def _cli_overrides(args):
         out["litellm_proxy"] = args.litellm_proxy
     if args.workspace:
         out["workspace"] = args.workspace
+    if getattr(args, "allow_unsandboxed_mcp", False):
+        out["allow_unsandboxed_mcp"] = True
     return out
 
 
