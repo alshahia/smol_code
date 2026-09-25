@@ -301,9 +301,9 @@ a real run, because the Docker daemon is down on this host. Phase 6
 | Plan item | Gap | Severity |
 |---|---|---|
 | 6.1 #2 | No docker-marked test runs a **real `CodeAgent` tool call** inside `smolcode:restricted`. Substituted a `__import__` simulation. The container path is argued and unit-tested, never executed by a real container. | high (unproven core claim) |
-| 6.2 #3 | `remote` is dash-rejected but not validated against `git remote -v`. | medium |
-| 6.2 #4 | No `GIT_CONFIG_GLOBAL=/dev/null`, no `-c core.hooksPath=`. A hostile repo can supply config or hooks. | **high** |
-| 6.2 #5 | No `.git/` write block in `tools/fs.py` — verified absent, the file has no `git` reference at all. | **high** |
+| ~~6.2 #3~~ **DONE** (`c6ef150`) — `git_push`/`git_fetch` now read the real `git remote` output and refuse any name the repository does not have, before the destructive gate and before any push is issued. | closed |
+| ~~6.2 #4~~ **DONE** (`abdfb19`) — explicit env passthrough allowlist (not a filter of `os.environ`), `GIT_CONFIG_NOSYSTEM=1`, null-device system/global config, `-c core.hooksPath=` on all nine invocations. | closed |
+| ~~6.2 #5~~ **DONE** (`abdfb19`) — `.git` writes refused in both `write_file` and `patch_file` for restricted and elevated; `full_access` exempt by design. | closed |
 | 6.4 #2 | `UploadsStore.save()` still buffers the whole body; cap is HTTP-layer only. | medium |
 | 6.5 #1 | MCP tools run **on the host** while model code runs in a container. Not sandboxed. Raised as **R13**. | **high** |
 | 6.5 #4/#5 | Superseded servers are not closed; configs not resolved once per run; single-flight lock undocumented. | low |
@@ -365,7 +365,7 @@ prompt; container path falls back to the inlined classifier and the bound
   ids collided across builds. `timeout_s` was a field nothing read, so a
   wedged server hung the agent forever.
 
-**Validation:** ruff clean; **pytest 1463 passed, 6 skipped, 0 failed**;
+**Validation:** ruff clean; **pytest 1479 passed, 5 skipped, 0 failed**;
 frontend re-run this phase at **tsc 0 / vitest 139/139 / oxlint 0 warnings**.
 **Playwright e2e re-run and verified this phase: 168/168 passed** (7.4m). The
 first version of this row quoted 168/168 as if current while it was actually
