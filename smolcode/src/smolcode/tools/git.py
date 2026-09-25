@@ -16,6 +16,8 @@ The allowlist is encoded as a pipe-separated string because
 
 from __future__ import annotations
 
+import os
+
 from smolagents import Tool
 
 from ._bind import bind_attrs
@@ -62,7 +64,7 @@ class _GitStatusTool(Tool):
         import os
         import subprocess
 
-        cmd_args = ["git", "status"]
+        cmd_args = ["git", "-c", "core.hooksPath=", "status"]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -88,6 +90,7 @@ class _GitStatusTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -120,7 +123,7 @@ class _GitDiffTool(Tool):
         import os
         import subprocess
 
-        cmd_args = ["git", "diff"]
+        cmd_args = ["git", "-c", "core.hooksPath=", "diff"]
         if staged:
             cmd_args.append("--staged")
         if extra_args:
@@ -174,6 +177,7 @@ class _GitDiffTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -210,7 +214,7 @@ class _GitAddTool(Tool):
                 raise PermissionError("refusing path that looks like a git flag: " + repr(p))
         # "--" ends option parsing, so a file genuinely named "-foo" still
         # works while "--all" / "-A" cannot be smuggled in as an operand.
-        cmd_args = ["git", "add", "--", *paths]
+        cmd_args = ["git", "-c", "core.hooksPath=", "add", "--", *paths]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -236,6 +240,7 @@ class _GitAddTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -273,7 +278,7 @@ class _GitCommitTool(Tool):
             # every tool that accepts model text, which is what the
             # equivalence guard in the test suite asserts.
             raise PermissionError("refusing message that looks like a git flag: " + repr(message))
-        cmd_args = ["git", "commit", "-m", message]
+        cmd_args = ["git", "-c", "core.hooksPath=", "commit", "-m", message]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -299,6 +304,7 @@ class _GitCommitTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -328,7 +334,7 @@ class _GitLogTool(Tool):
         import os
         import subprocess
 
-        cmd_args = ["git", "log"]
+        cmd_args = ["git", "-c", "core.hooksPath=", "log"]
         if max_count is None:
             pass
         elif isinstance(max_count, int) and not isinstance(max_count, bool) and 1 <= max_count <= 1000:
@@ -360,6 +366,7 @@ class _GitLogTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -465,7 +472,7 @@ class _GitPushTool(Tool):
                     + ")"
                 )
 
-        cmd_args = ["git", "push", remote]
+        cmd_args = ["git", "-c", "core.hooksPath=", "push", remote]
         if branch:
             cmd_args.append(branch)
         for a in cmd_args:
@@ -493,6 +500,7 @@ class _GitPushTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(120) + "s: " + repr(str(e))
@@ -555,9 +563,9 @@ class _GitCloneTool(Tool):
             dest = _os.path.abspath(_os.path.join(base, directory))
             if dest != base and not dest.startswith(base + _os.sep):
                 raise PermissionError("clone directory escapes the workspace: " + repr(directory))
-            cmd_args = ["git", "clone", "--", url, directory]
+            cmd_args = ["git", "-c", "core.hooksPath=", "clone", "--", url, directory]
         else:
-            cmd_args = ["git", "clone", "--", url]
+            cmd_args = ["git", "-c", "core.hooksPath=", "clone", "--", url]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -583,6 +591,7 @@ class _GitCloneTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(600) + "s: " + repr(str(e))
@@ -616,7 +625,7 @@ class _GitFetchTool(Tool):
             raise PermissionError("remote is required")
         if remote.startswith("-"):
             raise PermissionError("refusing remote that looks like a git flag: " + repr(remote))
-        cmd_args = ["git", "fetch", remote]
+        cmd_args = ["git", "-c", "core.hooksPath=", "fetch", remote]
         for a in cmd_args:
             if not isinstance(a, str):
                 raise PermissionError("each arg must be a string")
@@ -642,6 +651,7 @@ class _GitFetchTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(300) + "s: " + repr(str(e))
@@ -680,7 +690,7 @@ class _GitCheckoutTool(Tool):
             # --orphan / --detach / a stray -b would otherwise be read as the
             # mode rather than the thing to check out.
             raise PermissionError("refusing target that looks like a git flag: " + repr(target))
-        cmd_args = ["git", "checkout"]
+        cmd_args = ["git", "-c", "core.hooksPath=", "checkout"]
         if create:
             # With -b the target is the NEW BRANCH NAME, and inserting "--"
             # there would make git read it as the start-point instead, so
@@ -714,6 +724,7 @@ class _GitCheckoutTool(Tool):
                 capture_output=True,
                 text=True,
                 cwd=self.cwd or None,
+                env=self.git_env,
             )
         except subprocess.TimeoutExpired as e:
             return "TIMEOUT after " + str(60) + "s: " + repr(str(e))
@@ -741,12 +752,74 @@ _GIT_TOOL_CLASSES = [
 ]
 
 
+_GIT_ENV_PASSTHROUGH = (
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "TEMP",
+    "TMP",
+    "SYSTEMROOT",
+    "COMSPEC",
+    "PATHEXT",
+    "LANG",
+    "LC_ALL",
+    # Credential transport. The token travels in the environment, NOT in
+    # gitconfig, so hardening the config source does not break push.
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "SSH_AUTH_SOCK",
+    "GIT_ASKPASS",
+    "GIT_PROXY_COMMAND",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
+
+
+def _hardened_git_env():
+    """Environment for every git invocation (plan 6.2 #4).
+
+    Two separate problems are closed here.
+
+    1. *Config source.* Git reads three config layers: system, global, and
+       the per-repository .git/config. The system and global layers come from
+       the host and can redefine core.hooksPath, alias.*, core.pager,
+       credential.helper and safe.directory. We do not inherit os.environ at
+       all -- we copy an explicit allowlist, because a filtered copy of the
+       host environment is still the host environment.
+
+       GIT_CONFIG_NOSYSTEM=1 and the two null-device pointers are belt and
+       braces: a null device rather than an absent key, because an absent key
+       means "use the default", which is the behaviour we are removing.
+
+    2. *Hooks.* A .git/config written by model code (or inherited from a
+       cloned hostile repo) can point core.hooksPath anywhere. Each argv also
+       carries -c core.hooksPath=, so this holds even if the env is bypassed.
+
+    GIT_TERMINAL_PROMPT=0 stops git blocking forever on a credential prompt
+    in an unattended agent.
+    """
+    env = {k: os.environ[k] for k in _GIT_ENV_PASSTHROUGH if k in os.environ}
+    null_device = "NUL" if os.name == "nt" else "/dev/null"
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = null_device
+    env["GIT_CONFIG_SYSTEM"] = null_device
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 def build_git_tools(command_policy, cwd=None, tier_name="", destructive_policy="deny"):
     """Build git Tool wrappers, bound to allowlist, cwd, tier + policy."""
     if command_policy is None:
         raise PermissionError("command_policy is required")
     allowlist = "|".join(command_policy.allowlist) if command_policy.allowlist else ""
     cwd_str = str(cwd) if cwd is not None else ""
+    git_env = _hardened_git_env()
     tools = []
     for cls in _GIT_TOOL_CLASSES:
         bound = bind_attrs(
@@ -754,6 +827,7 @@ def build_git_tools(command_policy, cwd=None, tier_name="", destructive_policy="
             {
                 "allowlist": allowlist,
                 "cwd": cwd_str,
+                "git_env": git_env,
                 "tier_name": str(tier_name or ""),
                 "destructive_policy": str(destructive_policy or "deny"),
             },

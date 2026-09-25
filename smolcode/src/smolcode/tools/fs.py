@@ -101,6 +101,30 @@ class _WriteFileTool(Tool):
             raise PermissionError("path resolves outside workspace")
         if common != workspace_norm:
             raise PermissionError("path resolves outside workspace")
+
+        # Plan 6.2 #5: the .git directory is a control plane, not a data
+        # directory. The workspace is bind-mounted rw and restricted tiers
+        # allowlist python, so without this the model can drop
+        # .git/hooks/pre-commit or rewrite .git/config -- and every LATER
+        # git_* tool then runs under configuration the model chose. The
+        # destructive gate cannot help here: hooks fire on ordinary commits
+        # and diffs, which are not gated actions.
+        #
+        # full_access is exempt by design. It is the explicit, audited tier,
+        # and blocking repo repair there would buy no security.
+        if self.tier != "full_access":
+            segs = [s for s in abs_str.replace(chr(92), "/").split("/") if s]
+            for i, seg in enumerate(segs):
+                if seg.lower() != ".git":
+                    continue
+                # A worktree keeps its real git dir elsewhere and links it
+                # here as a FILE, so only a directory is the control plane.
+                if i == len(segs) - 1 and not os.path.isdir(os.path.join(*segs[: i + 1])):
+                    break
+                raise PermissionError(
+                    "tier " + repr(self.tier) + " cannot write inside a .git directory " + repr(p) + "; "
+                    "the repository control plane is not model-writable"
+                )
         # M8: restricted tier is read-only on the uploads folder.
         # The user can still delete / re-upload via the GUI or
         # `smolcode uploads clean`; the agent just cannot mutate.
@@ -376,6 +400,30 @@ class _PatchFileTool(Tool):
             raise PermissionError("path resolves outside workspace")
         if common != workspace_norm:
             raise PermissionError("path resolves outside workspace")
+
+        # Plan 6.2 #5: the .git directory is a control plane, not a data
+        # directory. The workspace is bind-mounted rw and restricted tiers
+        # allowlist python, so without this the model can drop
+        # .git/hooks/pre-commit or rewrite .git/config -- and every LATER
+        # git_* tool then runs under configuration the model chose. The
+        # destructive gate cannot help here: hooks fire on ordinary commits
+        # and diffs, which are not gated actions.
+        #
+        # full_access is exempt by design. It is the explicit, audited tier,
+        # and blocking repo repair there would buy no security.
+        if self.tier != "full_access":
+            segs = [s for s in abs_str.replace(chr(92), "/").split("/") if s]
+            for i, seg in enumerate(segs):
+                if seg.lower() != ".git":
+                    continue
+                # A worktree keeps its real git dir elsewhere and links it
+                # here as a FILE, so only a directory is the control plane.
+                if i == len(segs) - 1 and not os.path.isdir(os.path.join(*segs[: i + 1])):
+                    break
+                raise PermissionError(
+                    "tier " + repr(self.tier) + " cannot write inside a .git directory " + repr(p) + "; "
+                    "the repository control plane is not model-writable"
+                )
         if self.tier == "restricted" and self.uploads_dir:
             uploads_norm = os.path.normcase(os.path.realpath(str(self.uploads_dir)))
             try:
