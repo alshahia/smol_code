@@ -366,10 +366,12 @@ prompt; container path falls back to the inlined classifier and the bound
   wedged server hung the agent forever.
 
 **Validation:** ruff clean; **pytest 1486 passed, 5 skipped, 0 failed**;
+frontend **tsc 0 / vitest 139/139 / oxlint 0 / Playwright 168/168**;
 frontend re-run this phase at **tsc 0 / vitest 139/139 / oxlint 0 warnings**.
-**Playwright e2e re-run and verified this phase: 168/168 passed** (7.4m). The
-first version of this row quoted 168/168 as if current while it was actually
-carried forward from Phase 5 — now measured, not inherited.
+**Playwright e2e re-run after the upload/frontend change: 168/168 passed**
+(6.8m). The first version of this row quoted 168/168 as if current while it
+was actually carried forward from Phase 5 — now measured twice on this
+phase, not inherited.
 
 **Known limitations, stated rather than buried:**
 
