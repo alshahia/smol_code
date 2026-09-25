@@ -367,9 +367,9 @@ prompt; container path falls back to the inlined classifier and the bound
 
 **Validation:** ruff clean; **pytest 1463 passed, 6 skipped, 0 failed**;
 frontend re-run this phase at **tsc 0 / vitest 139/139 / oxlint 0 warnings**.
-**Playwright e2e was NOT re-run this phase** — the 168/168 figure quoted in
-the first version of this row was carried forward from Phase 5 and should
-not have been presented as current.
+**Playwright e2e re-run and verified this phase: 168/168 passed** (7.4m). The
+first version of this row quoted 168/168 as if current while it was actually
+carried forward from Phase 5 — now measured, not inherited.
 
 **Known limitations, stated rather than buried:**
 
