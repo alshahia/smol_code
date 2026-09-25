@@ -273,6 +273,44 @@ same network policy as any other outbound call. An MCP server that
 the tier's network policy rejects cannot be reached, even if its URL
 is configured.
 
+### 7.5 MCP is not sandboxed (R13, decision with operator 2026-09-24)
+
+**The docker executor sandboxes model-written CODE. It does not sandbox MCP
+TOOL CALLS.** An MCP tool call executes on the host, in the MCP server process,
+outside every container. If the model can call a tool, the model can reach
+whatever that tool reaches — regardless of `SMOLCODE_EXECUTOR=docker`.
+
+This is a difference of **location**, not of permission. The allowlist,
+environment floor, and destructive gate all still apply; none of them move the
+execution. Nothing in the container boundary covers it.
+
+**It is refused by default.** Under `SMOLCODE_EXECUTOR=docker`, a run with any
+MCP server configured and without an explicit opt-in will not start those
+servers:
+
+| Executor | MCP configured | Opt-in | Result |
+|---|---|---|---|
+| `docker` | yes | no | **refused** — run does not start |
+| `docker` | yes | yes | allowed; a `NOTICE: MCP TOOLS ARE NOT SANDBOXED` banner is printed to stderr at start |
+| `local` | yes | n/a | allowed; the existing `NOT SANDBOXED` banner already covers the whole run |
+| any | no | n/a | unaffected |
+
+Opt in with `--allow-unsandboxed-mcp` or `SMOLCODE_ALLOW_UNSANDBOXED_MCP=1`.
+
+**Why a refusal and not a warning.** The path is reachable by default — any
+server in `mcp_config.json` — so a banner on that path prints on every run and
+is scrolled past. A control that fires every time and is ignored every time is
+indistinguishable from no control. Refusing converts a silent risk into a
+loud one, and the operator's only remedy is a deliberate flag.
+
+**This is not a sandbox.** The flag accepts the capability; it does not contain
+it. Running MCP servers in their own containers behind a narrow host-side
+bridge remains unbuilt — see R13 in the review report for the honest scope.
+
+Other hardening that does apply to MCP: per-server `allow` (default-deny),
+the environment floor, unique server ids, an enforced `timeout_s`, and the
+destructive gate for tools whose names read as destructive.
+
 ---
 
 ## 8. Secrets policy

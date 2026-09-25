@@ -372,10 +372,15 @@ of the boundary — so a destructive tool named `get_nuke` satisfied it.
 > shadow built-ins (`final_answer`, `python_interpreter`) are rejected even if
 > allowlisted.
 
-> **Known limitation (R13).** MCP tools execute **on the host**, outside every
-> container, even when `SMOLCODE_EXECUTOR=docker`. The destructive gate limits
-> *which* MCP tools may act; it does not change *where* they run. Treat MCP as
-> an unsandboxed capability until a host-side proxy lands.
+> **Known limitation (R13) — now refused by default.** MCP tools execute **on the
+> host**, outside every container, even when `SMOLCODE_EXECUTOR=docker`. The
+> destructive gate limits *which* MCP tools may act; it does not change *where*
+> they run. Since Phase 6 close-out, a docker-executor run with MCP configured
+> **refuses to start** unless the operator passes `--allow-unsandboxed-mcp`
+> (or `SMOLCODE_ALLOW_UNSANDBOXED_MCP=1`); with it, a `NOTICE: MCP TOOLS ARE NOT
+> SANDBOXED` banner is printed. `SMOLCODE_EXECUTOR=local` is unaffected — it is
+> already unsandboxed and already banner-warned. See `docs/security.md` §7.5 and
+> ADR 0041's addendum.
 
 Any allowlisted tool whose name reads as destructive (`delete_*`, `deploy_*`,
 `drop_*`, …) is additionally routed through `smolcode.destructive` and refused

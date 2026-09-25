@@ -146,3 +146,68 @@ to force a green build would be trusting an unverified key, dropping
   to create one entry in the uploads directory had an arbitrary-file
   read/delete/write primitive — and model-written code qualifies, because
   the workspace is bind-mounted rw.
+
+---
+
+## Addendum — R13: MCP is refused under the docker executor (2026-09-24)
+
+Appended rather than folded in, per the decision-doc lifecycle. This closes
+plan item 6.5 #1, which the original decision deferred with a note that the
+answer needed the operator.
+
+### The gap
+
+The original ADR hardened MCP in place: default-deny allow, an environment
+floor, unique ids, an enforced timeout, and routing destructive-looking tool
+names through smolcode.destructive. All of that is correct, and none of it
+changes WHERE an MCP tool call runs. It runs on the host, in the MCP server
+process, outside every container. So a run with SMOLCODE_EXECUTOR=docker and a
+configured MCP server gave the model a host-side capability that the docker
+executor exists to remove, while every other control read as though the run
+were contained.
+
+### Options put to the operator
+
+| | Option | Cost | What it does |
+|---|---|---|---|
+| A | Document MCP as a first-class unsandboxed capability | low | Removes the unacknowledged risk; not the risk |
+| **B** | **Gate MCP by executor mode: refuse under docker without an explicit opt-in** | **low** | **Converts a described risk into a refused-by-default one** |
+| C | Host-side proxy: run MCP servers in their own containers behind a narrow bridge | high | Actually fixes it; a substantial subsystem |
+
+**Decision: B, with the documentation from A landing alongside it.** The
+operator chose the middle option on 2026-09-24.
+
+### Why B over A
+
+The path is reachable by default: any server in mcp_config.json, on a run that
+is otherwise fully sandboxed. A warning on that path prints every run and is
+scrolled past every run. A control that always fires and is always ignored is
+not a control. Refusing makes the cost of the unsafe configuration visible at
+the moment it is used, and the remedy is one deliberate flag.
+
+### Why not C yet
+
+C is the actual fix and should not be pretended at. It needs container
+lifecycle management, a transport bridge, and its own failure-mode analysis,
+and squeezing it into a close-out step would produce something unmaintainable.
+It stays open as a follow-up rather than being half-built.
+
+### What this does NOT do
+
+- It does **not** sandbox MCP. The flag accepts the capability; it does not
+  contain it. docs/security.md section 7.5 says so explicitly, because a flag
+  named "allow" invites the opposite reading.
+- It does not change local, which was already unsandboxed and already
+  banner-warned. Refusing MCP there would break working setups for no
+  additional safety.
+
+### Consequence
+
+This is a **breaking change for any deployment that combines
+SMOLCODE_EXECUTOR=docker with a configured MCP server.** Those runs now fail
+to start until the operator passes --allow-unsandboxed-mcp. That is the
+intended behaviour, it is the whole point, and it is recorded as a change in
+observable behaviour rather than left to be discovered.
+
+Shipped in 90d13c3; documented in docs/security.md section 7.5 and
+docs/architecture.md section 6.
