@@ -6,13 +6,29 @@ import { uploadFile, type UploadMetadata } from '../api'
 interface Props {
   tier: string
   onUploaded: (m: UploadMetadata) => void
+  /** Server-configured cap (bytes) from GET /api/config. */
+  maxBytes?: number
 }
 
-export const UploadDropZone: FC<Props> = ({ tier, onUploaded }) => {
+// Plan 6.4 #2 (R14). The hint used to read "up to 50 MB each" as a literal,
+// which is wrong the moment SMOLCODE_UPLOAD_MAX_BYTES is set to anything
+// else. A stated limit that disagrees with the enforced one is worse than no
+// limit: the user trusts it.
+const DEFAULT_MAX_BYTES = 50 * 1024 * 1024
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return ""
+  const mb = n / (1024 * 1024)
+  if (mb >= 1) return `${Math.round(mb * 10) / 10} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+export const UploadDropZone: FC<Props> = ({ tier, onUploaded, maxBytes = DEFAULT_MAX_BYTES }) => {
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const limitLabel = formatBytes(maxBytes)
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -21,6 +37,12 @@ export const UploadDropZone: FC<Props> = ({ tier, onUploaded }) => {
       try {
         for (const file of Array.from(files)) {
           try {
+            // Same number the server enforces, checked before the upload so
+            // an oversized file fails immediately instead of after a full
+            // round trip. The server still enforces it; this is courtesy.
+            if (file.size > maxBytes) {
+              throw new Error("file is " + formatBytes(file.size) + ", limit is " + formatBytes(maxBytes))
+            }
             const meta = await uploadFile(file, tier)
             onUploaded(meta)
           } catch (e) {
@@ -31,7 +53,7 @@ export const UploadDropZone: FC<Props> = ({ tier, onUploaded }) => {
         setBusy(false)
       }
     },
-    [tier, onUploaded],
+    [tier, onUploaded, maxBytes],
   )
 
   const onDrop = useCallback(
@@ -87,7 +109,9 @@ export const UploadDropZone: FC<Props> = ({ tier, onUploaded }) => {
             ? 'Drop to upload'
             : 'Drop files here, or click to browse'}
       </div>
-      <div className="dropzone-hint">PDF, CSV, images, code, text — up to 50 MB each</div>
+      <div className="dropzone-hint">
+        PDF, CSV, images, code, text{limitLabel ? " — up to " + limitLabel + " each" : ""}
+      </div>
       {error && <div className="dropzone-error">{error}</div>}
     </div>
   )

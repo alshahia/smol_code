@@ -523,6 +523,9 @@ def list_uploads(store: UploadsStore = Depends(get_uploads_store)) -> dict:
     }
 
 
+_UPLOAD_READ_CHUNK = 1024 * 1024  # 1 MiB
+
+
 @router.post("/uploads", response_model=UploadOut, status_code=201)
 async def upload_file(
     request: Request,
@@ -530,7 +533,42 @@ async def upload_file(
     tier: str = Query(default="restricted"),
     store: UploadsStore = Depends(get_uploads_store),
 ) -> dict:
-    data = await file.read()
+    """Accept an upload without ever holding more than the cap in memory.
+
+    Plan 6.4 #2 (R14). This used to be `data = await file.read()`, which pulls
+    the entire body into RAM before anything checks its size -- the cap lived
+    in UploadsStore.save() and therefore ran AFTER the allocation. The cap was
+    enforced and still permitted the exhaustion.
+
+    Note there is deliberately no Content-Length shortcut here. Because the
+    endpoint takes UploadFile, Starlette has already parsed the entire
+    multipart body (spooling it to disk) before this function runs, so a
+    header check at this point refuses nothing and would only look like a
+    control. The chunked loop below is the real one: it bounds this process
+    to the configured limit no matter what the client claims to be sending.
+    """
+    limit = int(store.max_bytes)
+    chunks = []
+    total = 0
+    src = file.file
+    try:
+        src.seek(0)
+    except (OSError, ValueError):
+        pass
+    while True:
+        chunk = src.read(_UPLOAD_READ_CHUNK)
+        if not chunk:
+            break
+        # Refuse BEFORE retaining the chunk that would cross the line, so the
+        # resident size is bounded by limit + one chunk, not by the body.
+        if total + len(chunk) > limit:
+            raise HTTPException(
+                status_code=413,
+                detail="upload too large: limit is " + str(limit) + " bytes",
+            )
+        total += len(chunk)
+        chunks.append(chunk)
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(status_code=400, detail="empty upload")
     try:

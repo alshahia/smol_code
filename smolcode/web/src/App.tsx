@@ -709,7 +709,11 @@ function App() {
 
           <section className="plan-uploads">
             <h3>Uploads ({uploads.length})</h3>
-            <UploadDropZone tier="restricted" onUploaded={() => void refreshUploads()} />
+            <UploadDropZone
+            tier="restricted"
+            maxBytes={config?.upload_max_bytes}
+            onUploaded={() => void refreshUploads()}
+          />
             <UploadList uploads={uploads} onDeleted={() => void refreshUploads()} />
           </section>
 
