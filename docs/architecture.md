@@ -267,9 +267,12 @@ tool directly and accept that it is subject to the allowlist.
 `mcp_tools.py` is the only file that talks to `MCPClient`. It loads
 the `MCP_CONFIG` JSON at boot, builds a `MCPClient` per server
 named in the active tier, and exposes the resulting `Tool` objects.
-A read-only MCP server is one whose tools all start with `get_`,
-`search_`, `read_`, or `list_` — the wrapper rejects servers that
-violate this rule for the restricted tier.
+Exposure of an MCP tool to an agent is governed by the operator's
+per-server `allow` list, and the default is **deny**: a server entry with no
+`allow` exposes nothing at all. The tier's declared `tools` mode (`readonly` /
+`readwrite` / `full`) still decides which *tiers* may see the server, but it
+no longer decides which *tools* within it are safe — that was a name-prefix
+guess, and the name is supplied by the MCP server itself. See ADR 0041.
 
 ### 5.4 `agents/base.py` — `make_agent`
 
@@ -327,13 +330,24 @@ MCP servers are described in `mcp_config.json` (path via `MCP_CONFIG`):
       "name": "docs",
       "transport": "streamable-http",
       "url": "http://localhost:8765/mcp",
-      "tools": "readonly"
+      "tools": "readonly",
+      // REQUIRED. Exact names or shell globs. Omit this and the server
+      // exposes NOTHING (default-deny).
+      "allow": ["get_doc", "search_docs"]
     },
     {
       "name": "tickets",
       "transport": "stdio",
       "command": ["python", "-m", "tickets_mcp"],
-      "tools": "readwrite"
+      "tools": "readwrite",
+      "allow": ["create_ticket", "list_tickets"],
+      // Optional. Host env var NAMES this server may read. Everything
+      // else in the host environment is withheld.
+      "env_allow": ["TICKETS_API_TOKEN"],
+      // Optional literal values for the child process.
+      "env": {"TICKETS_LOG": "info"},
+      // Optional. Default 30s; enforced on every read.
+      "timeout_s": 30
     }
   ]
 }
@@ -345,11 +359,27 @@ Each server's `tools` field is one of:
 - `"readwrite"` — server is exposed only to `elevated` and `full_access` tiers.
 - `"full"` — server is exposed only to `full_access` tier.
 
-The `mcp_tools` wrapper rejects any tool whose name does not match
-the declared mode for the active tier (regex prefix `^(get|search|read|list)_`
-for readonly; any name for readwrite / full). Tool names that try to
-shadow built-in tool names (`final_answer`, `python_interpreter`)
-are rejected at registration time.
+`tools` decides **which tiers** may see the server. `allow` decides **which
+tools** within it are exposed, and it is **default-deny**: an entry with no
+`allow` exposes nothing. This replaced a name-prefix regex in Phase 6
+(ADR 0041) because the name is chosen by the MCP server — the untrusted side
+of the boundary — so a destructive tool named `get_nuke` satisfied it.
+
+> **Migration note (Phase 6).** Existing `mcp_config.json` files that do not
+> declare `allow` will expose **zero tools** after this change. That is
+> intended, but it is a breaking change: add an `allow` list to every server
+> you intend to use. Glob patterns (`search_*`) are supported. Names that
+> shadow built-ins (`final_answer`, `python_interpreter`) are rejected even if
+> allowlisted.
+
+> **Known limitation (R13).** MCP tools execute **on the host**, outside every
+> container, even when `SMOLCODE_EXECUTOR=docker`. The destructive gate limits
+> *which* MCP tools may act; it does not change *where* they run. Treat MCP as
+> an unsandboxed capability until a host-side proxy lands.
+
+Any allowlisted tool whose name reads as destructive (`delete_*`, `deploy_*`,
+`drop_*`, …) is additionally routed through `smolcode.destructive` and refused
+unless the host has granted approval.
 
 The MCP lifecycle is bound to the orchestrator: `MCPClient` instances
 are opened in the `orchestrator.run` context and closed on exit

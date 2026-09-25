@@ -1,7 +1,7 @@
 # 0005 — Milestone 3 MCP integration: hand-rolled sync stdio client
 
 **Date:** 2026-08-19
-**Status:** active
+**Status:** superseded in part (see note below)
 **Supersedes:** n/a
 **Related:** [`docs/roadmap.md` §6](../roadmap.md), [`docs/architecture.md` §6](../architecture.md), [`docs/security.md` §3.1, §7.4](../security.md), [`0004-m2-workspace-tools.md`](./0004-m2-workspace-tools.md)
 
@@ -197,6 +197,13 @@ We adopt **Option C**.
   - `classify_tool_name(name, mode)` — readonly requires
     `^(get|search|read|list)_`; readwrite / full accept any name except
     shadow names.
+
+     > **SUPERSEDED by [ADR 0041](./0041-tool-mcp-hardening-and-trust-boundary.md),
+     > 2026-09-24.** `classify_tool_name` and the `^(get|search|read|list)_`
+     > regex no longer exist. The tool *name* is supplied by the MCP server —
+     > the untrusted side of the boundary — so a destructive tool named
+     > `get_nuke` satisfied this gate. Exposure is now an explicit per-server
+     > `allow` list, default-deny. The rest of this ADR still stands.
   - `SHADOWED_TOOL_NAMES = frozenset({"final_answer", "python_interpreter"})`.
   - `build_mcp_tools(tier, configs) -> list[Tool]` — opens each server,
     fetches the tool list, classifies each name against the tier, builds

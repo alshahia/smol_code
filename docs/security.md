@@ -66,7 +66,7 @@ workspace.
 | Python imports | `json`, `pathlib`, `ast`, `textwrap`, `re`, `math`, `itertools`, `collections`, `datetime`, `typing`, `dataclasses`, `statistics`, `hashlib` (read-only digests) | Anything else → `additional_authorized_imports` rejects. |
 | Shell commands | `python`, `pytest`, `ruff`, `git` (read-only subcommands only), `cat`, `head`, `tail`, `wc`, `find` (within workspace), `grep` | `shell.run` basename allowlist; `subprocess.run(shell=False)` always. |
 | Network | **none** | Container `network_mode="none"`. No outbound socket of any kind. |
-| MCP servers | readonly (`^(get|search|read|list)_` prefix) | `mcp_tools` wrapper rejects non-readonly. |
+| MCP servers | the operator's per-server `allow` list | `tool_is_allowed()` — **default-deny**, so a server with no `allow` exposes nothing. *(Changed in Phase 6 / ADR 0041. The previous control was a `^(get\|search\|read\|list)_` name-prefix regex. The name is chosen by the MCP server — the untrusted side of the boundary — so a destructive tool named `get_nuke` satisfied it. The regex was deleted rather than kept as a second gate.)* |
 | `max_steps` | 20 | Bounds compute + LLM cost. |
 | Wall-clock timeout | 60 s | `agent.run()` is wrapped in `asyncio.wait_for`. |
 
