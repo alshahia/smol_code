@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>smolcode — cuebook (prototype)</title>
+<link rel="stylesheet" href="../fonts/fonts.css" />
+<style>
+  :root {
+    --bg: #100e0c;
+    --panel: #16130f;
+    --panel-2: #1b1712;
+    --panel-3: #221c16;
+    --line: #2c2620;
+    --line-soft: #241f19;
+    --ink: #ede6da;
+    --ink-2: #c9bfae;
+    --muted: #a79c8c;
+    --faint: #9a8f7e;
+    --cue: #e2452f;
+    --cue-solid: #b8341d;
+    --cue-dim: #a8382230;
+    --amber: #d9a441;
+    --green: #8ba777;
+    --sans: "Archivo", "Segoe UI", system-ui, sans-serif;
+    --type: "Courier Prime", "Courier New", monospace;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --r: 3px;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.45;
+    font-feature-settings: "tnum" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--cue-solid); color: #fff8ee; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: 2px; }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--panel); }
+  ::-webkit-scrollbar-thumb { background: #3a3228; border: 3px solid var(--panel); border-radius: 8px; }
+  a { color: inherit; text-decoration-color: var(--line); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--amber); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  code, pre, .mono { font-family: var(--mono); font-variant-ligatures: none; }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--cue-solid); color: #fff; padding: 8px 12px; z-index: 50; }
+  .skip:focus { left: 8px; }
+
+  /* ---------- frame ---------- */
+  .shell {
+    display: grid; min-height: 100vh;
+    grid-template-columns: 244px minmax(0, 1fr);
+    grid-template-rows: 58px minmax(0, 1fr);
+  }
+  .bar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 18px;
+    padding: 0 18px; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; min-width: 224px; }
+  .brand b { font-family: var(--type); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+  .brand span { font-family: var(--type); font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+  .proj {
+    display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 10px;
+    border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2);
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .proj:hover { border-color: #453a2c; color: var(--ink); }
+  .proj b { font-family: var(--mono); font-weight: 500; font-size: 12px; color: var(--ink); }
+  .bar-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .health { display: inline-flex; align-items: center; gap: 7px; font-family: var(--type); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--amber); }
+  .health i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px #d9a44122; }
+  .cost { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .cost span { color: var(--faint); }
+  .kbd-hint { font-family: var(--type); font-size: 12px; color: var(--muted); border: 1px solid var(--line); padding: 3px 7px; border-radius: var(--r); }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #453a2c; font-family: var(--type); font-size: 12px; color: var(--ink-2); display: grid; place-items: center; }
+
+  /* ---------- rail ---------- */
+  .rail {
+    border-right: 1px solid var(--line); background: var(--panel); padding: 18px 12px 14px;
+    display: flex; flex-direction: column; gap: 20px; position: sticky; top: 58px; height: calc(100vh - 58px);
+  }
+  .nav { display: grid; gap: 2px; }
+  .nav button {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 8px 10px; border-radius: var(--r); color: var(--ink-2); font-size: 13px;
+  }
+  .nav button:hover { background: var(--panel-2); color: var(--ink); }
+  .nav button[aria-current="page"] { background: var(--panel-3); color: var(--ink); box-shadow: inset 2px 0 0 var(--cue); }
+  .nav svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .nav .count { margin-left: auto; font-family: var(--type); font-size: 12px; color: var(--cue); }
+  .rail h2 { font-family: var(--type); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); font-weight: 400; margin: 0 0 8px 10px; }
+  .mini-runs { display: grid; gap: 1px; }
+  .mini-runs a { display: grid; grid-template-columns: 40px minmax(0,1fr); gap: 8px; padding: 7px 10px; border-radius: var(--r); font-size: 12px; color: var(--muted); }
+  .mini-runs a:hover { background: var(--panel-2); color: var(--ink-2); }
+  .mini-runs a.active { background: var(--panel-2); color: var(--ink); }
+  .mini-runs .q { font-family: var(--type); font-size: 12px; color: var(--faint); padding-top: 2px; }
+  .mini-runs .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-foot { margin-top: auto; border-top: 1px solid var(--line-soft); padding: 12px 10px 0; font-family: var(--type); font-size: 12px; line-height: 1.7; color: var(--faint); letter-spacing: 0.03em; }
+  .rail-foot b { color: var(--green); font-weight: 400; }
+
+  /* ---------- main ---------- */
+  main { min-width: 0; }
+  .view { padding: 26px 30px 40px; max-width: 1500px; }
+  .view-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
+  .view-head h1 { font-family: var(--type); font-weight: 700; font-size: 27px; letter-spacing: -0.015em; margin: 0; }
+  .view-head .sub { font-family: var(--type); font-size: 12px; color: var(--faint); letter-spacing: 0.04em; padding-bottom: 4px; }
+  .view-head .actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: var(--r);
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2); font-size: 12.5px;
+  }
+  .btn:hover { border-color: #4a3f31; color: var(--ink); background: var(--panel-3); }
+  .btn.primary { background: var(--cue-solid); border-color: var(--cue-solid); color: #fff6ec; font-weight: 500; }
+  .btn.primary:hover { background: #cf3a24; }
+  .btn.danger { border-color: #57302a; color: #e88774; }
+  .btn.ghost { background: transparent; }
+  .btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .btn.sm { padding: 5px 9px; font-size: 12px; }
+
+  /* ledger strip */
+  .ledger { display: flex; margin: 0 0 24px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .ledger div { padding: 12px 20px 12px 0; margin-right: 20px; border-right: 1px solid var(--line-soft); }
+  .ledger div:last-child { border-right: 0; }
+  .ledger dt { font-family: var(--type); text-transform: uppercase; letter-spacing: 0.16em; font-size: 12px; color: var(--faint); margin-bottom: 4px; }
+  .ledger dd { margin: 0; font-family: var(--mono); font-size: 19px; letter-spacing: -0.02em; }
+  .ledger dd em { font-style: normal; font-family: var(--type); font-size: 12px; color: var(--faint); letter-spacing: 0.04em; }
+  .ledger dd.amber { color: var(--amber); }
+  .ledger dd.green { color: var(--green); }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 30px; align-items: start; }
+  .panel { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { font-family: var(--type); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 400; color: var(--muted); margin: 0; }
+  .panel-head .r { margin-left: auto; font-family: var(--type); font-size: 12px; color: var(--faint); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-family: var(--type); font-weight: 400; font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--faint); padding: 9px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--panel-2); }
+  tbody tr:focus-visible { outline-offset: -2px; }
+  .cue-no { font-family: var(--type); font-size: 12px; color: var(--faint); white-space: nowrap; }
+  .run-title { display: block; font-size: 13px; color: var(--ink); margin-bottom: 2px; }
+  .run-id { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .tier { display: inline-flex; align-items: center; gap: 6px; font-family: var(--type); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--line); padding: 3px 7px; border-radius: 2px; color: var(--muted); white-space: nowrap; }
+  .tier.restricted::before { content: ""; width: 5px; height: 5px; background: #8ba777; border-radius: 50%; }
+  .tier.elevated::before { content: ""; width: 5px; height: 5px; background: var(--amber); border-radius: 50%; }
+  .tier.full::before { content: ""; width: 5px; height: 5px; background: var(--cue); border-radius: 50%; }
+  .state { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .state.running i { background: var(--cue); box-shadow: 0 0 0 3px #e2452f22, 0 0 0 5px #e2452f0d; }
+  .state.hold i { background: var(--amber); }
+  .state.done i { background: var(--green); }
+  .state.queued i { background: transparent; border: 1px solid var(--faint); }
+  .state.failed i { background: var(--cue); }
+  .state small { font-family: var(--type); font-size: 12px; color: var(--faint); }
+  .money { font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  @keyframes sheet-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); } to { opacity: 1; transform: translate(-50%, -50%); } }
+  .modal { animation: sheet-in .22s cubic-bezier(.2, .7, .2, 1); }
+  @media (prefers-reduced-motion: reduce) { .modal { animation: none; } .state.running i { box-shadow: none; } }
+
+  /* side column */
+  .side { display: grid; gap: 18px; }
+  .hold-card { padding: 14px; }
+  .hold-card .hd { display: flex; align-items: baseline; gap: 8px; font-family: var(--type); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+  .hold-card h3 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; letter-spacing: -0.01em; }
+  .hold-card p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+  .hold-card .fileline { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); padding: 7px 9px; border: 1px solid var(--line); border-radius: 2px; background: var(--panel-2); }
+  .hold-card .fileline .stat { margin-left: auto; font-family: var(--type); font-size: 12px; }
+  .add { color: var(--green); } .del { color: #dd7a63; }
+  .standby { display: grid; }
+  .standby div { display: flex; gap: 10px; align-items: baseline; padding: 9px 14px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
+  .standby div:last-child { border-bottom: 0; }
+  .standby .n { font-family: var(--type); font-size: 12px; color: var(--faint); min-width: 22px; }
+  .standby .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .audit-tail { display: grid; }
+  .audit-tail a { display: grid; grid-template-columns: 46px minmax(0,1fr) auto; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
+  .audit-tail a:last-child { border-bottom: 0; }
+  .audit-tail a:hover { background: var(--panel-2); color: var(--ink-2); }
+  .audit-tail .seq { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .audit-tail .at { font-family: var(--type); font-size: 12px; color: var(--faint); }
+
+  /* ---------- run view ---------- */
+  .runband { border-bottom: 1px solid var(--line); padding: 0 0 16px; margin-bottom: 18px; }
+  .runband .top { display: flex; align-items: center; gap: 12px; font-family: var(--type); font-size: 12px; letter-spacing: 0.04em; color: var(--faint); }
+  .runband .top a { color: var(--muted); text-decoration: none; }
+  .runband .top a:hover { color: var(--ink); }
+  .runband h1 { font-family: var(--type); font-weight: 700; font-size: 24px; letter-spacing: -0.015em; margin: 8px 0 10px; }
+  .runmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
+  .runmeta .k { font-family: var(--type); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-right: 5px; }
+  .runmeta .v { color: var(--ink-2); }
+  .runmeta .v.mono { font-family: var(--mono); font-size: 12px; }
+  .run-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
+
+  .console { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 26px; align-items: start; }
+  .cuewrap { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+  .cue-head { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+  .cue-head h2 { margin: 0; font-family: var(--type); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 400; color: var(--muted); }
+  .cue-head .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-family: var(--type); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cue); }
+  .cue-head .live i { width: 6px; height: 6px; border-radius: 50%; background: var(--cue); box-shadow: 0 0 0 3px #e2452f22; }
+  .cues { list-style: none; margin: 0; padding: 6px 0 8px; }
+  .cue { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 14px; padding: 10px 18px 12px; position: relative; }
+  .cue + .cue { border-top: 1px solid var(--line-soft); }
+  .cue .no { font-family: var(--type); font-size: 12px; color: var(--faint); letter-spacing: 0.04em; padding-top: 3px; }
+  .cue .no b { display: block; color: var(--muted); font-weight: 400; }
+  .cue .no time { display: block; font-size: 12px; color: #6b6154; margin-top: 3px; }
+  .cue .body { min-width: 0; }
+  .cue .who { display: flex; align-items: center; gap: 8px; font-family: var(--type); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; }
+  .cue .who .agent { color: var(--ink-2); }
+  .cue .who .tag { border: 1px solid var(--line); padding: 1px 5px; border-radius: 2px; letter-spacing: 0.08em; }
+  .cue p { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+  .cue p:last-child { margin-bottom: 0; }
+  .cue .cmd { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 2px; padding: 9px 11px; }
+  .cue .cmd .prompt { color: var(--cue); }
+  .cue .cmd .path { color: var(--amber); }
+  .cue .out { margin-top: 7px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--muted); background: #0c0a08; border: 1px solid var(--line-soft); border-radius: 2px; padding: 9px 11px; white-space: pre-wrap; }
+  .cue .out .ok { color: var(--green); }
+  .cue.active { background: #1a130f; box-shadow: inset 2px 0 0 var(--cue); }
+  .cue.hold { background: #1c160d; box-shadow: inset 2px 0 0 var(--amber); }
+  .cue.hold .no b { color: var(--amber); }
+  .cue.queued { opacity: 0.42; }
+  .holdline { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #3a2f22; }
+  .holdline .why { font-family: var(--type); font-size: 12px; color: var(--amber); letter-spacing: 0.04em; }
+  .holdline .btn { margin-left: auto; }
+
+  .inspector { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); position: sticky; top: 84px; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { padding: 10px 14px; font-family: var(--type); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid transparent; margin-bottom: -1px; }
+  .tabs button:hover { color: var(--ink-2); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--cue); }
+  .tabpane { padding: 14px 16px 16px; display: none; }
+  .tabpane.on { display: block; }
+  .facts { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px 16px; font-size: 12px; }
+  .facts dt { font-family: var(--type); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); padding-top: 2px; }
+  .facts dd { margin: 0; color: var(--ink-2); }
+  .facts dd.mono { font-family: var(--mono); font-size: 12px; }
+  .divider { border: 0; border-top: 1px solid var(--line-soft); margin: 14px 0; }
+  .tree { font-family: var(--mono); font-size: 12px; color: var(--muted); display: grid; gap: 1px; }
+  .tree .row { display: flex; gap: 8px; padding: 5px 6px; border-radius: 2px; }
+  .tree .row:hover { background: var(--panel-2); color: var(--ink-2); }
+  .tree .row.changed { color: var(--ink); }
+  .tree .row.changed::after { content: "M"; margin-left: auto; font-family: var(--type); font-size: 12px; color: var(--amber); }
+  .tree .row.dir { color: var(--ink-2); }
+  .tree .row .ic { width: 12px; color: var(--faint); }
+  .policy { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .policy th { padding: 6px 8px; font-size: 12px; }
+  .policy td { padding: 6px 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); }
+  .policy td.y { color: var(--green); font-family: var(--type); font-size: 12px; }
+  .policy td.n { color: #b8664f; font-family: var(--type); font-size: 12px; }
+
+  /* composer */
+  .composer { position: sticky; bottom: 0; z-index: 5; margin-top: 18px; border: 1px solid #3a3128; border-radius: var(--r); background: var(--panel-2); box-shadow: 0 -14px 30px #0b0906cc; backdrop-filter: none; }
+  .composer .inputrow { display: flex; gap: 12px; padding: 13px 14px; }
+  .composer textarea {
+    flex: 1; min-height: 46px; resize: vertical; background: transparent; border: 0; outline: none;
+    color: var(--ink); font: 13px/1.55 var(--sans); caret-color: var(--cue);
+  }
+  .composer textarea::placeholder { color: var(--faint); }
+  .composer .controls { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
+  .sel { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel); padding: 5px 9px; border-radius: 2px; font-size: 12px; color: var(--ink-2); }
+  .sel:hover { border-color: #4a3f31; }
+  .sel .lbl { font-family: var(--type); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+  .sel b { font-weight: 500; }
+  .sel svg { width: 11px; height: 11px; stroke: var(--muted); fill: none; stroke-width: 1.8; }
+  .toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .toggle .sw { width: 26px; height: 14px; border-radius: 8px; background: #322a22; position: relative; transition: background .15s; }
+  .toggle .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+  .toggle[aria-pressed="true"] .sw { background: #5a2a20; }
+  .toggle[aria-pressed="true"] .sw::after { transform: translateX(12px); background: var(--cue); }
+  .composer .send { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .composer .hint { font-family: var(--type); font-size: 12px; color: var(--faint); letter-spacing: 0.04em; }
+
+  /* ---------- audit view ---------- */
+  .audit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 30px; align-items: start; }
+  .chain { display: grid; }
+  .chain a { display: grid; grid-template-columns: 62px 96px minmax(0,1fr) 150px 74px; gap: 14px; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); }
+  .chain a:last-child { border-bottom: 0; }
+  .chain a:hover { background: var(--panel-2); }
+  .chain .seq { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .chain .when { font-family: var(--type); font-size: 12px; color: var(--faint); }
+  .chain .what { color: var(--ink-2); }
+  .chain .what b { font-weight: 500; color: var(--ink); }
+  .chain .hash { font-family: var(--mono); font-size: 12px; color: #6f6557; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chain .actor { font-family: var(--mono); font-size: 12px; color: var(--faint); text-align: right; }
+  .side .panel-body { padding: 14px 16px; }
+  .kv { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px 14px; font-size: 12px; }
+  .kv dt { font-family: var(--type); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); padding-top: 2px; }
+  .kv dd { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
+  .kv dd.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .matrix { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .matrix th { padding: 7px 8px; }
+  .matrix td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); }
+  .matrix td.y { color: var(--green); } .matrix td.n { color: #b8664f; }
+  .matrix .t { font-family: var(--type); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+
+  /* ---------- modal ---------- */
+  .scrim { position: fixed; inset: 0; background: #05040399; backdrop-filter: blur(1.5px); display: none; z-index: 40; }
+  .scrim.on { display: block; }
+  .modal {
+    position: fixed; z-index: 41; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 60px); overflow: auto;
+    background: var(--panel); border: 1px solid #4a3b2c; border-radius: 4px;
+    box-shadow: 0 24px 60px #00000066, 0 2px 0 #00000033;
+  }
+  .modal[hidden] { display: none; }
+  .modal .m-head { display: flex; align-items: flex-start; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
+  .modal .m-head h2 { margin: 0; font-family: var(--type); font-size: 17px; letter-spacing: -0.01em; }
+  .modal .m-head .kick { font-family: var(--type); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber); margin-bottom: 5px; }
+  .modal .m-head .x { margin-left: auto; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); }
+  .modal .m-head .x:hover { color: var(--ink); border-color: #4a3f31; }
+  .modal .m-body { padding: 16px 20px; }
+  .modal .m-foot { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line); }
+  .diff { border: 1px solid var(--line); border-radius: 2px; background: #0c0a08; font-family: var(--mono); font-size: 12px; line-height: 1.65; overflow: auto; padding: 7px; }
+  .diff .dl { display: grid; grid-template-columns: 34px 18px minmax(0,1fr); }
+  .diff .dl span { padding: 0 8px; white-space: pre; }
+  .diff .dl .ln { color: #5c5346; text-align: right; padding-right: 10px; }
+  .diff .dl .sg { color: #6f6557; text-align: center; }
+  .diff .dl.add { background: #14200f; } .diff .dl.add .sg, .diff .dl.add .code { color: #a9c79a; }
+  .diff .dl.del { background: #240e0b; } .diff .dl.del .sg, .diff .dl.del .code { color: #d98d78; }
+  .diff .dl.hunk { background: var(--panel-2); color: #8b7f6f; }
+  .diff .dl.hunk .code { color: #8b7f6f; }
+  .modal .filehead { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-bottom: 10px; }
+  .modal .filehead .chg { font-family: var(--type); font-size: 12px; color: var(--faint); }
+  .modal .note { font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+  .check { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .check input { accent-color: var(--cue); width: 14px; height: 14px; }
+  .m-foot .right { margin-left: auto; display: flex; gap: 8px; }
+
+  /* ---------- narrow ---------- */
+  @media (max-width: 1180px) {
+    .cols, .console, .audit-grid { grid-template-columns: minmax(0,1fr); }
+    .inspector { position: static; }
+    .side { grid-template-columns: 1fr 1fr; display: grid; }
+  }
+  .mobnav { display: none; }
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0,1fr); }
+    .rail { display: none; }
+    .bar { height: auto; min-height: 52px; padding: 8px 12px; flex-wrap: wrap; row-gap: 6px; position: static; }
+    .brand { min-width: 0; }
+    .brand span { display: none; }
+    .brand b { font-size: 15px; }
+    .proj { padding: 4px 7px; font-size: 12px; max-width: 46vw; overflow: hidden; }
+    .proj b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-right { gap: 8px; margin-left: auto; }
+    .health { display: none; }
+    .cost { font-size: 12px; white-space: nowrap; }
+    .cost span { display: none; }
+    .kbd-hint { display: none; }
+    .avatar { width: 26px; height: 26px; }
+    .mobnav { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 15; scrollbar-width: none; }
+    .mobnav::-webkit-scrollbar { display: none; }
+    .mobnav button { flex: 0 0 auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: 2px; font-family: var(--type); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    .mobnav button[aria-current="page"] { color: var(--ink); border-color: var(--cue); }
+    .view { padding: 16px 14px 30px; }
+    .view-head { align-items: flex-start; }
+    .view-head h1 { font-size: 22px; }
+    .view-head .sub { display: block; font-size: 12px; line-height: 1.5; padding-bottom: 0; }
+    .view-head { flex-wrap: wrap; }
+    .view-head .actions { margin-left: 0; width: 100%; }
+    .view-head .actions .btn { flex: 1 1 auto; justify-content: center; }
+    .view-head .btn { white-space: nowrap; }
+    .view-head .btn { padding: 6px 9px; font-size: 12px; }
+    .ledger { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 18px; }
+    .ledger div { border-right: 0; border-bottom: 1px solid var(--line-soft); padding: 9px 0; margin-right: 0; }
+    .ledger div:nth-child(odd) { border-right: 1px solid var(--line-soft); padding-right: 12px; }
+    .ledger div:nth-child(even) { padding-left: 12px; }
+    .ledger dt { font-size: 12px; }
+    .ledger dd { font-size: 16px; }
+    .panel { overflow: hidden; }
+    .cols { gap: 18px; }
+    table { min-width: 0; }
+    th, td { padding: 9px 10px; }
+    th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(6), td:nth-child(6), th:nth-child(7), td:nth-child(7) { display: none; }
+    .run-title { font-size: 12.5px; line-height: 1.4; }
+    .state small { display: none; }
+    .chain a { grid-template-columns: 48px minmax(0,1fr); gap: 10px; padding: 10px 12px; }
+    .chain .hash, .chain .actor { display: none; }
+    .chain .what b { font-size: 12px; }
+    .side { display: block; } .side > * + * { margin-top: 16px; }
+    .console { gap: 18px; }
+    .composer { position: sticky; bottom: 10px; }
+    .composer .inputrow { padding: 10px 12px; }
+    .composer .controls { gap: 6px; padding: 8px 10px; }
+    .composer .hint { display: none; }
+    .sel { padding: 4px 7px; }
+    .modal { width: calc(100vw - 20px); max-height: calc(100vh - 24px); top: auto; bottom: 10px; transform: translate(-50%, 0); }
+    .modal .m-foot { flex-wrap: wrap; }
+    .runband h1 { font-size: 20px; line-height: 1.25; }
+    .runmeta { gap: 10px; }
+    .run-actions { margin-left: 0; width: 100%; }
+    .cue { grid-template-columns: 48px minmax(0,1fr); gap: 10px; padding: 10px 12px; }
+    .diff .dl { grid-template-columns: 26px 16px minmax(0,1fr); }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <header class="bar">
+    <div class="brand"><b>smolcode</b><span>cuebook · prototype</span></div>
+    <button class="proj" title="Switch project">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5h4l1.5 2H14v6.5H2z"/></svg>
+      <b>orbit-api</b>
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
+    </button>
+    <div class="bar-right">
+      <div class="health" title="Images: restricted current, elevated stale, full_access current"><i></i><span class="full">elevated image stale</span></div>
+      <div class="cost">$3.84 <span>/ $12.00 cap</span></div>
+      <span class="kbd-hint">⌘K</span>
+      <button class="avatar" title="Signed in as ahmadmhmdsy">AM</button>
+    </div>
+  </header>
+
+  <nav class="mobnav" aria-label="Sections">
+    <button data-go="overview" aria-current="page">Call sheet</button>
+    <button data-go="run">Cue sheet</button>
+    <button data-go="audit">Audit</button>
+    <button data-go="settings">Settings</button>
+  </nav>
+
+  <aside class="rail">
+    <nav class="nav" aria-label="Main">
+      <button data-go="overview" aria-current="page">
+        <svg viewBox="0 0 16 16"><path d="M2 3.5h12M2 8h12M2 12.5h8"/></svg> Call sheet
+      </button>
+      <button data-go="run">
+        <svg viewBox="0 0 16 16"><path d="M4 2.5h8v11l-4-2.5-4 2.5z"/></svg> Cue sheet
+      </button>
+      <button data-go="overview">
+        <svg viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h6"/><circle cx="12.5" cy="12" r="1.4"/></svg> Queue <span class="count">2</span>
+      </button>
+      <button data-go="overview">
+        <svg viewBox="0 0 16 16"><path d="M3 3h10v10H3z"/><path d="M6 6h4M6 9h4"/></svg> Sessions
+      </button>
+      <button data-go="audit">
+        <svg viewBox="0 0 16 16"><path d="M8 1.8 13.5 4v4.2c0 3.2-2.2 5.4-5.5 6-3.3-.6-5.5-2.8-5.5-6V4z"/><path d="M5.8 8l1.6 1.6 2.8-3"/></svg> Audit trail
+      </button>
+      <button data-go="settings">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.8M8 12.4v1.8M1.8 8h1.8M12.4 8h1.8M3.6 3.6l1.3 1.3M11.1 11.1l1.3 1.3M12.4 3.6l-1.3 1.3M4.9 11.1l-1.3 1.3"/></svg> Settings
+      </button>
+    </nav>
+    <div>
+      <h2>Standby</h2>
+      <div class="mini-runs">
+        <a href="#" class="active"><span class="q">12</span><span class="t">Wire idempotency keys</span></a>
+        <a href="#"><span class="q">13</span><span class="t">Upgrade session store</span></a>
+        <a href="#"><span class="q">—</span><span class="t">Fix flaky snapshot test</span></a>
+        <a href="#"><span class="q">—</span><span class="t">Migrate audit chain v2</span></a>
+      </div>
+    </div>
+    <div class="rail-foot">
+      daemon <b>reachable</b><br />
+      restricted image <b>current</b><br />
+      elevated image stale<br />
+      full_access image current
+    </div>
+  </aside>
+
+  <main id="main">
+    <!-- ============ OVERVIEW ============ -->
+    <section class="view" data-view="overview">
+      <div class="view-head">
+        <div>
+          <h1>Tonight's call</h1>
+          <div class="sub">FRI 24 OCT · 20:41 · orbit-api · 5 runs in the book</div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg> New run</button>
+        </div>
+      </div>
+
+      <dl class="ledger">
+        <div><dt>On stage</dt><dd>2 <em>runs</em></dd></div>
+        <div><dt>Standing by</dt><dd>2</dd></div>
+        <div><dt>Needs a go</dt><dd class="amber">1</dd></div>
+        <div><dt>Spend tonight</dt><dd>$3.84 <em>of $12.00</em></dd></div>
+      </dl>
+
+      <div class="cols">
+        <div>
+          <div class="panel">
+            <div class="panel-head"><h2>The book</h2><span class="r">newest first</span></div>
+            <table>
+              <thead><tr><th style="width:52px">No.</th><th>Run</th><th style="width:112px">Tier</th><th style="width:104px">Model</th><th style="width:132px">State</th><th style="width:66px;text-align:right">Time</th><th style="width:58px;text-align:right">Cost</th></tr></thead>
+              <tbody>
+                <tr data-to="run">
+                  <td class="cue-no">12</td>
+                  <td><span class="run-title">Wire idempotency keys into the Stripe webhook handler</span><span class="run-id">run_7f3a · 20:37</span></td>
+                  <td><span class="tier restricted">Restricted</span></td>
+                  <td class="mono" style="font-size: 12px">sonnet-4</td>
+                  <td><span class="state running"><i></i>Running <small>cue 09</small></span></td>
+                  <td class="money" style="text-align:right">04:12</td>
+                  <td class="money" style="text-align:right">0.38</td>
+                </tr>
+                <tr data-to="run">
+                  <td class="cue-no">13</td>
+                  <td><span class="run-title">Upgrade the session store to an append-only event log</span><span class="run-id">run_2b9c · 20:33</span></td>
+                  <td><span class="tier elevated">Elevated</span></td>
+                  <td class="mono" style="font-size: 12px">opus-4</td>
+                  <td><span class="state hold"><i></i>HOLD <small>approval</small></span></td>
+                  <td class="money" style="text-align:right">06:48</td>
+                  <td class="money" style="text-align:right">0.91</td>
+                </tr>
+                <tr data-to="run">
+                  <td class="cue-no">—</td>
+                  <td><span class="run-title">Fix the flaky billing snapshot test</span><span class="run-id">run_6d1e · 20:19</span></td>
+                  <td><span class="tier restricted">Restricted</span></td>
+                  <td class="mono" style="font-size: 12px">sonnet-4</td>
+                  <td><span class="state done"><i></i>Struck</span></td>
+                  <td class="money" style="text-align:right">02:03</td>
+                  <td class="money" style="text-align:right">0.14</td>
+                </tr>
+                <tr data-to="run">
+                  <td class="cue-no">—</td>
+                  <td><span class="run-title">Migrate the audit chain to v2 with rotation</span><span class="run-id">run_04aa · 20:15</span></td>
+                  <td><span class="tier full">Full access</span></td>
+                  <td class="mono" style="font-size: 12px">opus-4</td>
+                  <td><span class="state queued"><i></i>Standing by <small>#1</small></span></td>
+                  <td class="money" style="text-align:right">—</td>
+                  <td class="money" style="text-align:right">—</td>
+                </tr>
+                <tr data-to="run">
+                  <td class="cue-no">—</td>
+                  <td><span class="run-title">Document the tier policy matrix in docs/security.md</span><span class="run-id">run_9c31 · 19:58</span></td>
+                  <td><span class="tier restricted">Restricted</span></td>
+                  <td class="mono" style="font-size: 12px">minimax-m2</td>
+                  <td><span class="state failed"><i></i>Dropped <small>image stale</small></span></td>
+                  <td class="money" style="text-align:right">00:12</td>
+                  <td class="money" style="text-align:right">0.02</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="side">
+          <div class="panel">
+            <div class="panel-head"><h2>Needs a go</h2><span class="r">1</span></div>
+            <div class="hold-card">
+              <div class="hd"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2v9M8 13.4v.2M2.5 8h.2M13.3 8h.2"/></svg> Hold · Q13 · destructive</div>
+              <h3>Drop 12 legacy snapshot files</h3>
+              <p>Elevated sandbox wants to delete the old session snapshot directory before writing the event log.</p>
+              <div class="fileline">src/session/store.py <span class="stat"><span class="add">+42</span> <span class="del">−11</span></span></div>
+              <div style="display:flex;gap:8px;margin-top:11px">
+                <button class="btn primary sm" data-open-approval>Review the diff</button>
+                <button class="btn sm">Hold</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Waiting in the wings</h2><span class="r">queue</span></div>
+            <div class="standby">
+              <div><span class="n">#1</span><span class="t">Migrate audit chain to v2 with rotation</span></div>
+              <div><span class="n">#2</span><span class="t">Backfill cost caps into docs/operations.md</span></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Audit tail</h2><a href="#" class="r" data-go="audit" style="color:var(--muted);text-decoration:none">open</a></div>
+            <div class="audit-tail">
+              <a href="#"><span class="seq">1204</span><span>approval.denied · patch_file</span><span class="at">20:41</span></a>
+              <a href="#"><span class="seq">1203</span><span>diff.proposed · src/session/store.py</span><span class="at">20:40</span></a>
+              <a href="#"><span class="seq">1202</span><span>tool.run · pytest tests/session</span><span class="at">20:39</span></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RUN ============ -->
+    <section class="view" data-view="run" hidden>
+      <div class="runband">
+        <div class="top">
+          <a href="#" data-go="overview">← The book</a><span>·</span><span>Q12 / run_7f3a</span>
+          <div class="run-actions">
+            <button class="btn sm"><svg viewBox="0 0 16 16"><path d="M6 3v10M10 3v10"/></svg> Pause</button>
+            <button class="btn sm danger"><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8"/></svg> Call it</button>
+            <button class="btn sm"><svg viewBox="0 0 16 16"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg> Export</button>
+          </div>
+        </div>
+        <h1>Wire idempotency keys into the Stripe webhook handler</h1>
+        <div class="runmeta">
+          <span><span class="k">Tier</span><span class="tier restricted">Restricted</span></span>
+          <span><span class="k">Model</span><span class="v mono">anthropic/claude-sonnet-4</span></span>
+          <span><span class="k">Sandbox</span><span class="v">smolcode:restricted · <span class="mono" style="font-size: 12px">a91c4e</span></span></span>
+          <span><span class="k">Cue</span><span class="v mono">06 / 08</span></span>
+          <span><span class="k">Elapsed</span><span class="v mono">04:12</span></span>
+          <span><span class="k">Cost</span><span class="v mono">$0.38</span></span>
+        </div>
+      </div>
+
+      <div class="console">
+        <div>
+          <div class="cuewrap">
+            <div class="cue-head"><h2>Cue sheet</h2><span class="live"><i></i> live · 20:41:12</span></div>
+            <ol class="cues">
+              <li class="cue">
+                <div class="no"><b>Q01</b><time>20:37:04</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">You</span><span class="tag">task</span></div>
+                  <p>Add idempotency keys to the Stripe webhook handler so duplicate deliveries cannot double-charge. Keep the existing signature check. Add tests for the replay case.</p>
+                </div>
+              </li>
+              <li class="cue">
+                <div class="no"><b>Q02</b><time>20:37:11</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">Lead agent</span><span>plan</span></div>
+                  <p style="margin-bottom:0">Read the handler and the billing tests, key the event on <span class="mono" style="font-size:12px">stripe_event_id</span>, store it beside the charge, run the suite, then patch the handler.</p>
+                </div>
+              </li>
+              <li class="cue">
+                <div class="no"><b>Q03</b><time>20:37:19</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">Code agent</span><span class="tag">tool</span><span>read_file</span></div>
+                  <div class="cmd"><span class="prompt">read_file</span> <span class="path">src/billing/webhook.py</span><span style="margin-left:auto;color:var(--faint);font-size: 12px">212 lines</span></div>
+                </div>
+              </li>
+              <li class="cue">
+                <div class="no"><b>Q04</b><time>20:37:41</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">Code agent</span><span class="tag">exec</span></div>
+                  <div class="cmd"><span class="prompt">$</span> pytest tests/billing -q</div>
+                  <pre class="out"><span class="ok">18 passed</span> in 2.14s
+tests/billing/test_webhook.py::test_replay_is_idempotent <span class="ok">PASSED</span></pre>
+                </div>
+              </li>
+              <li class="cue active">
+                <div class="no"><b>Q05</b><time>20:38:02</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">Code agent</span><span class="tag">exec</span><span>scout sub-agent</span></div>
+                  <div class="cmd"><span class="prompt">$</span> grep -rn "stripe_event_id" src/ tests/ <span style="color:var(--faint);margin-left:auto;font-size: 12px">14 hits</span></div>
+                </div>
+              </li>
+              <li class="cue hold">
+                <div class="no"><b>Q06</b><time>20:40:03</time></div>
+                <div class="body">
+                  <div class="who"><span class="agent">Code agent</span><span class="tag">diff</span><span>src/billing/webhook.py</span></div>
+                  <p style="margin-bottom:8px">Adds an idempotency column, a unique index migration, and a replay guard before the charge call.</p>
+                  <div class="cmd"><span class="prompt">patch_file</span> <span class="path">src/billing/webhook.py</span><span style="margin-left:auto;font-family:var(--type);font-size: 12px"><span class="add">+24</span> <span class="del">−3</span></span></div>
+                  <div class="holdline">
+                    <span class="why">HOLD · awaiting approval</span>
+                    <button class="btn primary sm" data-open7>GO — review</button>
+                  </div>
+                </div>
+              </li>
+              <li class="cue queued">
+                <div class="no"><b>Q07</b><time>—</time></div>
+                <div class="body"><div class="who"><span class="agent">Code agent</span><span class="tag">exec</span></div><p style="margin:0">pytest tests/billing -q</p></div>
+              </li>
+              <li class="cue queued">
+                <div class="no"><b>Q08</b><time>—</time></div>
+                <div class="body"><div class="who"><span class="agent">Lead agent</span><span>summary</span></div><p style="margin:0">Hand back the diff, test results, and the one risk it could not prove.</p></div>
+              </li>
+            </ol>
+          </div>
+
+          <div class="composer">
+            <div class="inputrow">
+              <textarea placeholder="Direct the next cue. @ to mention a file, / for a command." aria-label="Message the run"></textarea>
+            </div>
+            <div class="controls">
+              <button class="sel"><span class="lbl">Tier</span><b>Restricted</b><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></button>
+              <button class="sel"><span class="lbl">Model</span><b>sonnet-4</b><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></button>
+              <button class="sel"><span class="lbl">Attach</span><b>2 files</b><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></button>
+              <button class="toggle" aria-pressed="false"><span class="sw"></span> Auto-approve this run</button>
+              <div class="send"><span class="hint">⌘↵ to queue</span><button class="btn primary">Queue cue</button></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="inspector" aria-label="Run evidence">
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected="true" data-tab="evidence">Evidence</button>
+            <button role="tab" aria-selected="false" data-tab="files">Files</button>
+            <button role="tab" aria-selected="false" data-tab="policy">Policy</button>
+          </div>
+          <div class="tabpane on" data-pane="evidence">
+            <dl class="facts">
+              <dt>Run</dt><dd class="mono">run_7f3a</dd>
+              <dt>Executor</dt><dd>docker · restricted image</dd>
+              <dt>Image</dt><dd class="mono">a91c4e · current</dd>
+              <dt>Network</dt><dd>none · internal bridge</dd>
+              <dt>Limits</dt><dd>2 cpu · 2g · 900s</dd>
+              <dt>Steps</dt><dd>6 of 8 runs</dd>
+              <dt>Approvals</dt><dd>0 granted · 1 held</dd>
+              <dt>Audit</dt><dd class="mono">seq 1204 → 1198</dd>
+            </dl>
+            <hr class="divider" />
+            <dl class="facts">
+              <dt>Model</dt><dd class="mono">anthropic/claude-sonnet-4</dd>
+              <dt>Tokens</dt><dd class="mono">148.2k in · 11.4k out</dd>
+              <dt>Cost</dt><dd class="mono">$0.38 / $2.00 run cap</dd>
+              <dt>Sub-agents</dt><dd>1 · scout (grep)</dd>
+            </dl>
+            <hr class="divider" />
+            <p style="margin:0;font-size: 12px;color:var(--faint);font-family:var(--type);line-height:1.7">
+              Restricted tier: workspace read/write, no network, allowlisted commands and imports.
+            </p>
+          </div>
+          <div class="tabpane" data-pane="files">
+            <div class="tree">
+              <div class="row dir"><span class="ic">▾</span> orbit-api</div>
+              <div class="row"><span class="ic">▾</span> src</div>
+              <div class="row changed"><span class="ic">·</span> billing/webhook.py</div>
+              <div class="row"><span class="ic">·</span> billing/charges.py</div>
+              <div class="row"><span class="ic">▾</span> tests</div>
+              <div class="row changed"><span class="ic">·</span> billing/test_webhook.py</div>
+              <div class="row"><span class="ic">·</span> conftest.py</div>
+              <div class="row"><span class="ic">·</span> migrations/0042_idempotency.py</div>
+              <div class="row"><span class="ic">·</span> pyproject.toml</div>
+            </div>
+            <p style="margin:12px 0 0;font-size: 12px;color:var(--faint)">2 files changed by this run. Diffs open in the approval sheet.</p>
+          </div>
+          <div class="tabpane" data-pane="policy">
+            <table class="policy">
+              <thead><tr><th>Tier</th><th>Network</th><th>Write</th></tr></thead>
+              <tbody>
+                <tr><td>restricted</td><td class="n">none</td><td class="y">workspace</td></tr>
+                <tr><td>elevated</td><td>allowlist</td><td class="y">workspace + paths</td></tr>
+                <tr><td>full_access</td><td class="n">audited</td><td class="n">broad</td></tr>
+              </tbody>
+            </table>
+            <hr class="divider" />
+            <dl class="facts">
+              <dt>Commands</dt><dd>python · pytest · git · npm</dd>
+              <dt>Imports</dt><dd>33 allowlisted</dd>
+              <dt>Gate</dt><dd>destructive op · fail-closed</dd>
+            </dl>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ AUDIT ============ -->
+    <section class="view" data-view="audit" hidden>
+      <div class="view-head">
+        <div>
+          <h1>Audit trail</h1>
+          <div class="sub">HASH-CHAINED · 1,204 ENTRIES · 3 FILES ROTATED</div>
+        </div>
+        <div class="actions">
+          <button class="btn"><svg viewBox="0 0 16 16"><path d="M8 1.8 13.5 4v4.2c0 3.2-2.2 5.4-5.5 6-3.3-.6-5.5-2.8-5.5-6V4z"/><path d="M5.8 8l1.6 1.6 2.8-3"/></svg> Verify chain</button>
+        </div>
+      </div>
+      <div class="audit-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>Entries</h2><span class="r">newest first · every action carries a hash</span></div>
+          <div class="chain">
+            <a href="#"><span class="seq">1204</span><span class="when">20:41:12</span><span class="what"><b>approval.pending</b> · patch_file · run_7f3a <br /><span style="font-size: 12px;color:var(--faint)">held for a human go · diff sha 9d07aa</span></span><span class="hash">7f3a…1204 · 9c1e4d22</span><span class="actor">ahmad</span></a>
+            <a href="#"><span class="seq">1203</span><span class="when">20:40:03</span><span class="what"><b>diff.proposed</b> · src/billing/webhook.py<br /><span style="font-size: 12px;color:var(--faint)">+24 −3 · inside workspace</span></span><span class="hash">7f3a…1203 · 41aa9b07</span><span class="actor">agent</span></a>
+            <a href="#"><span class="seq">1202</span><span class="when">20:39:41</span><span class="what"><b>tool.run</b> · pytest tests/billing -q<br /><span style="font-size: 12px;color:var(--faint)">exit 0 · 2.14s · allowlisted</span></span><span class="hash">7f3a…1202 · 0c55de81</span><span class="actor">agent</span></a>
+            <a href="#"><span class="seq">1201</span><span class="when">20:39:02</span><span class="what"><b>subagent.spawn</b> · scout<br /><span style="font-size: 12px;color:var(--faint)">restricted image · no network</span></span><span class="hash">7f3a…1201 · aa02e7c4</span><span class="actor">agent</span></a>
+            <a href="#"><span class="seq">1200</span><span class="when">20:38:02</span><span class="what"><b>tool.run</b> · grep stripe_event_id<br /><span style="font-size: 12px;color:var(--faint)">14 hits · read-only</span></span><span class="hash">7f3a…1200 · 5db10a9f</span><span class="actor">agent</span></a>
+            <a href="#"><span class="seq">1199</span><span class="when">20:37:58</span><span class="what"><b>policy.check</b> · restricted · allowlist <br /><span style="font-size: 12px;color:var(--faint)">pytest · git · python permitted</span></span><span class="hash">7f3a…1199 · 2e90ab14</span><span class="actor">daemon</span></a>
+            <a href="#"><span class="seq">1198</span><span class="when">20:37:19</span><span class="what"><b>workspace.write</b> · read_file src/billing/webhook.py <br /><span style="font-size: 12px;color:var(--faint)">inside root · 212 lines</span></span><span class="hash">7f3a…1198 · c4b17e0f</span><span class="actor">agent</span></a>
+          </div>
+        </div>
+        <div class="side">
+          <div class="panel">
+            <div class="panel-head"><h2>Chain</h2><span class="r">sha-256</span></div>
+            <div class="panel-body">
+              <dl class="kv">
+                <dt>Verified</dt><dd>1,204 entries · unbroken</dd>
+                <dt>Last check</dt><dd class="mono">20:41:12</dd>
+                <dt>Files</dt><dd>3 rotated · 2 archived</dd>
+                <dt>Anchor</dt><dd class="mono">genesis 0000…8f1c</dd>
+              </dl>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Policy in force</h2><span class="r">restricted</span></div>
+            <div class="panel-body">
+              <table class="matrix">
+                <thead><tr><th>Action</th><th>R</th><th>E</th><th>F</th></tr></thead>
+                <tbody>
+                  <tr><td class="t">Write workspace</td><td class="y">yes</td><td class="y">yes</td><td class="y">yes</td></tr>
+                  <tr><td class="t">Delete files</td><td class="n">gated</td><td class="n">gated</td><td class="y">yes</td></tr>
+                  <tr><td class="t">Network</td><td class="n">none</td><td class="n">allowlist</td><td class="y">full</td></tr>
+                  <tr><td class="t">Push branch</td><td class="n">no</td><td class="n">gated</td><td class="y">yes</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Workspace</h2></div>
+            <div class="panel-body">
+              <dl class="kv">
+                <dt>Root</dt><dd class="mono">~/work/orbit-api</dd>
+                <dt>Uploads</dt><dd class="mono">~/.local/share/smolcode/uploads</dd>
+                <dt>Daemon</dt><dd class="mono">127.0.0.1:8765</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" data-view="settings" hidden>
+      <div class="view-head">
+        <div>
+          <h1>House rules</h1>
+          <div class="sub">SETTINGS · LOOPBACK ONLY · KEYS FROM ENV</div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost">Revert</button>
+          <button class="btn primary">Save rules</button>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <div class="panel-head"><h2>Providers</h2><span class="r">litellm routing</span></div>
+          <table class="matrix">
+            <thead><tr><th>Provider</th><th>Model</th><th>Route</th><th>Key</th></tr></thead>
+            <tbody>
+              <tr><td class="t">LiteLLM proxy</td><td class="mono">127.0.0.1:4000</td><td>primary</td><td class="y">ready</td></tr>
+              <tr><td class="t">Anthropic</td><td class="mono">claude-sonnet-4</td><td>direct</td><td class="y">env</td></tr>
+              <tr><td class="t">Anthropic</td><td class="mono">claude-opus-4</td><td>direct</td><td class="y">env</td></tr>
+              <tr><td class="t">OpenRouter</td><td class="mono">minimax-m2</td><td>fallback</td><td class="n">no key</td></tr>
+            </tbody>
+          </table>
+          <div class="panel-head" style="border-top:1px solid var(--line)"><h2>Approvals</h2><span class="r">human in the loop</span></div>
+          <div class="panel-body" style="display:grid;gap:12px">
+            <div style="display:flex;align-items:center;gap:16px"><span>Destructive steps always need a signature</span><button class="toggle" aria-pressed="true" style="margin-left:auto"><span class="sw"></span> on</button></div>
+            <div style="display:flex;align-items:center;gap:16px"><span>Auto-approve diffs inside the workspace</span><button class="toggle" aria-pressed="false" style="margin-left:auto"><span class="sw"></span> off</button></div>
+            <div style="display:flex;align-items:center;gap:16px"><span>Stop the run on a failed test</span><button class="toggle" aria-pressed="true" style="margin-left:auto"><span class="sw"></span> on</button></div>
+            <div style="display:flex;align-items:center;gap:16px"><span>Rebuild a stale image before the next run</span><button class="toggle" aria-pressed="false" style="margin-left:auto"><span class="sw"></span> off</button></div>
+          </div>
+        </div>
+        <div class="side">
+          <div class="panel">
+            <div class="panel-head"><h2>Caps</h2><span class="r">tonight</span></div>
+            <div class="panel-body">
+              <dl class="kv">
+                <dt>Tonight</dt><dd class="mono">$3.84 / $12.00</dd>
+                <dt>Per run</dt><dd class="mono">$2.00</dd>
+                <dt>Steps</dt><dd class="mono">8</dd>
+                <dt>On cap</dt><dd>stop · keep evidence</dd>
+              </dl>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Images</h2><span class="r">docker</span></div>
+            <div class="panel-body">
+              <dl class="kv">
+                <dt>Restricted</dt><dd class="mono">a91c4e · current</dd>
+                <dt>Elevated</dt><dd class="mono" style="color:var(--amber)">02b7f1 · stale</dd>
+                <dt>Full access</dt><dd class="mono">7ce0aa · current</dd>
+              </dl>
+              <div style="margin-top:12px"><button class="btn sm">Rebuild elevated</button></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>Workspace</h2></div>
+            <div class="panel-body">
+              <dl class="kv">
+                <dt>Root</dt><dd class="mono">~/work/orbit-api</dd>
+                <dt>Uploads</dt><dd class="mono">~/.local/share/smolcode</dd>
+                <dt>Audit</dt><dd class="mono">~/.local/share/smolcode/audit</dd>
+                <dt>Bind</dt><dd class="mono">loopback only</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="modal" id="approval" role="dialog" aria-modal="true" aria-labelledby="approval-title" hidden>
+  <div class="m-head">
+    <div>
+      <div class="kick">Hold · Q13 · run_2b9c</div>
+      <h2 id="approval-title">Drop 12 legacy snapshot files?</h2>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+  </div>
+  <div class="m-body">
+    <p style="margin:0 0 12px;font-size:13px;color:var(--ink-2)">The elevated sandbox wants to remove the old snapshot directory before writing the event log. This is the one destructive step in the run; approve it once or decline and the run will replan without it.</p>
+    <div class="filehead">src/session/store.py <span class="chg">+42 −11</span><span style="margin-left:auto;font-family:var(--type);font-size:12px;color:var(--faint)">diff sha 4b21c9</span></div>
+    <div class="diff">
+      <div class="dl hunk"><span class="ln">1</span><span class="sg"></span><span class="code">@@ -38,9 +38,14 @@ class SessionStore:</span></div>
+      <div class="dl"><span class="ln">38</span><span class="sg"></span><span class="code">     def __init__(self, root: Path):</span></div>
+      <div class="dl"><span class="ln">39</span><span class="sg"></span><span class="code">         self.root = root</span></div>
+      <div class="dl del"><span class="ln">40</span><span class="sg">−</span><span class="code">         self._snapshots = root / "snapshots"</span></div>
+      <div class="dl add"><span class="ln">40</span><span class="sg">+</span><span class="code">         self._events = root / "events.jsonl"</span></div>
+      <div class="dl add"><span class="ln">41</span><span class="sg">+</span><span class="code">         self._legacy = root / "snapshots"</span></div>
+      <div class="dl"><span class="ln">42</span><span class="sg"></span><span class="code"> </span></div>
+      <div class="dl del"><span class="ln">43</span><span class="sg">−</span><span class="code">     def save(self, session: Session) -> None:</span></div>
+      <div class="dl del"><span class="ln">44</span><span class="sg">−</span><span class="code">         (self._snapshots / session.id).write_text(...)</span></div>
+      <div class="dl add"><span class="ln">43</span><span class="sg">+</span><span class="code">     def append(self, event: Event) -> None:</span></div>
+      <div class="dl add"><span class="ln">44</span><span class="sg">+</span><span class="code">         with self._events.open("a") as fh:</span></div>
+      <div class="dl add"><span class="ln">45</span><span class="sg">+</span><span class="code">             fh.write(event.to_json() + "\n")</span></div>
+      <div class="dl"><span class="ln">46</span><span class="sg"></span><span class="code"> </span></div>
+      <div class="dl del"><span class="ln">47</span><span class="sg">−</span><span class="code">     def delete_legacy_snapshots(self) -> int:</span></div>
+      <div class="dl add"><span class="ln">47</span><span class="sg">+</span><span class="code">     def drop_legacy(self) -> int:</span></div>
+      <div class="dl add"><span class="ln">48</span><span class="sg">+</span><span class="code">         legacy = list(self._legacy.glob("*.json"))</span></div>
+      <div class="dl add"><span class="ln">49</span><span class="sg">+</span><span class="code">         for path in legacy:</span></div>
+      <div class="dl add"><span class="ln">50</span><span class="sg">+</span><span class="code">             path.unlink()</span></div>
+    </div>
+    <p class="note">Approval binds to this exact diff and run. A re-plan produces a new diff and a new hold.</p>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+      <label class="check"><input type="checkbox" /> Auto-approve this run's diffs</label>
+      <span style="font-family:var(--type);font-size:12px;color:var(--faint);margin-left:auto">audited · reversible only by stop</span>
+    </div>
+  </div>
+  <div class="m-foot">
+    <button class="btn ghost" data-close>Hold it</button>
+    <div class="right">
+      <button class="btn danger" data-close>Decline</button>
+      <button class="btn primary" data-close><svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5"/></svg> Approve once · GO</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="approval7" role="dialog" aria-modal="true" aria-labelledby="approval7-title" hidden>
+  <div class="m-head">
+    <div>
+      <div class="kick">Hold · Q06 · run_7f3a</div>
+      <h2 id="approval7-title">Patch the webhook with an idempotency guard?</h2>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+  </div>
+  <div class="m-body">
+    <p style="margin:0 0 12px;font-size:13px;color:var(--ink-2)">Adds an idempotency column, a unique index migration, and a replay guard before the charge call. The restricted sandbox cannot apply a schema change alone; approve it once or send it back.</p>
+    <div class="filehead">src/billing/webhook.py <span class="chg">+24 −3</span><span style="margin-left:auto;font-family:var(--type);font-size:12px;color:var(--faint)">diff sha 9d07aa</span></div>
+    <div class="diff">
+      <div class="dl hunk"><span class="ln">1</span><span class="sg"></span><span class="code">@@ -61,7 +61,12 @@ def handle_event(request: Request):</span></div>
+      <div class="dl"><span class="ln">61</span><span class="sg"></span><span class="code"> def handle_event(request: Request) -> Response:</span></div>
+      <div class="dl"><span class="ln">62</span><span class="sg"></span><span class="code">     event = stripe.Event.construct_from(request.json(), WEBHOOK_SECRET)</span></div>
+      <div class="dl add"><span class="ln">63</span><span class="sg">+</span><span class="code">     existing = Charge.by_event_id(event.id)</span></div>
+      <div class="dl add"><span class="ln">64</span><span class="sg">+</span><span class="code">     if existing is not None:</span></div>
+      <div class="dl add"><span class="ln">65</span><span class="sg">+</span><span class="code">         return Response(status_code=200, body={"replayed": True})</span></div>
+      <div class="dl"><span class="ln">66</span><span class="sg"></span><span class="code"> </span></div>
+      <div class="dl del"><span class="ln">67</span><span class="sg">−</span><span class="code">     Charge.create(customer=event.customer, amount=event.amount)</span></div>
+      <div class="dl add"><span class="ln">68</span><span class="sg">+</span><span class="code">     Charge.create(</span></div>
+      <div class="dl add"><span class="ln">69</span><span class="sg">+</span><span class="code">         customer=event.customer,</span></div>
+      <div class="dl add"><span class="ln">70</span><span class="sg">+</span><span class="code">         amount=event.amount,</span></div>
+      <div class="dl add"><span class="ln">71</span><span class="sg">+</span><span class="code">         event_id=event.id,</span></div>
+      <div class="dl add"><span class="ln">72</span><span class="sg">+</span><span class="code">     )</span></div>
+    </div>
+    <p class="note">Approval binds to this exact diff and run. A re-plan produces a new diff and a new hold.</p>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+      <label class="check"><input type="checkbox" /> Auto-approve this run's diffs</label>
+      <span style="font-family:var(--type);font-size:12px;color:var(--faint);margin-left:auto">audited · reversible only by stop</span>
+    </div>
+  </div>
+  <div class="m-foot">
+    <button class="btn ghost" data-close>Hold it</button>
+    <div class="right">
+      <button class="btn danger" data-close>Decline</button>
+      <button class="btn primary" data-close><svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5"/></svg> Approve once · GO</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var views = document.querySelectorAll('[data-view]');
+    function show(name) {
+      views.forEach(function (v) { v.hidden = v.getAttribute('data-view') !== name; });
+      document.querySelectorAll('.nav button, .mobnav button').forEach(function (b) {
+        var on = b.getAttribute('data-go') === name;
+        if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      });
+      window.scrollTo(0, 0);
+    }
+    document.querySelectorAll('[data-go]').forEach(function (b) {
+      b.addEventListener('click', function (e) { e.preventDefault(); show(b.getAttribute('data-go')); });
+    });
+    document.querySelectorAll('tbody tr[data-to]').forEach(function (tr) {
+      tr.setAttribute('tabindex', '0');
+      tr.addEventListener('click', function () { show(tr.getAttribute('data-to')); });
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') show(tr.getAttribute('data-to')); });
+    });
+    var scrim = document.getElementById('scrim');
+    var modal = document.getElementById('approval');
+    var modal7 = document.getElementById('approval7');
+    function openAny(m) { scrim.hidden = false; m.hidden = false; scrim.classList.add('on'); m.querySelector('.btn.primary').focus(); }
+    function open() { openAny(modal); }
+    function close() { scrim.hidden = true; modal.hidden = true; modal7.hidden = true; scrim.classList.remove('on'); }
+    document.querySelectorAll('[data-open-approval]').forEach(function (b) { b.addEventListener('click', open); });
+    document.querySelectorAll('[data-open7]').forEach(function (b) { b.addEventListener('click', function () { openAny(modal7); }); });
+    document.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', close); });
+    scrim.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') close();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); show('run'); }
+    });
+    document.querySelectorAll('.tabs button').forEach(function (t) {
+      t.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach(function (x) { x.setAttribute('aria-selected', x === t ? 'true' : 'false'); });
+        document.querySelectorAll('.tabpane').forEach(function (p) { p.classList.toggle('on', p.getAttribute('data-pane') === t.getAttribute('data-tab')); });
+      });
+    });
+    document.querySelectorAll('.toggle').forEach(function (t) {
+      t.addEventListener('click', function () { t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); });
+    });
+    var h = location.hash || '';
+    var initial = h.indexOf('approval') > -1 ? 'run' : h.replace('#', '').split('&')[0];
+    if (initial && document.querySelector('[data-view="' + initial + '"]')) show(initial);
+    if (h.indexOf('approval') > -1) { if (h.indexOf('approval7') > -1) openAny(modal7); else open(); }
+  })();
+</script>
+</body>
+</html>

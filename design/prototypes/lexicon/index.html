@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>smolcode — lexicon (prototype)</title>
+<link rel="stylesheet" href="../fonts/fonts.css" />
+<style>
+  :root {
+    --paper: #f3edde;
+    --plate: #fbf8ee;
+    --ink: #1c170e;
+    --ink-2: #3c3427;
+    --muted: #6d6250;
+    --faint: #6b6150;
+    --rule: #cfc4ad;
+    --rule-soft: #e0d7c3;
+    --verm: #a8321c;
+    --olive: #4d5c35;
+    --serif: "Source Serif 4", Georgia, serif;
+    --sans: "Karla", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.6 var(--serif); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--verm); color: #fff7ea; }
+  :focus-visible { outline: 2px solid var(--verm); outline-offset: 3px; }
+  a { color: inherit; text-underline-offset: 4px; text-decoration-color: var(--rule); }
+  a:hover { text-decoration-color: var(--verm); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .skip { position: absolute; left: -999px; background: var(--ink); color: var(--paper); padding: 10px 14px; z-index: 60; }
+  .skip:focus { left: 10px; top: 10px; }
+  .mono, code, pre { font-family: var(--mono); font-variant-ligatures: none; }
+  .sans { font-family: var(--sans); }
+
+  /* masthead */
+  .masthead { border-bottom: 1px solid var(--ink); }
+  .masthead .inner { max-width: 1400px; margin: 0 auto; padding: 22px 34px 0; }
+  .masthead .toprow { display: flex; align-items: baseline; gap: 18px; padding-bottom: 14px; border-bottom: 3px solid var(--ink); }
+  .wordmark { font-family: var(--serif); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .wordmark span { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); margin-left: 10px; }
+  .masthead .issue { margin-left: auto; font-family: var(--sans); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); text-align: right; line-height: 1.6; }
+  .contents { display: flex; gap: 26px; padding: 10px 0 9px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; overflow-x: auto; scrollbar-width: none; }
+  .contents::-webkit-scrollbar { display: none; }
+  .contents button { color: var(--muted); padding: 2px 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .contents button:hover { color: var(--ink); }
+  .contents button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--verm); }
+  .contents .sep { color: var(--faint); }
+  .contents .right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+  .contents .cost { font-family: var(--mono); font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; color: var(--ink-2); }
+  .contents .warn { color: var(--verm); }
+
+  .frame { max-width: 1400px; margin: 0 auto; padding: 0 34px 70px; display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 0 26px; }
+  .thumb { border-right: 1px solid var(--rule); padding: 22px 14px 0 0; position: sticky; top: 0; align-self: start; }
+  .thumb .t { display: block; width: 100%; text-align: right; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); padding: 8px 0; border-bottom: 1px solid var(--rule-soft); }
+  .thumb .t:hover { color: var(--ink); }
+  .thumb .t[aria-current="page"] { color: var(--verm); border-bottom-color: var(--verm); }
+  .thumb .t small { display: block; font-family: var(--mono); font-size: 12px; letter-spacing: 0; color: var(--faint); margin-top: 2px; }
+  .bodycol { min-width: 0; padding-top: 22px; }
+  .view[hidden] { display: none; }
+
+  /* guide words */
+  .guide { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 5px 0 4px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .guide b { font-weight: 700; color: var(--ink-2); }
+
+  /* editorial head */
+  .ed-head { margin: 26px 0 8px; }
+  .ed-head h1 { margin: 0; font-size: 46px; line-height: 1.03; font-weight: 600; letter-spacing: -0.025em; max-width: 20ch; }
+  .ed-head .stand { margin: 12px 0 0; font-size: 16.5px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; }
+  .ed-head .stand em { font-style: italic; }
+  .byline { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--rule); font-family: var(--sans); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .byline b { color: var(--ink); font-weight: 700; }
+  .byline .sp { margin-left: auto; }
+
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 36px; align-items: start; }
+  .aside { border-left: 1px solid var(--rule); padding-left: 22px; }
+  .aside h2 { margin: 0 0 8px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+
+  /* entries */
+  .entries { margin-top: 6px; }
+  .entry { display: grid; grid-template-columns: 76px minmax(0,1fr) 122px; gap: 18px; padding: 16px 0 15px; border-bottom: 1px solid var(--rule); align-items: start; cursor: pointer; }
+  .entry:hover { background: #f8f3e4; }
+  .entry:focus-visible { outline-offset: -2px; }
+  .entry .no { font-family: var(--mono); font-size: 12px; color: var(--faint); padding-top: 5px; }
+  .entry .no b { display: block; color: var(--ink-2); font-weight: 500; font-size: 12px; }
+  .entry h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+  .entry .meta { font-family: var(--sans); font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+  .entry .meta .tier { text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; font-size: 12px; border: 1px solid var(--rule); padding: 1px 5px; }
+  .entry .meta .tier.e { border-color: var(--ink); }
+  .entry .meta .tier.f { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .entry .status { text-align: right; font-family: var(--sans); font-size: 12px; }
+  .entry .status b { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .entry .status.running b { color: var(--olive); }
+  .entry .status.hold b { color: var(--verm); }
+  .entry .status.queued b, .entry .status.struck b { color: var(--muted); }
+  .entry .status small { display: block; font-family: var(--mono); font-size: 12px; color: var(--faint); margin-top: 3px; }
+  .entry .status .r { display: inline-block; width: 28px; height: 0; border-top: 1px solid var(--olive); margin-bottom: 4px; }
+  .entry .status.hold .r { border-top: 2px solid var(--verm); }
+
+  .sidebar-sec { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--rule); }
+  .sidebar-sec:last-child { border-bottom: 0; }
+  .sidebar-sec p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; }
+  .sidebar-sec .drop { font-family: var(--serif); font-size: 34px; line-height: 0.8; float: left; padding: 4px 6px 0 0; color: var(--verm); }
+  .sidebar-sec .file { font-family: var(--mono); font-size: 12px; display: flex; gap: 8px; padding: 7px 0; border-top: 1px solid var(--rule-soft); }
+  .sidebar-sec .file:last-of-type { border-bottom: 1px solid var(--rule-soft); }
+  .sidebar-sec .file .st { margin-left: auto; font-family: var(--sans); font-size: 12px; font-weight: 700; color: var(--verm); }
+  .sidebar-sec .rulebtn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; border-bottom: 2px solid var(--ink); padding: 6px 0 2px; margin-top: 8px; }
+  .sidebar-sec .rulebtn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .sidebar-sec .rulebtn:hover { color: var(--verm); border-color: var(--verm); }
+  .ledger { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 12.5px; }
+  .ledger dt { font-family: var(--sans); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+  .ledger dd { margin: 0; }
+  .ledger dd.m { font-family: var(--mono); font-size: 12px; }
+  .smallnote { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 10px 0 0; }
+  .smallnote b { color: var(--ink-2); }
+
+  /* run entry */
+  .runhead { margin-top: 22px; }
+  .runhead .back { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none; color: var(--muted); }
+  .runhead .back:hover { color: var(--verm); }
+  .runhead h1 { margin: 8px 0 8px; font-size: 34px; font-weight: 600; line-height: 1.12; letter-spacing: -0.02em; max-width: 26ch; }
+  .runhead .byline { border-top: 0; margin-top: 0; padding-top: 0; }
+  .runhead .acts { display: flex; gap: 14px; margin: 14px 0 0; padding: 10px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+  .runhead .acts .btn { margin-left: 0; }
+  .runhead .acts .btn:first-of-type { margin-left: auto; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; background: transparent; }
+  .btn:hover { background: var(--ink); color: var(--paper); }
+  .btn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .btn.solid { background: var(--ink); color: var(--paper); }
+  .btn.solid:hover { background: var(--verm); border-color: var(--verm); }
+  .btn.danger { color: var(--verm); border-color: var(--verm); }
+  .btn.danger:hover { background: var(--verm); color: var(--paper); }
+  .btn.sm { padding: 4px 8px; font-size: 12px; }
+  .btn.ghost { border-color: transparent; }
+
+  .transcript { margin-top: 18px; border-top: 3px solid var(--ink); }
+  .step { display: grid; grid-template-columns: 54px minmax(0,1fr); gap: 18px; padding: 13px 0 14px; border-bottom: 1px solid var(--rule); }
+  .step .mk { font-family: var(--mono); font-size: 12px; color: var(--faint); padding-top: 4px; }
+  .step .mk b { display: block; color: var(--muted); font-weight: 500; }
+  .step .txt { min-width: 0; }
+  .step .src { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-bottom: 3px; display: flex; gap: 10px; align-items: baseline; }
+  .step .src b { color: var(--ink-2); }
+  .step p { margin: 0 0 7px; font-size: 15px; line-height: 1.6; }
+  .step p:last-child { margin-bottom: 0; }
+  .step .cmd { font-family: var(--mono); font-size: 12px; padding: 7px 10px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); background: #f7f2e3; display: flex; gap: 10px; align-items: center; overflow-x: auto; }
+  .step .cmd .d { color: var(--verm); }
+  .step .out { margin-top: 6px; font-family: var(--mono); font-size: 12px; line-height: 1.65; padding: 8px 10px; background: #221c11; color: #ded4bf; white-space: pre-wrap; }
+  .step .out .ok { color: #c3cf9f; }
+  .step .corr { margin-top: 8px; padding: 9px 11px; border: 1px solid var(--rule); background: var(--plate); font-family: var(--mono); font-size: 12px; line-height: 1.8; overflow-x: auto; }
+  .step .corr div { display: grid; grid-template-columns: 26px minmax(0,1fr); }
+  .step .corr span { white-space: pre-wrap; }
+  .step .corr .ln { padding-right: 10px; color: var(--faint); }
+  .step .corr .del { color: var(--verm); }
+  .step .corr .ins { color: var(--olive); }
+  .step .corr .hunk { color: var(--faint); }
+  .step.hold { background: #f8f1de; padding-left: 12px; padding-right: 12px; margin-left: -12px; margin-right: -12px; }
+  .step.hold .mk b { color: var(--verm); }
+  .step .gate { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--ink); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .step .gate .why { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--verm); }
+  .step .gate .btn { margin-left: auto; }
+  .step.off { opacity: 0.42; }
+
+  .apparatus { border-top: 3px solid var(--ink); margin-top: 18px; }
+  .apparatus .tabs { display: flex; gap: 14px; border-bottom: 1px solid var(--rule); }
+  .apparatus .tabs button { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); padding: 8px 0 7px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .apparatus .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--verm); }
+  .apparatus .pane { display: none; padding: 12px 0 0; }
+  .apparatus .pane.on { display: block; }
+  .apparatus h2 { margin: 0 0 6px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .apparatus p { font-size: 12.5px; line-height: 1.55; margin: 0 0 8px; color: var(--ink-2); }
+  .apparatus .fig { font-family: var(--mono); font-size: 20px; letter-spacing: -0.03em; margin: 0 0 2px; }
+  .apparatus .figspan { font-family: var(--sans); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .apparatus .kv { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 12px; font-size: 12px; margin: 10px 0; }
+  .apparatus .kv dt { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+  .apparatus .kv dd { margin: 0; }
+  .apparatus .kv dd.m { font-family: var(--mono); font-size: 12px; }
+  .apparatus .sec { border-top: 1px solid var(--rule); margin-top: 12px; padding-top: 10px; }
+  .tree { font-family: var(--mono); font-size: 12px; line-height: 1.9; color: var(--ink-2); }
+  .tree .c { color: var(--verm); }
+  .tree .d { color: var(--muted); }
+  .policy { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 12px; }
+  .policy th { text-align: left; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--ink); }
+  .policy td { padding: 5px 0; border-bottom: 1px solid var(--rule-soft); }
+  .policy .no { color: var(--verm); } .policy .yes { color: var(--olive); }
+
+  /* composer */
+  .composer { margin-top: 26px; border-top: 1px solid var(--ink); border-bottom: 3px solid var(--ink); padding: 10px 0 12px; }
+  .composer .lab { font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+  .composer textarea { width: 100%; border: 0; background: transparent; resize: vertical; min-height: 58px; font: 16px/1.55 var(--serif); color: var(--ink); caret-color: var(--verm); outline: none; }
+  .composer textarea::placeholder { color: var(--faint); font-style: italic; }
+  .composer .ctl { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--rule); }
+  .composer .sel { font-family: var(--sans); font-size: 12px; color: var(--ink-2); display: inline-flex; align-items: baseline; gap: 6px; }
+  .composer .sel .l { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .composer .sel:hover { color: var(--verm); }
+  .composer .tog { font-family: var(--sans); font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+  .composer .tog .b { width: 12px; height: 12px; border: 1px solid var(--ink); display: inline-block; }
+  .composer .tog[aria-pressed="true"] { color: var(--ink); }
+  .composer .tog[aria-pressed="true"] .b { background: var(--ink); box-shadow: inset 0 0 0 2px var(--paper); }
+  .composer .send { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .composer .k { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+
+  /* audit */
+  .register { margin-top: 18px; border-top: 3px solid var(--ink); }
+  .reg { display: grid; grid-template-columns: 52px 96px minmax(0,1fr) 126px; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+  .reg:hover { background: #f8f3e4; }
+  .reg .seq { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .reg .when { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .reg .what b { font-weight: 600; font-size: 14px; }
+  .reg .what small { display: block; font-family: var(--sans); font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .reg .hash { font-family: var(--mono); font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stampbox { border: 1px solid var(--verm); color: var(--verm); display: inline-block; padding: 5px 9px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; transform: rotate(-1deg); }
+  .verify { display: flex; gap: 16px; align-items: baseline; margin-top: 12px; font-family: var(--sans); font-size: 12px; color: var(--muted); }
+  .plate { border: 1px solid var(--ink); background: var(--plate); padding: 14px; margin-top: 22px; }
+  .plate h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .plate .cap { font-family: var(--sans); font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  .plate .num { font-family: var(--mono); font-size: 30px; letter-spacing: -0.03em; border-bottom: 1px solid var(--rule); padding-bottom: 6px; margin-bottom: 8px; }
+  .plate .num span { font-family: var(--sans); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+  /* settings / colophon */
+  .colophon { margin-top: 22px; border-top: 3px solid var(--ink); padding-top: 12px; }
+  .colophon .block { display: grid; grid-template-columns: 170px minmax(0,1fr); gap: 22px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .colophon .block h2 { margin: 0; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+  .colophon .block .v { font-size: 13.5px; }
+  .colophon .block .v b { font-weight: 600; }
+  .colophon .block .v .m { font-family: var(--mono); font-size: 12px; }
+  .colophon .block .v p { margin: 0 0 6px; }
+
+  /* modal */
+  .scrim { position: fixed; inset: 0; background: #1c170ecc; display: none; z-index: 50; }
+  .scrim.on { display: block; }
+  @keyframes sheet-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); } to { opacity: 1; transform: translate(-50%, -50%); } }
+  .modal { animation: sheet-in .22s cubic-bezier(.2, .7, .2, 1); position: fixed; z-index: 51; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(780px, calc(100vw - 36px)); max-height: calc(100vh - 40px); overflow: auto; background: var(--plate); border: 1px solid var(--ink); box-shadow: 0 1px 0 #fff inset, 0 0 0 5px var(--paper), 0 0 0 6px var(--ink); }
+  .modal[hidden] { display: none; }
+  .modal .slip { padding: 20px 24px 16px; border-bottom: 1px solid var(--ink); }
+  .modal .slip .row { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .modal .slip h2 { margin: 10px 0 4px; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+  .modal .slip p { margin: 0; font-size: 13.5px; color: var(--ink-2); max-width: 64ch; }
+  .modal .slip .x { margin-left: auto; align-self: flex-start; width: 28px; height: 28px; border: 1px solid var(--ink); display: grid; place-items: center; }
+  .modal .slip .x:hover { background: var(--ink); color: var(--paper); }
+  .modal .mbody { padding: 16px 24px; }
+  .modal .mbody .file { display: flex; gap: 12px; align-items: baseline; font-family: var(--mono); font-size: 12px; padding: 6px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule); }
+  .modal .mbody .file .st { margin-left: auto; font-family: var(--sans); font-size: 12px; font-weight: 700; color: var(--verm); }
+  .modal .mbody .file .st .a { color: var(--olive); }
+  .modal .corr { margin-top: 10px; border: 1px solid var(--rule); background: #f7f2e3; font-family: var(--mono); font-size: 12px; line-height: 1.85; padding: 10px 12px; overflow: auto; }
+  .modal .corr div { display: grid; grid-template-columns: 26px minmax(0,1fr); }
+  .modal .corr span { white-space: pre-wrap; }
+  .modal .corr .hunk { color: var(--faint); }
+  .modal .corr .del { color: var(--verm); }
+  .modal .corr .ins { color: var(--olive); }
+  .modal .corr .ln { color: var(--faint); padding-right: 10px; }
+  .modal .sig { margin: 14px 0 0; font-family: var(--sans); font-size: 12px; color: var(--muted); }
+  .modal .checks { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .modal .chk { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-size: 12px; color: var(--ink-2); }
+  .modal .chk input { width: 14px; height: 14px; accent-color: var(--verm); }
+  .modal .grade { margin-left: auto; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+  .modal .mfoot { display: flex; align-items: center; gap: 10px; padding: 13px 24px; border-top: 1px solid var(--ink); background: var(--paper); flex-wrap: wrap; }
+  .modal .mfoot .r { margin-left: auto; display: flex; gap: 10px; }
+
+  @media (prefers-reduced-motion: reduce) { .modal { animation: none; } }
+  @media (max-width: 1180px) {
+    .grid2 { grid-template-columns: minmax(0,1fr); }
+    .aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--ink); padding-top: 16px; }
+    .grid2 .aside { display: grid; grid-template-columns: 1fr 1fr; gap: 0 30px; }
+    .grid2 .aside > * { break-inside: avoid; }
+    .glass { display: none; }
+  }
+  @media (max-width: 860px) {
+    .masthead .inner { padding: 14px 16px 0; }
+    .masthead .toprow { gap: 10px; padding-bottom: 10px; border-bottom-width: 2px; }
+    .wordmark { font-size: 20px; } .wordmark span { display: none; }
+    .masthead .issue { font-size: 12px; }
+    .contents { gap: 16px; font-size: 12px; padding: 8px 0; }
+    .contents .sep, .contents .right .hide { display: none; }
+    .contents .cost { font-size: 12px; }
+    .frame { display: block; padding: 0 16px 50px; }
+    .thumb { display: none; }
+    .bodycol { padding-top: 14px; }
+    .ed-head h1 { font-size: 32px; }
+    .ed-head .stand { font-size: 15px; }
+    .entry { grid-template-columns: 44px minmax(0,1fr); gap: 12px; }
+    .entry .status { grid-column: 2; text-align: left; margin-top: 6px; }
+    .entry .status b { display: inline; margin-right: 6px; }
+    .entry .status small { display: inline; }
+    .entry .status .r { display: none; }
+    .entry h2 { font-size: 17px; }
+    .grid2 .aside { display: block; }
+    .aside h2 { margin-top: 14px; }
+    .runhead h1 { font-size: 25px; }
+    .step { grid-template-columns: 40px minmax(0,1fr); gap: 10px; }
+    .step .gate .btn { margin-left: 0; }
+    .composer .send { width: 100%; margin-left: 0; justify-content: space-between; }
+    .reg { grid-template-columns: 40px minmax(0,1fr); gap: 8px; }
+    .reg .when, .reg .hash { display: none; }
+    .modal { top: auto; bottom: 8px; transform: translate(-50%,0); width: calc(100vw - 16px); max-height: calc(100vh - 20px); box-shadow: 0 0 0 3px var(--paper), 0 0 0 4px var(--ink); }
+    .modal .slip { padding: 14px 16px; }
+    .modal .slip h2 { font-size: 20px; }
+    .modal .mbody { padding: 12px 16px; }
+    .modal .mfoot { padding: 10px 16px; }
+    .modal .mfoot .r { width: 100%; margin-left: 0; }
+    .colophon .block { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="inner">
+    <div class="toprow">
+      <div class="wordmark">smolcode<span>lexicon · prototype</span></div>
+      <div class="issue">Orbit-api working file<br />Friday, 24 October 2025 · 20:41</div>
+    </div>
+    <nav class="contents" aria-label="Main">
+      <button data-go="overview" aria-current="page">Index</button><span class="sep">·</span>
+      <button data-go="run">Run entry</button><span class="sep">·</span>
+      <button data-go="queue">Queue</button><span class="sep">·</span>
+      <button data-go="audit">Register</button><span class="sep">·</span>
+      <button data-go="settings">Colophon</button>
+      <div class="right">
+        <span class="warn hide">1 image stale</span>
+        <span class="cost hide">$3.84 / $12.00</span>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<div class="frame">
+  <nav class="thumb" aria-label="Sections">
+    <button class="t" data-go="overview" aria-current="page">Index<small>5 runs</small></button>
+    <button class="t" data-go="run">Entry<small>7f3a</small></button>
+    <button class="t" data-go="queue">Queue<small>2</small></button>
+    <button class="t" data-go="audit">Register<small>1204</small></button>
+    <button class="t" data-go="settings">Colophon<small>—</small></button>
+  </nav>
+
+  <div class="bodycol" id="main">
+    <!-- OVERVIEW -->
+    <section class="view" data-view="overview">
+      <div class="guide"><span><b>Active</b> · running, held, and queued</span><span>Struck · 1</span></div>
+      <div class="ed-head">
+        <h1>Five runs, entered and annotated.</h1>
+        <p class="stand">A working index of everything the operator set in motion tonight — <em>two moving, one waiting on a signature, two on the shelf.</em> Each entry keeps its evidence, its tier, and its cost.</p>
+        <div class="byline"><span><b>Orbit-api</b> workspace</span><span>Compiled 20:41</span><span>Spend <b>$3.84</b> of $12.00</span><span class="sp">Daemon reachable · loopback :8080</span></div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <div class="entries">
+            <div class="entry" data-to="run" tabindex="0">
+              <div class="no"><b>7f3a</b>20:37</div>
+              <div><h2>Wire idempotency keys into the Stripe webhook handler</h2><div class="meta"><span class="tier">restricted</span><span>claude-sonnet-4</span><span>run_7f3a</span><span>04:12</span></div></div>
+              <div class="status running"><span class="r"></span><b>Running</b><small>cue 06 / 08</small></div>
+            </div>
+            <div class="entry" data-to="run" tabindex="0">
+              <div class="no"><b>2b9c</b>20:33</div>
+              <div><h2>Upgrade the session store to an append-only event log</h2><div class="meta"><span class="tier e">elevated</span><span>claude-opus-4</span><span>run_2b9c</span><span>06:48</span></div></div>
+              <div class="status hold"><span class="r"></span><b>Needs a signature</b><small>destructive step</small></div>
+            </div>
+            <div class="entry" data-to="run" tabindex="0">
+              <div class="no"><b>6d1e</b>20:19</div>
+              <div><h2>Fix the flaky billing snapshot test</h2><div class="meta"><span class="tier">restricted</span><span>claude-sonnet-4</span><span>run_6d1e</span><span>02:03</span></div></div>
+              <div class="status struck"><b>Struck</b><small>done · $0.14</small></div>
+            </div>
+            <div class="entry" data-to="run" tabindex="0">
+              <div class="no"><b>04aa</b>20:15</div>
+              <div><h2>Migrate the audit chain to v2 with rotation</h2><div class="meta"><span class="tier f">full access</span><span>claude-opus-4</span><span>run_04aa</span><span>queued #1</span></div></div>
+              <div class="status queued"><b>Queued</b><small>awaiting slot</small></div>
+            </div>
+            <div class="entry" data-to="run" tabindex="0">
+              <div class="no"><b>9c31</b>19:58</div>
+              <div><h2>Document the tier policy matrix in docs/security.md</h2><div class="meta"><span class="tier">restricted</span><span>minimax-m2</span><span>run_9c31</span><span>00:12</span></div></div>
+              <div class="status queued"><b>Struck</b><small>dropped · image stale</small></div>
+            </div>
+          </div>
+          <p class="smallnote">Entries are kept for seven days, then folded into the register. Hover an entry for its line; open it for the full annotation.</p>
+        </div>
+
+        <aside class="aside">
+          <div class="sidebar-sec">
+            <h2>Waiting for a signature</h2>
+            <p><span class="drop">W</span>ant to drop twelve legacy snapshot files. The elevated sandbox cannot proceed alone on a destructive step.</p>
+            <div class="file">src/session/store.py <span class="st">+42 −11</span></div>
+            <div class="file">tests/session/test_store.py <span class="st">+18</span></div>
+            <button class="rulebtn" data-open>Open the proof <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></button>
+          </div>
+          <div class="sidebar-sec">
+            <h2>This hour</h2>
+            <dl class="ledger">
+              <dt>Runs</dt><dd>5 · 2 live</dd>
+              <dt>Spend</dt><dd class="m">$3.84 / $12.00</dd>
+              <dt>Approvals</dt><dd>1 open · 0 refused</dd>
+              <dt>Audit</dt><dd class="m">seq 1204</dd>
+              <dt>Images</dt><dd>elevated stale · 2 current</dd>
+            </dl>
+            <p class="smallnote">A stale image blocks its tier until the build is refreshed; restricted and full access are current.</p>
+          </div>
+          <div class="sidebar-sec">
+            <h2>Recent annotations</h2>
+            <p class="smallnote" style="font-style:italic;font-family:var(--serif);font-size:13px">“Restricted tier held: no network, allowlisted imports, workspace only. Diff proposed inside the root.”</p>
+            <p class="smallnote">— 20:40, run_7f3a · patch_file</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- RUN -->
+    <section class="view" data-view="run" hidden>
+      <div class="runhead">
+        <a class="back" href="#" data-go="overview">← Index</a>
+        <h1>Wire idempotency keys into the Stripe webhook handler</h1>
+        <div class="byline"><span><b>run_7f3a</b></span><span>tier restricted</span><span>claude-sonnet-4</span><span>started 20:37</span><span class="sp">04:12 elapsed · $0.38</span></div>
+        <div class="runhead acts">
+          Off the record: <b style="font-family:var(--mono);font-size: 12px;font-weight:400">live · 20:41:12</b>
+          <button class="btn sm">Pause</button>
+          <button class="btn sm danger">Stop</button>
+          <button class="btn sm">Export</button>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:2px">
+        <div>
+          <div class="guide"><span><b>Annotation</b> · run_7f3a</span><span>cue 06 of 08</span></div>
+          <div class="transcript">
+            <div class="step">
+              <div class="mk"><b>a</b>20:37</div>
+              <div class="txt"><div class="src"><b>Operator</b> task</div>
+                <p>Add idempotency keys to the Stripe webhook handler so duplicate deliveries cannot double-charge. Keep the existing signature check. Add tests for the replay case.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="mk"><b>b</b>20:37</div>
+              <div class="txt"><div class="src"><b>Lead agent</b> plan</div>
+                <p style="margin:0">Read the handler and the billing tests; key the event on <span class="mono" style="font-size:12.5px">stripe_event_id</span>; run the suite; patch the handler; exercise the replay case.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="mk"><b>c</b>20:37</div>
+              <div class="txt"><div class="src"><b>Code agent</b> tool · read_file</div>
+                <div class="cmd"><span class="d">read_file</span> src/billing/webhook.py <span style="margin-left:auto;color:var(--faint)">212 lines</span></div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="mk"><b>d</b>20:37</div>
+              <div class="txt"><div class="src"><b>Code agent</b> exec</div>
+                <div class="cmd"><span class="d">$</span> pytest tests/billing -q</div>
+                <pre class="out"><span class="ok">18 passed</span> in 2.14s
+tests/billing/test_webhook.py::test_replay_is_idempotent <span class="ok">PASSED</span></pre>
+              </div>
+            </div>
+            <div class="step">
+              <div class="mk"><b>e</b>20:38</div>
+              <div class="txt"><div class="src"><b>Code agent</b> exec · scout sub-agent</div>
+                <div class="cmd"><span class="d">$</span> grep -rn "stripe_event_id" src/ tests/ <span style="margin-left:auto;color:var(--faint)">14 hits</span></div>
+              </div>
+            </div>
+            <div class="step hold">
+              <div class="mk"><b>f</b>20:40</div>
+              <div class="txt"><div class="src"><b>Code agent</b> diff · src/billing/webhook.py</div>
+                <p>Proposes an idempotency column, a unique index, and a replay guard placed before the charge. <span style="font-family:var(--sans);font-size: 12px;color:var(--muted)">Waiting for your signature.</span></p>
+                <div class="corr">
+                  <div class="hunk">@@ -38,9 +38,14 @@ class SessionStore:</div>
+                  <div><span class="ln">40</span><span class="del">-         self._snapshots = root / "snapshots"</span></div>
+                  <div><span class="ln">40</span><span class="ins">+         self._events = root / "events.jsonl"</span></div>
+                  <div><span class="ln">41</span><span class="ins">+         self._legacy = root / "snapshots"</span></div>
+                  <div><span class="ln">43</span><span class="del">-     def save(self, session: Session) -&gt; None:</span></div>
+                  <div><span class="ln">43</span><span class="ins">+     def append(self, event: Event) -&gt; None:</span></div>
+                  <div><span class="ln">45</span><span class="ins">+         self._events.open("a").write(event.to_json())</span></div>
+                </div>
+                <div class="gate"><span class="why">Destructive step · signature required</span><button class="btn solid" data-open>Open the proof</button></div>
+              </div>
+            </div>
+            <div class="step off">
+              <div class="mk"><b>g</b>—</div>
+              <div class="txt"><div class="src"><b>Code agent</b> exec</div><p style="margin:0" class="mono">pytest tests/billing -q</p></div>
+            </div>
+            <div class="step off">
+              <div class="mk"><b>h</b>—</div>
+              <div class="txt"><div class="src"><b>Lead agent</b> summary</div><p style="margin:0">Hand back the diff, the test results, and the one risk it could not prove.</p></div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="lab">Add a direction</div>
+            <textarea placeholder="Write the next note for this run — @ to cite a file, / for a command." aria-label="Message the run"></textarea>
+            <div class="ctl">
+              <button class="sel"><span class="l">Tier</span> Restricted</button>
+              <button class="sel"><span class="l">Model</span> claude-sonnet-4</button>
+              <button class="sel"><span class="l">Attach</span> 2 files</button>
+              <button class="tog" aria-pressed="false"><span class="b"></span> Auto-approve this run</button>
+              <div class="send"><span class="k">⌘↵</span><button class="btn solid">Queue note</button></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="aside">
+          <div class="apparatus">
+            <div class="tabs" role="tablist">
+              <button aria-selected="true" data-tab="evidence">Evidence</button>
+              <button aria-selected="false" data-tab="files">Files</button>
+              <button aria-selected="false" data-tab="policy">Policy</button>
+            </div>
+            <div class="pane on" data-pane="evidence">
+              <div style="display:flex;gap:26px;margin:8px 0 4px">
+                <div><div class="fig">06</div><div class="figspan">of 08 cues</div></div>
+                <div><div class="fig">:41</div><div class="figspan">since last step</div></div>
+                <div><div class="fig">$0.38</div><div class="figspan">spent</div></div>
+              </div>
+              <dl class="kv">
+                <dt>Run</dt><dd class="m">run_7f3a</dd>
+                <dt>Executor</dt><dd>docker · restricted</dd>
+                <dt>Image</dt><dd class="m">a91c4e · current</dd>
+                <dt>Network</dt><dd>none · internal bridge</dd>
+                <dt>Limits</dt><dd>2 cpu · 2g · 900s</dd>
+                <dt>Approvals</dt><dd>0 granted · 1 held</dd>
+                <dt>Sub-agents</dt><dd>1 · scout (grep)</dd>
+              </dl>
+              <div class="sec">
+                <h2>Model &amp; budget</h2>
+                <dl class="kv">
+                  <dt>Model</dt><dd class="m">anthropic/claude-sonnet-4</dd>
+                  <dt>Tokens</dt><dd class="m">148.2k in · 11.4k out</dd>
+                  <dt>Cap</dt><dd class="m">$0.38 / $2.00</dd>
+                </dl>
+              </div>
+              <p class="smallnote">Restricted: workspace read/write, no network, allowlisted commands and imports. The gate is fail-closed.</p>
+            </div>
+            <div class="pane" data-pane="files">
+              <div class="tree" style="margin-top:8px">
+                <div class="d">orbit-api/</div>
+                <div>  src/</div>
+                <div class="c">    billing/webhook.py</div>
+                <div>    billing/charges.py</div>
+                <div>  tests/</div>
+                <div class="c">    billing/test_webhook.py</div>
+                <div>    conftest.py</div>
+                <div>  migrations/0042_idempotency.py</div>
+              </div>
+              <p class="smallnote">Two files changed by this run. Their corrections appear at step f.</p>
+            </div>
+            <div class="pane" data-pane="policy">
+              <table class="policy" style="margin-top:8px">
+                <thead><tr><th>Tier</th><th>Network</th><th>Write</th></tr></thead>
+                <tbody>
+                  <tr><td>restricted</td><td class="no">none</td><td class="yes">workspace</td></tr>
+                  <tr><td>elevated</td><td>allowlist</td><td class="yes">workspace + paths</td></tr>
+                  <tr><td>full_access</td><td class="no">audited</td><td class="no">broad</td></tr>
+                </tbody>
+              </table>
+              <p class="smallnote">Commands: python · pytest · git · npm. 33 imports allowlisted. Deletes are always gated.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- QUEUE -->
+    <section class="view" data-view="queue" hidden>
+      <div class="guide"><span><b>Queue</b> · two entries</span><span>drains one at a time</span></div>
+      <div class="ed-head"><h1>On the shelf.</h1><p class="stand">A run waits for the sandbox slot, not for a human. Starting the next one is deliberate: it takes the only executor slot.</p></div>
+      <div class="entries">
+        <div class="entry" style="grid-template-columns:50px minmax(0,1fr) 122px"><div class="no"><b>01</b>20:15</div><div><h2>Migrate the audit chain to v2 with rotation</h2><div class="meta"><span class="tier f">full access</span><span>claude-opus-4</span><span>queued 20:15</span></div></div><div class="status queued"><b>Next</b><small>slot 1</small></div></div>
+        <div class="entry" style="grid-template-columns:50px minmax(0,1fr) 122px"><div class="no"><b>02</b>20:22</div><div><h2>Backfill cost caps into docs/operations.md</h2><div class="meta"><span class="tier">restricted</span><span>claude-sonnet-4</span><span>queued 20:22</span></div></div><div class="status queued"><b>Waiting</b><small>slot 2</small></div></div>
+      </div>
+      <div class="verify"><span class="stampbox">One slot</span><span>Only one sandbox runs at a time — predictable cost, predictable disk.</span><button class="btn sm" style="margin-left:auto">Start next</button></div>
+    </section>
+
+    <!-- AUDIT -->
+    <section class="view" data-view="audit" hidden>
+      <div class="guide"><span><b>Register</b> · entries 1198–1204</span><span>1,204 total</span></div>
+      <div class="ed-head">
+        <h1>The register.</h1>
+        <p class="stand">Every action that touched a sandbox, a file, or a provider is written here in order, each entry sealed with the hash of the one before.</p>
+        <div class="byline"><span><b>Head</b> <span class="mono" style="font-size: 12px">9f2c08b1e7a4d3c6…</span></span><span>Rotated 3 files</span><span>Verified 20:40:58 · <b style="color:var(--olive)">ok</b></span><span class="sp"><button class="btn sm">Verify chain</button></span></div>
+      </div>
+      <div class="register">
+        <div class="reg"><span class="seq">1204</span><span class="when">20:41:12</span><span class="what"><b>approval.pending · patch_file</b><small>run_7f3a · held for a human signature · diff sha 9d07aa</small></span><span class="hash">7f3a…1204 · 9c1e4d22</span></div>
+        <div class="reg"><span class="seq">1203</span><span class="when">20:40:03</span><span class="what"><b>diff.proposed · src/billing/webhook.py</b><small>+24 −3 · inside workspace</small></span><span class="hash">7f3a…1203 · 41aa9b07</span></div>
+        <div class="reg"><span class="seq">1202</span><span class="when">20:39:41</span><span class="what"><b>tool.run · pytest tests/billing -q</b><small>exit 0 · 2.14s · allowlisted</small></span><span class="hash">7f3a…1202 · 0c55de81</span></div>
+        <div class="reg"><span class="seq">1201</span><span class="when">20:39:02</span><span class="what"><b>subagent.spawn · scout</b><small>restricted image · no network</small></span><span class="hash">7f3a…1201 · aa02e7c4</span></div>
+        <div class="reg"><span class="seq">1200</span><span class="when">20:38:02</span><span class="what"><b>tool.run · grep stripe_event_id</b><small>14 hits · read-only</small></span><span class="hash">7f3a…1200 · 5db10a9f</span></div>
+        <div class="reg"><span class="seq">1199</span><span class="when">20:37:41</span><span class="what"><b>container.start · smolcode:restricted</b><small>image a91c4e · bridge internal</small></span><span class="hash">7f3a…1199 · e13f77a0</span></div>
+        <div class="reg"><span class="seq">1198</span><span class="when">20:37:04</span><span class="what"><b>run.accepted · run_7f3a</b><small>tier restricted · model claude-sonnet-4</small></span><span class="hash">7f3a…1198 · 22b9c401</span></div>
+      </div>
+      <div class="verify"><span class="stampbox">Chain ok</span><span>Editing a past entry breaks the chain at that line, and the verifier says where.</span></div>
+
+      <div class="plate">
+        <h2>Policy, in brief</h2>
+        <p class="cap">What each tier may touch — the register records every departure from it.</p>
+        <table class="policy">
+          <thead><tr><th>Action</th><th>Restricted</th><th>Elevated</th><th>Full access</th></tr></thead>
+          <tbody>
+            <tr><td>Read the workspace</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+            <tr><td>Write inside the workspace</td><td class="yes">gated</td><td class="yes">gated</td><td class="yes">gated</td></tr>
+            <tr><td>Network egress</td><td class="no">none</td><td>allowlist</td><td class="no">audited</td></tr>
+            <tr><td>git push</td><td class="no">no</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+            <tr><td>Delete files</td><td class="no">no</td><td class="yes">gated</td><td class="yes">gated</td></tr>
+          </tbody>
+        </table>
+        <p class="smallnote">A tier never widens itself. Moving up is a human decision, recorded as its own entry.</p>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" data-view="settings" hidden>
+      <div class="guide"><span><b>Colophon</b> · providers and caps</span><span>local settings</span></div>
+      <div class="ed-head"><h1>How this edition is set.</h1><p class="stand">Providers, budget caps, and the sandbox images. Nothing here is secret: keys are read from the environment, never written into the working file.</p></div>
+      <div class="colophon">
+        <div class="block"><h2>Providers</h2><div class="v">
+          <p><b>LiteLLM proxy</b> — <span class="m">http://127.0.0.1:4000</span> · budgeted routing · ready</p>
+          <p><b>Anthropic</b> — <span class="m">claude-opus-4</span> · key from environment · ready</p>
+          <p><b>OpenRouter</b> — <span class="m">minimax-m2</span> · no key set · <span style="color:var(--verm)">unavailable</span></p>
+        </div></div>
+        <div class="block"><h2>Budget</h2><div class="v">
+          <p>Tonight <span class="m">$3.84 of $12.00</span> · per run <span class="m">$2.00</span> · month <span class="m">$80 of $200</span></p>
+          <p style="color:var(--muted)">At the cap the run stops and keeps its evidence; it never silently continues.</p>
+        </div></div>
+        <div class="block"><h2>Sandbox images</h2><div class="v">
+          <p><b>restricted</b> <span class="m">a91c4e · current</span> · <b>elevated</b> <span class="m" style="color:var(--verm)">02b7f1 · stale</span> · <b>full_access</b> <span class="m">7ce0aa · current</span></p>
+          <p style="color:var(--muted)">Stale images block their tier until <span class="m">scripts/build_images.sh</span> refreshes them.</p>
+        </div></div>
+        <div class="block"><h2>Workspace</h2><div class="v">
+          <p><span class="m">~/work/orbit-api</span> · 418 files · 3.2 MB · outside root: none</p>
+          <p style="color:var(--muted)">Local only. The daemon answers on loopback and nowhere else.</p>
+        </div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="modal" id="proof" role="dialog" aria-modal="true" aria-labelledby="pt" hidden>
+  <div class="slip">
+    <div class="row"><span>Proof slip · destructive step</span><span>run_2b9c · 20:41</span></div>
+    <div style="display:flex;gap:14px;align-items:flex-start"><div><h2 id="pt">Drop 12 legacy snapshot files?</h2><p>The elevated sandbox wants to remove the old snapshot directory before writing the event log. This is the only irreversible step in the run.</p></div><button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>
+  </div>
+  <div class="mbody">
+    <div class="file">src/session/store.py <span class="st"><span class="a">+42</span> −11</span><span style="font-family:var(--sans);font-size: 12px;color:var(--faint)">diff sha 4b21c9</span></div>
+    <div class="corr">
+      <div class="hunk"><span class="ln">1</span>@@ -38,9 +38,14 @@ class SessionStore:</div>
+      <div><span class="ln">38</span>     def __init__(self, root: Path):</div>
+      <div><span class="ln">39</span>         self.root = root</div>
+      <div class="del"><span class="ln">40</span>-         self._snapshots = root / "snapshots"</div>
+      <div class="ins"><span class="ln">40</span>+         self._events = root / "events.jsonl"</div>
+      <div class="ins"><span class="ln">41</span>+         self._legacy = root / "snapshots"</div>
+      <div><span class="ln">42</span> </div>
+      <div class="del"><span class="ln">43</span>-     def save(self, session: Session) -&gt; None:</div>
+      <div class="del"><span class="ln">44</span>-         (self._snapshots / session.id).write_text(...)</div>
+      <div class="ins"><span class="ln">43</span>+     def append(self, event: Event) -&gt; None:</div>
+      <div class="ins"><span class="ln">44</span>+         with self._events.open("a") as fh:</div>
+      <div class="ins"><span class="ln">45</span>+             fh.write(event.to_json() + "\n")</div>
+      <div><span class="ln">46</span> </div>
+      <div class="del"><span class="ln">47</span>-     def delete_legacy_snapshots(self) -&gt; int:</div>
+      <div class="ins"><span class="ln">47</span>+     def drop_legacy(self) -&gt; int:</div>
+      <div class="ins"><span class="ln">48</span>+         legacy = list(self._legacy.glob("*.json"))</div>
+      <div class="ins"><span class="ln">49</span>+         for path in legacy:</div>
+      <div class="ins"><span class="ln">50</span>+             path.unlink()</div>
+    </div>
+    <p class="sig">The signature binds to this diff and this run. A replan produces a new proof.</p>
+    <div class="checks">
+      <label class="chk"><input type="checkbox" /> Auto-approve this run's diffs</label>
+      <span class="grade">audited · cleared by stop</span>
+    </div>
+  </div>
+  <div class="mfoot">
+    <button class="btn ghost" data-close>Set aside</button>
+    <div class="r"><button class="btn danger" data-close>Refuse</button><button class="btn solid" data-close>Sign &amp; approve once</button></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var views = document.querySelectorAll('[data-view]');
+  function show(name) {
+    views.forEach(function (v) { v.hidden = v.getAttribute('data-view') !== name; });
+    document.querySelectorAll('.contents button').forEach(function (b) {
+      var on = b.getAttribute('data-go') === name;
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('.thumb button').forEach(function (b) {
+      var on = b.getAttribute('data-go') === name;
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('[data-go]').forEach(function (b) {
+    b.addEventListener('click', function (e) { e.preventDefault(); show(b.getAttribute('data-go')); });
+  });
+  document.querySelectorAll('[data-to]').forEach(function (el) {
+    el.addEventListener('click', function () { show(el.getAttribute('data-to')); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter') show(el.getAttribute('data-to')); });
+  });
+  var scrim = document.getElementById('scrim'), modal = document.getElementById('proof');
+  function open() { scrim.hidden = false; modal.hidden = false; scrim.classList.add('on'); modal.querySelector('.btn.solid').focus(); }
+  scrim.addEventListener('click', close);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hidden) close();
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); show('run'); }
+  });
+  document.querySelectorAll('[data-tab]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var k = b.getAttribute('data-tab');
+      b.parentNode.querySelectorAll('[data-tab]').forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
+      document.querySelectorAll('[data-pane]').forEach(function (p) { p.classList.toggle('on', p.getAttribute('data-pane') === k); });
+    });
+  });
+  var parts = (location.hash || '').replace('#', '').split('&');
+  if (parts[0] && document.querySelector('[data-view="' + parts[0] + '"]')) show(parts[0]);
+  if (parts.indexOf('approval') > -1) { show('run'); open(); }
+})();
+</script>
+</body>
+</html>
