@@ -1,0 +1,8 @@
+# pnpm 10+ build-script allowlist.
+# Without this, `pnpm install --frozen-lockfile` fails with
+# ERR_PNPM_IGNORED_BUILDS because esbuild's postinstall is blocked.
+# pnpm auto-generates this file with a placeholder when it is missing,
+# which is why the previous setup only worked on hosts that had already
+# run `pnpm approve-builds`. It is committed so a fresh clone installs cleanly.
+allowBuilds:
+  esbuild: true
