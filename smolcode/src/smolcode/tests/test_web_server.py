@@ -59,6 +59,8 @@ class TestCreateApp:
 
     def test_create_app_with_settings(self, tmp_path, monkeypatch):
         monkeypatch.setattr("smolcode.images.ensure_tier_images", lambda *a, **k: [])
+        # 2026-10-24 assessment A4: web boot also provisions the internal network.
+        monkeypatch.setattr("smolcode.container.ensure_internal_network", lambda *a, **k: None)
         from smolcode.config import Settings, _default_tiers
         from smolcode.web import create_app
 

@@ -13,11 +13,13 @@ ALLOWED_BIND_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..audit import AuditSink
 from ..config import Settings, load_settings
@@ -25,9 +27,18 @@ from ..uploads import DEFAULT_ALLOWED_MIME, DEFAULT_MAX_BYTES, UploadsStore
 from .api import router as api_router
 from .cost_caps import CostCapTracker
 from .runs import RunManager
+from .spa import spa_is_stale
 
 
 ALLOWED_BIND_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+# 2026-10-24 repair assessment (Phase 7 / A4 hardening): the Host header is
+# validated too, not just the bind address. "testserver" is Starlette's
+# TestClient default and cannot be resolved by a browser, so keeping it
+# listed is safe and lets the suite exercise the middleware.
+WEB_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "::1", "testserver")
+
+_log = logging.getLogger("smolcode.web")
 
 
 def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> FastAPI:
@@ -113,9 +124,16 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
             from ..images import ImageBuildError, ensure_tier_images
 
             def _ensure():
+                from ..container import ensure_internal_network
                 from ..images import SANDBOXED_TIERS
 
                 ensure_tier_images(settings, SANDBOXED_TIERS)
+                # A4 (2026-10-24 assessment): the CLI provisions the
+                # restricted-tier internal bridge; the web server did not,
+                # so restricted web runs failed on a fresh Docker host with
+                # "network smolcode-internal not found". Fail closed like the
+                # image check: a missing/denied network refuses the boot.
+                ensure_internal_network()
 
             try:
                 await anyio.to_thread.run_sync(_ensure)
@@ -134,8 +152,22 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
     )
     app.include_router(api_router)
 
+    # Phase 7 hardening (2026-10-24 assessment): reject unexpected Host
+    # headers so a DNS-rebinding page cannot drive this loopback server
+    # through a browser. Bind-address validation alone does not cover that.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(WEB_ALLOWED_HOSTS))
+
     spa_dir = Path(__file__).resolve().parents[3] / "web" / "dist"
     if spa_dir.is_dir():
+        # Step 0.3: never serve a stale bundle silently. The bundle is a
+        # generated artifact; if src/ is newer than dist/index.html the
+        # operator is looking at old UI (an 8h-stale bundle was found at
+        # HEAD on 2026-10-24). Warn loudly; GET /api/health also reports it.
+        if spa_is_stale(spa_dir):
+            _log.warning(
+                "SPA bundle at %s is older than the frontend sources; run 'pnpm build' in smolcode/web",
+                spa_dir,
+            )
         app.mount("/", StaticFiles(directory=str(spa_dir), html=True), name="spa")
 
     return app
