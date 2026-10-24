@@ -6,39 +6,37 @@ self-hosted alternative to Claude Code / OpenCode with three trust tiers
 (`restricted` / `elevated` / `full_access`) and multi-provider support
 via LiteLLM.
 
-> **Status:** **v1.8 + v1.9.x FE wire-up SHIPPED on 2026-08-25 — Decision 0025 (Web UI/UX review + roadmap):** all four v1.8 phases + the FE wire-up followups are on `origin/main`. The remaining v1.9.x items (drag-drop queue reorder, per-provider usage caps, per-subagent cost, server-side auto-approve OFF endpoint, full Playwright e2e suite, IPv6 iptables) live in `../TASKS.md` §4. See `../docs/decisions/0025-web-ui-ux-review-and-roadmap.md` §12 status history for the full timeline.
+> **Status (2026-10-24): repair in progress.** Phases 3–6 of the
+> 2026-09-24 remediation plan are shipped:
+> [0038](../docs/decisions/0038-phase3-buildable-installable-testable-ci.md) (build/CI),
+> [0039](../docs/decisions/0039-phase4-backend-feature-repair.md) (backend features),
+> [0040](../docs/decisions/0040-phase5-frontend-correctness.md) (frontend correctness),
+> [0041](../docs/decisions/0041-tool-mcp-hardening-and-trust-boundary.md) (tool/MCP hardening).
+> Phases 7–9 are in progress on branch `fix/review-remediation`; the
+> 2026-10-24 repair assessment verdict is **REPAIR**, not production-ready —
+> see [REPORT.md](../docs/reviews/2026-10-24-repair-assessment/REPORT.md)
+> (findings A1–A8) and [REMEDIATION-PLAN.md](../docs/reviews/2026-09-24-full-app-review/REMEDIATION-PLAN.md).
+> Live phase state and the current work order live in
+> [`../TASKS.md`](../TASKS.md) §0b and §0c instead of being duplicated here.
 >
-> **Phase 0** (commit `88a20e4`) — sub-agent events (`subagent.started` / `subagent.ended`) flow through the orchestrator's `do_<tier>_task` and `do_specialist` tools so the SPA renders a nested `<SubAgentBlock>` for every delegation (A1). Token + step aggregates are auto-incremented in `Run.publish` for every `step.action` event under `pending_lock` and surfaced in the Inspector as "Token usage" (input / output / total + step count). A 1Hz client-side countdown ticks down the wall-clock budget (B1 + B9 — the inspector also clears `activeRun` cleanly when a run is purged mid-session). `WorkspaceTree` refreshes immediately on `diff.proposed` (B11). Quick wins: `RunHistory` gains a task-text filter + Today/Yesterday/Earlier grouping; `TierSwitcher` falls back from a stale `full_access` selection with a dismissable warning; `ApiKeyPanel` no longer leaks its `confirm-forget` state on blur; thought / code_action / observations truncation bumped 2000 → 8000 chars with a "Show full" `<details>` toggle.
+> **Known limitations as of 2026-10-24** (full list in
+> [`../docs/security.md`](../docs/security.md)): per-tool destructive approval
+> is fail-closed but **inert under the default Docker executor** — an in-sandbox
+> call cannot reach the host approval broker, and that broker is not built yet
+> (assessment A3); the host-application image, the `full_access` tier image, and
+> live provider runs are unverified on this host (Docker daemon down, no
+> provider keys); phases 7–9 have not shipped.
 >
-> **Phase 1** (commit `7b33f1d`) — SessionsPane + ProjectSwitcher ship; the biggest semantic gap in v1.7.x (sessions + projects existed as files but had no UI management) closes. New `/api/sessions` + `/api/sessions/{id}` + `/api/projects` endpoints; `Settings.projects` config + `SMOLCODE_PROJECTS` env loader (bare names auto-create `<workspace>/<name>`); `?project=` plumbing on uploads + tree + runs; `Run.session_id` + `Run.project` fields; `activeProject` + `activeSessionId` persist via localStorage.
+> MCP servers stay opt-in: zero by default; enable with
+> `--mcp-config path/to/mcp_config.json` or `SMOLCODE_MCP_CONFIG`.
 >
-> **Phase 2** (commit `2f90b50`) — pause/queue + file previews + file mentions ship. Pause button + queue pane (FIFO auto-queue when `is_busy()`); `Run.snapshot(agent)` writes `agent.memory.steps` to disk via `step.dict()` + `step_type` discriminator; resume calls `agent.run(task, reset=False)` after restoring memory (~5s sandbox re-init). File mention `@path` autocomplete from `getWorkspaceTree` + 32 KB per-file cap + path-traversal defense in depth. File preview pane (`GET /api/files?path=&project=&max_bytes=`, 256 KB default cap, 403 on traversal). Folded in `Run.subagent_history: list<SubAgentSummary>` (Phase 0 §14.8 #3).
->
-> **Phase 3** (commit `dcf38cf` + ship docs `509288f`, shipped 2026-08-24) — Dashboard + a11y + power features per `0025` §6.5. New `Dashboard` tab with 24h SVG sparkline + per-provider token breakdown + USD cost estimate (cost rates via `model_catalog.DEFAULT_COST_RATES`; override via `SMOLCODE_COST_RATES` JSON env, fail-closed). `CostBadge` chips show per-run cost + rate_source. `SubAgentList` replaces the single-row subagent hint (Phase 0 §14.8 #3 fold-in: the `subagent_history` wire field that Phase 2 added is now consumed). `lib/keyboard.ts` installs a global Cmd/Ctrl+ shortcut router (Enter=submit, .=stop, K=palette, /=help). New endpoints: `POST /api/runs/{id}/retry` (B4 + B7), `POST /api/runs/{id}/rerun` (B4), `GET /api/runs/{id}/export` (B5, JSON download), `GET /api/dashboard`. PREWORK installed: Vitest 2 + Testing Library 16 + axe-core 4 + Playwright 1.48 (132 packages). 76 new tests (43 BE + 33 Vitest, all PASS); axe-core scans zero serious/critical. App-level wire-up (FE-5..9) + Playwright live smoke deferred to v1.9.x.
->
-> **v1.9.x FE wire-up** (commit `bec3ce9`, shipped 2026-08-25) — wires the Phase-3 libraries + helpers into the App shell so the user can actually use them. 12 files changed (+750 / -101). **FE-5** (B3): `RunHistory` gains Tier + Status filter selects that intersect with the existing text filter; tier options derived from history. **FE-6 / B10**: new `<AutoApproveBanner>` + `ApprovalModal.onAutoApproveToggle`; clicking "Approve for rest of run" flips a client-side flag that renders the banner above the event stream with a Disable button; the flag auto-clears when the run becomes terminal. **FE-7 / B4+B5+B7**: new `<RunActions>` (Retry / Re-run / Export) cluster in the stream header when the active run is terminal; each button calls the Phase-3 helper (`api.retryRun` / `rerunRun` / `exportRun` + `downloadExport`). **FE-8**: `<Dashboard>` opens from a header button as a modal overlay; the Phase-3 keyboard router is mounted on App startup with real handlers (Cmd/Ctrl+Enter → submit composer; Cmd/Ctrl+. → POST /api/runs/{id}/stop; Cmd/Ctrl+K or Cmd/Ctrl+/ → open the Dashboard modal). **FE-9**: `main.tsx` mounts `@axe-core/react` in dev only, gated on `import.meta.env.DEV` so it tree-shakes out of production. **PW-4**: Playwright e2e smoke runs against live Vite — 2 pass + 1 gracefully skipped when no backend on :7860. 22 new Vitest tests across 4 new files (RunHistory 9, AutoApproveBanner 4, RunActions 4, ApprovalModal 5); 55/55 total Vitest pass. `pnpm build` 257.80 KB JS / 77.67 KB gzip (+9.56 KB / +2.43 KB vs Phase 3 ship). Per-item file map in `../TASKS.md` §3.2. v1.8 (decision 0025) is COMPLETE from feature + test + wire-up perspective. BE baseline unchanged (51 pre-existing failures still tracked for decision 0026).
-
-> **Status:** **v1.7.1.3 shipped — Decision 0024 (Web UI: traceback capture + UTF-8 stdio + defensive hardening):** the v1.7.1.2 layer-B fix closed the recursion / `ModuleNotFoundError` failure mode, but the Web UI's `/api/runs` POST still surfaced as `OSError: [Errno 22] Invalid argument` in 4.4s with no usable stack — the broad `except Exception` block in `agent_runner.run_in_thread` only stored `type(e).__name__ + ": " + str(e)`. Capturing the full `traceback.format_exc()` revealed the real bug: pip's progress output (emoji + box-drawing chars) is rendered through smolagents' `StepLogger.log -> Rich console.print -> legacy_windows_render` path, which on Windows captures `self.write = sys.stdout.write` at construction time and then tries to encode through the legacy `cp1252` / `cp1256` codec — **UnicodeEncodeError: 'charmap' codec can't encode characters in position N-M**. 0024 ships three connected fixes: (1) the broad except now appends the full traceback to `run.error` (capped at 8 KB) AND includes it in `EVT_ERROR.traceback` so the SPA can render it — the next failure becomes diagnosable from one log line; (2) `step_callbacks.register(ActionStep, ...)` (previously the only register call NOT in try/except) + `pool.submit(agent.run, run.task)` are both wrapped in defensive try/except so any failure logs + continues instead of aborting the run; (3) a new `setup_unicode_env()` helper in `_unicode_env.py` reconfigures `sys.stdout/stderr/stdin` to UTF-8 with `errors="replace"` and sets `PYTHONUTF8=1` + `PYTHONIOENCODING=utf-8` in os.environ — called from `smolcode/__init__.py` BEFORE any submodule imports smolagents, so by the time smolagents constructs its Rich Console the file is already UTF-8 and `LegacyWindowsTerm` writes through UTF-8. **Live end-to-end validated:** Web UI run of "create a simple todo app" with `deepseek-v4-flash` now completes in **114.28s** with `status=done` and produces `todo_app/todo.py` (add/list/done/delete + JSON persistence). **11 new tests** (5 in `TestRunInThreadErrorTraceback`, 6 in new `test_unicode_env.py`); combined test count: **979 passed + 3 skipped**. Ruff check + format clean. See `../docs/decisions/0024-web-ui-traceback-and-utf8.md`.
->
-> **v1.7.1.2 shipped — Back-to-back bugfix on top of 0023:** the original 0023 Layer A intercepted model-emitted code on `GuardedExecutor.__call__`, but smolagents' `send_tools` flow (which runs *before* the first model step) bypassed `__call__` and called `install_packages` + `run_code_raise_errors` directly on the inner executor, letting `import smolcode` (auto-injected by `Tool.to_dict` from `from smolcode.session import ...`) reach the Jupyter kernel. Layer B intercepts those infrastructure paths: `install_packages` filters host-only packages; `run_code_raise_errors` strips host-only lines from tool-def code; `send_tools` monkey-patches `inner.install_packages` / `inner.run_code_raise_errors` with routing lambdas whose default-arg closure captures the ORIGINAL bound methods (so re-entry via `inner.<name>(...)` cannot happen — the v1.7.1 first cut had an `inner.install_packages = lambda pkgs: self.install_packages(pkgs)` that recursed infinitely). `__getattr__` is plain delegation; never rebind bound methods (breaks `__slots__` against `self.static_tools = {...}`). Backed by 22 new layer-B unit tests; combined v1.7.1.2 test count: **968 passed + 3 skipped**. Ruff check + format clean. See `../docs/decisions/0023-runtime-sandbox-boundary-guard.md` §10 for the followup design.
->
-> **v1.7 shipped — Milestone 16 (iptables enforcement for elevated tier)** shipped 2026-08-23. M16 closes the v1.1 followup #1 by enforcing the elevated tier's network allowlist **at the kernel level** inside the container (defense-in-depth — even if the agent bypasses our Python-level `safe_shell` allowlist or `LocalPythonExecutor` imports check, packets are dropped at the network stack unless they target an explicitly allowlisted CIDR). The elevated container's `ENTRYPOINT` is now `docker/iptables-init.sh`, which applies default-deny OUTPUT + ACCEPT per CIDR in `tier.network_allowlist` (CIDR-only; loopback + Docker DNS always open). The init script runs as root for the firewall setup then `gosu 1000:1000 "$@"` drops to the smolagent user — so the agent process itself never sees `CAP_NET_ADMIN`. The image installs `iptables`, `iproute2`, and a static `gosu` (v1.17). New `smolcode/container.py` exports `parse_cidr_allowlist` / `format_cidr_allowlist` / `elevated_container_env` (fail-closed ConfigError on the first malformed CIDR) and `is_iptables_kill_switch_active` for the audit-log side. `agents/base.py:_executor_kwargs_for` adds `cap_add=["NET_ADMIN"]` + `environment={ELEVATED_NET_ALLOWLIST, ELEVATED_DISABLE_IPTABLES}` for the elevated tier only. **Schema change:** `Tier.network_allowlist` now means **CIDR strings**, not hostnames (the v1.0 hostname form had no consumers and was never enforced, so this is a clean rename of semantics, not a breaking API change). Kill switch `ELEVATED_DISABLE_IPTABLES=1` is a documented security-sensitive escape hatch (security.md §9.5). **Known limitations:** IPv4 only in v1.7 (IPv6 dropped; v1.8 candidate, decision 0021); per-process `--uid-owner` filtering is a v1.9 candidate. Backed by 21 new unit tests + 4 `@pytest.mark.docker` contract tests (1 + 2 of which skip on hosts without container internet egress — Docker Desktop networking limitation). See `../docs/decisions/0020-m16-iptables-enforcement.md` for the design.
-> v1 ships **zero** MCP servers by default; opt in via `--mcp-config path/to/mcp_config.json` or `SMOLCODE_MCP_CONFIG=path`. See `../docs/decisions/0005-m3-mcp-integration.md` for the design (hand-rolled sync JSON-RPC 2.0 client — no new deps, no async). See `../docs/decisions/0006-m4-elevated-full-access-tiers.md` for the M4 tier + confirmation + audit design. See `../docs/decisions/0007-m4x-per-tool-confirmation-checkpoint.md` for the M4.x destructive gate + git checkpoint design. See `../docs/decisions/0014-m11-provider-model-key-ui.md` for the M11 SPA UI design.
-
-### Next milestones (planned — see `../docs/decisions/0017-m14-m15-m16-roadmap.md`)
-
-| # | Name | Theme | Est. days |
-|---|---|---|---|
-| **M14** ✅ | Audit log operational hardening (v1.5) | `GET /api/audit` becomes real + SPA "Recent audit" panel + `smolcode audit rotate [--dry-run]` (pre-rotation `verify_chain`) + `audit grep --patterns` honors custom regex | 1.5 |
-| **M15** ✅ | CLI extraction + UX polish (v1.6) | `cli.py` 1172 → 449 via new `_cli_subcommands.py`; `redact.redact_string` public helper (default-patterns fallback); `useMediaQuery` hook drives the inspector breakpoint (replaces CSS `@media`) | 1.0 |
-| **M16** ✅ | iptables enforcement for elevated tier (v1.7) | kernel-level egress firewall inside the elevated container; CIDR-only `network_allowlist`; `docker/iptables-init.sh` ENTRYPOINT + `cap_add=[NET_ADMIN]` + gosu drop; `container.py` helpers; fail-closed ConfigError on bad CIDR | 2.0 |
-
-**Total: ~5 days cumulative.** Detailed scope for each milestone lives in its own decision doc (`0018` / `0019` / `0020`). M14 + M15 + M16 are the v1.1 followups (closes roadmap item #1 in the v1.1 followup set); future v1.2 candidates include decision 0021 (apply the same iptables init script to the restricted image as defense-in-depth).
+> Earlier per-milestone status notes (v1.7–v1.9.x) lived here until 2026-10-24;
+> they remain in git history and in decision 0025 §12.
 
 ## Quick start
 
 ```bash
-# Windows (from repo root: E:\python projects\smol_clone_2\)
+# Windows (from the repo root — the parent directory of smolcode/)
 cd smolcode
 uv venv --python 3.12 .venv
 uv pip install --python .venv\\Scripts\\python.exe -e ".[dev]"
@@ -49,13 +47,15 @@ uv pip install --python .venv\\Scripts\\python.exe -e ".[dev]"
 # Offline smoke test (no API key, no Docker)
 .venv\\Scripts\\python.exe -m smolcode --smoke --tier restricted "echo hi"
 
-# Real run (Docker + opencode-go; needs OPENCODE_GO_APIKEY in ..\\.env)
+# Real run (Docker + opencode-go; needs OPENCODE_GO_APIKEY in the repo-root .env)
 set PYTHONIOENCODING=utf-8
 set PYTHONUTF8=1
 .venv\\Scripts\\python.exe -m smolcode --tier restricted "what is 2+2?"
 ```
 
 POSIX equivalents use `.venv/bin/python` and `source .venv/bin/activate`.
+Python 3.10+ is supported; CI and the tier images use 3.12, while this
+checkout's venv runs 3.13.1 (see `../docs/environment.md`).
 
 ## Make targets
 
@@ -64,16 +64,22 @@ POSIX equivalents use `.venv/bin/python` and `source .venv/bin/activate`.
 | `make install` | Create `.venv` and install `smolcode` + dev deps |
 | `make quality` | `ruff check` + `ruff format --check` on `src/` |
 | `make style` | Auto-fix lint + format |
-| `make test` | Run `pytest` on `src/smolcode/tests/` |
+| `make test` | `pytest` on `src/smolcode/tests/` with the blocking 80% coverage gate |
 | `make run ARGS=...` | Pass-through to `python -m smolcode` |
 
-If `make` is not installed, the `.cmd` / `.ps1` scripts in `scripts/`
-provide the same surface on Windows.
+The Makefile assumes the Windows venv layout (`.venv/Scripts/...`); on POSIX
+run the `ruff` / `pytest` commands directly until phase 8 lands a portable
+Makefile. If `make` is not installed, `scripts/install.ps1` and
+`scripts/quality.ps1` (plus `.cmd` wrappers) cover install and lint/format;
+there is no script equivalent for `test`, `run`, or `docker-images`.
 
 ## Environment variables
 
-`smolcode` reads `.env` from the parent directory (`E:\python projects\smol_clone_2\.env`)
-automatically. See `.env.example` in this directory for all keys.
+`smolcode` loads `.env` automatically, in this order: `./.env` (current
+working directory), `<repo>/smolcode/.env`, `<repo>/.env`, then `~/.env`
+(first file found wins). Precedence is CLI flag > environment variable >
+`.env` > built-in default. `.env.example` in this directory lists every
+supported key (decision 0044).
 
 The minimum required for M1 is `OPENCODE_GO_APIKEY`. Other providers
 (`MINIMAX_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are wired but
@@ -83,9 +89,9 @@ not exercised in M1.
 
 | Tier | Status |
 |---|---|
-| `restricted` | **M4 implemented.** 13 workspace tools (fs + shell + git) + zero MCP servers by default + 12 max steps. Runs in Docker with bind-mounted workspace. `network="none"`. |
-| `elevated` | **M4 implemented.** Adds extra imports (os, sys, shutil, hashlib, tempfile, collections, itertools, functools, glob) + extra commands (pip, npm, node, curl, jq, make). `network="restricted"` (data structure; iptables enforcement deferred to v1.1). |
-| `full_access` | **M4 implemented.** Widest import + command set (incl. ssh, scp, rsync, docker, kubectl, terraform, ansible, aws, gcloud, az CLIs). `network="open"` with `network_allowlist=("*",)`. **Requires per-run `y/N` confirmation prompt** (30 s hard, configurable via `SMOLCODE_FULL_ACCESS_CONFIRM_TIMEOUT_S` or `--confirm-timeout`); denial = exit 4. All runs audited to `<cwd>/logs/audit.jsonl` (append-only JSONL). **M4.x: per-tool destructive-op gate** (every `git_push`, every `run` with destructive cmd/flags gets a `y/N/a/o` prompt). **Git checkpoint** before the run (skip-if-clean/skip-if-not-repo/`--no-checkpoint`). |
+| `restricted` | **Implemented.** Workspace tools (fs + shell + git) + zero MCP servers by default + 12 max steps + 120 s per-command ceiling. Runs in Docker with the workspace bind-mounted; restricted containers attach only to the internal bridge, so there is no egress. |
+| `elevated` | **Implemented.** Adds extra imports (os, sys, shutil, hashlib, tempfile, collections, itertools, functools, glob) + extra commands (pip, npm, node, curl, jq, make) + 20 max steps + 180 s per-command ceiling. The CIDR `network_allowlist` is **enforced at the kernel level** inside the container since v1.7 (M16, decision 0020); IPv6 since v1.8 (decision 0034). |
+| `full_access` | **Implemented.** 40 max steps + 300 s per-command ceiling. Widest import + command set (incl. ssh, scp, rsync, docker, kubectl, terraform, ansible, aws, gcloud, az CLIs). `network="open"` with `network_allowlist=("*",)`. **Requires per-run `y/N` confirmation prompt** (30 s hard, configurable via `SMOLCODE_FULL_ACCESS_CONFIRM_TIMEOUT_S` or `--confirm-timeout`); denial = exit 4. All runs audited to `<cwd>/logs/audit.jsonl` (append-only JSONL). **M4.x: per-tool destructive-op gate** (every `git_push`, every `run` with destructive cmd/flags gets a `y/N/a/o` prompt). **Git checkpoint** before the run (skip-if-clean/skip-if-not-repo/`--no-checkpoint`). |
 
 > **Sandbox boundary note (decision 0021, v1.7.1):** every sandbox-tier
 > CodeAgent now receives a tier-aware **sandbox-boundary instruction**
@@ -329,9 +335,20 @@ Events emitted: `start` (run begin), `step` (each agent reasoning step), `error`
 
 Skip the audit log with `--no-audit` (not recommended for `full_access`).
 
-### Network allowlist (deferred)
+### Network allowlist (enforced since v1.7)
 
-`elevated` and `full_access` ship with a `Tier.network_allowlist` data structure. **iptables enforcement inside the container is deferred to v1.1** (per `docs/roadmap.md` §6). For v1, restricted + elevated containers still run with `network_mode=none`; only `full_access` containers get the default bridge. See `../docs/decisions/0006-m4-elevated-full-access-tiers.md` for the design and the rejected alternatives (always-yes flag, sudo-style password prompt, per-tool confirmation, syslog).
+`restricted` has no network path: the container attaches only to the
+Docker `internal=true` bridge (no egress). `elevated` keeps a CIDR-based
+`Tier.network_allowlist`; its entrypoint (`docker/iptables-init.sh`)
+installs default-deny OUTPUT chains for **both** IPv4 and IPv6 with
+explicit ACCEPTs for loopback, Docker DNS, ESTABLISHED/RELATED, and each
+allowlisted CIDR, then drops from root to the unprivileged user via
+`gosu` (decision 0020; IPv6 in decision 0034). `full_access` uses the
+default bridge with `network_allowlist=("*",)`. The kill switch
+`ELEVATED_DISABLE_IPTABLES=1` bypasses both chains and is documented as a
+security-sensitive escape hatch in `../docs/security.md` §16.5. The
+firewall is only as good as the container runtime that provisions it;
+`../docs/security.md` lists the remaining gaps.
 
 ## M4.x: per-tool destructive-op confirmation + git checkpoint
 
@@ -508,9 +525,17 @@ Filter is installed via `smolcode.redact.install_redact_filter()` which wraps th
 
 ### Coverage gate
 
-`pyproject.toml` enforces `--cov-fail-under=80` in `pytest` `addopts`. The `.coveragerc` excludes `__main__.py` (CLI shim) and `_mcp_demo_server.py` (docs demo) plus `pragma: no cover` / `if TYPE_CHECKING:` blocks. Current total: **80.28%**.
+The gate is the blocking CI `coverage` job and the Makefile `test` target,
+not `pyproject.toml` — that file deliberately sets no coverage flags so
+partial test runs stay usable.
 
-A regression below 80% will fail `pytest` in CI. To add a new module, either ship tests that cover it or add a `pragma: no cover` comment with justification.
+- `make test` runs `pytest src/smolcode/tests/ --cov=smolcode --cov-report=term --cov-fail-under=80` (Makefile line 29).
+- CI's `coverage` job runs the same command on ubuntu and fails below 80%.
+
+`.coveragerc` excludes `__main__.py` (CLI shim) and `_mcp_demo_server.py`
+(docs demo) plus `pragma: no cover` / `if TYPE_CHECKING:` blocks. To add a
+new module, either ship tests that cover it or add a `pragma: no cover`
+comment with justification.
 
 ### Security test suite
 
@@ -538,8 +563,9 @@ zone where the user can drop files that the agent then reads.
 uv pip install -e "./smolcode[web]"
 ```
 
-This adds `fastapi` (pinned <0.140 due to a route-registration
-regression in 0.141), `uvicorn[standard]`, and `python-multipart`.
+This adds `fastapi` (pinned `>=0.115,<0.137` because 0.137+ has a
+route-registration regression — see `pyproject.toml`), `uvicorn[standard]`,
+and `python-multipart`.
 
 ### Run the web GUI
 
@@ -730,7 +756,8 @@ The diff gate is automatic once `smolcode web` is running:
 
 ```powershell
 # Terminal 1: server (binds loopback only).
-cd "E:\python projects\smol_clone_2\smolcode"
+# Run from the repo root; the interpreter below is the local venv.
+cd smolcode
 .\.venv\Scripts\python.exe -m smolcode web
 # Open http://127.0.0.1:7860 in your browser.
 

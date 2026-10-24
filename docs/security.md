@@ -1,9 +1,24 @@
 # Security Model
 
-**Date:** 2026-06-28
-**Author:** initial planning pass
+**Date:** 2026-10-24 (re-verified claim by claim; originally written 2026-06-28)
+**Author:** Phase 9 documentation alignment (decision 0044); original planning pass 2026-06-28
 **Status:** active
 **Related:** `docs/environment.md`, `docs/architecture.md`, `docs/roadmap.md`
+
+> **How to read this (2026-10-24).** Every claim below that names code was
+> re-checked against the tree at `7ba1705`; where the implementation and this
+> document disagree, the code wins and this file is the bug (decision 0044 §1).
+> Claims that need a live Docker daemon or a provider key are marked *(not
+> verified on this host: daemon down, no keys)*; host facts live in
+> `docs/environment.md`. Section numbers are stable identifiers referenced from
+> decisions and `README.md`, so they were not renumbered wholesale. The one
+> exception: the kernel-enforcement block at the end of this file used to be a
+> second `## 9.` heading; it is now §16 (matching milestone M16) and its
+> subsections are 16.1–16.8, while the audit log keeps §9. References from
+> ADRs 0020/0034 to the old §9.5 are historical; live references were updated
+> (decision 0044 §2). Sections 3.5, 3.6 and 16 keep their original numbers but
+> sit at the end of the file because they were appended after §12; the numbers,
+> not the order, are the stable identifiers.
 
 ---
 
@@ -31,9 +46,11 @@ These are **non-negotiable**, regardless of tier:
 1. Model-written Python **never** executes on the host without a
    sandbox. Default executor is Docker (`smolagents[docker]`); `local`
    is an **opt-in** fallback for environments where Docker is unavailable
-   and is explicitly labelled "not a sandbox" in the CLI. On the current
-   host (Docker daemon running), `SMOLCODE_EXECUTOR=docker` is the
-   default and the `local` fallback is unused.
+   and is explicitly labelled "not a sandbox" in the CLI. `docker` is the
+   default executor. On the 2026-10-24 verification host the daemon is NOT
+   running (`docker info` exits 1), so no sandbox claim in this document was
+   executed here and `smolcode web` fails closed at startup; the `local`
+   fallback is for development only and says out loud that it is not a sandbox.
 2. **No agent gets unrestricted filesystem, network, or system access.**
    Even `full_access` is bounded by the tier's allowlist.
 3. **No secrets in source or committed config.** All API keys come from
@@ -63,12 +80,12 @@ workspace.
 | Read files in `workspace/` | yes | `PathPolicy.resolve_under_workspace` |
 | Write files in `workspace/` | yes | Same gate |
 | List directories in `workspace/` | yes | Same gate |
-| Python imports | `json`, `pathlib`, `ast`, `textwrap`, `re`, `math`, `itertools`, `collections`, `datetime`, `typing`, `dataclasses`, `statistics`, `hashlib` (read-only digests) | Anything else → `additional_authorized_imports` rejects. |
-| Shell commands | `python`, `pytest`, `ruff`, `git` (read-only subcommands only), `cat`, `head`, `tail`, `wc`, `find` (within workspace), `grep` | `shell.run` basename allowlist; `subprocess.run(shell=False)` always. |
-| Network | **none** | Container `network_mode="none"`. No outbound socket of any kind. |
+| Python imports | `json`, `pathlib`, `ast`, `textwrap`, `re`, `typing`, `dataclasses` (7 names) | Anything else → `additional_authorized_imports` rejects. No `os`, no `sys`, no `subprocess`, no network modules. |
+| Shell commands | `python`, `pytest`, `git`, `ruff` (4 names) | `shell.run` basename allowlist; `subprocess.run(shell=False)` always. `cat`/`head`/`grep`/`find` are **not** commands in this tier — file reads go through `read_file`, which applies `PathPolicy`. |
+| Network | **none** | The container attaches only to the internal bridge `smolcode-internal`, which has no default route (Phase 1/H1); `Tier.network` is `"none"` and no `iptables` init runs. |
 | MCP servers | the operator's per-server `allow` list | `tool_is_allowed()` — **default-deny**, so a server with no `allow` exposes nothing. *(Changed in Phase 6 / ADR 0041. The previous control was a `^(get\|search\|read\|list)_` name-prefix regex. The name is chosen by the MCP server — the untrusted side of the boundary — so a destructive tool named `get_nuke` satisfied it. The regex was deleted rather than kept as a second gate.)* |
-| `max_steps` | 20 | Bounds compute + LLM cost. |
-| Wall-clock timeout | 60 s | `agent.run()` is wrapped in `asyncio.wait_for`. |
+| `max_steps` | 12 | Bounds compute + LLM cost (`Tier.max_steps`). |
+| Wall-clock timeout | per-command 120 s | `Tier.timeout_s=120` is the **ceiling for one `run` call** (`run` clamps a larger model-supplied timeout down to it), not a cap on the whole run: there is no wall-clock limit on `agent.run()` in the CLI and `asyncio.wait_for` is not used there. Web-started runs are killed after `SMOLCODE_WEB_RUN_TIMEOUT_S` (default 900 s) instead. |
 
 ### 3.2 Elevated (opt-in, used for tasks like "open a PR")
 
@@ -79,13 +96,13 @@ is "network + the tools needed for code review and deployment prep".
 
 | Capability | Allowed? | Notes |
 |---|---|---|
-| Filesystem | workspace + extras in `TIERS.elevated.paths` (config-driven allowlist) | Each extra path is a single resolved absolute path; symlinks rejected (`SEC-10` pattern from sibling project). |
-| Python imports | restricted ∪ `subprocess` (used only inside `shell.run`), `tomllib`, `csv`, `io`, `urllib.parse`, `http.client` (for the allow-listed hosts only) | `socket` is **not** in this list. |
-| Shell commands | restricted ∪ `npm`, `pnpm`, `cargo`, `make`, `git` (full subcommands, no `-i`), `curl` (allow-listed hosts via wrapper), `docker client` (read-only commands: `ps`, `images`, `logs`) | All still go through the basename allowlist. |
-| Network | restricted to a host allowlist in `TIERS.elevated.network_allowlist` | Enforced by container `network_mode="bridge"` + iptables (Milestone 4). v1 ships the allowlist data structure; the enforcement lands in M4. |
-| MCP servers | readwrite (ticketing, CI trigger) | The wrapper verifies the tool name does not match a `full_access`-only pattern. |
-| `max_steps` | 40 | |
-| Wall-clock timeout | 300 s | |
+| Filesystem | workspace only | `Tier.paths` is empty for every shipped tier and the fs tools do not consult it. Specialist `extra_paths` metadata is recorded but **not enforced today** (known limitation, see §5.3). |
+| Python imports | restricted ∪ `collections`, `itertools`, `functools`, `os`, `sys`, `tempfile`, `hashlib`, `shutil`, `glob` (16 names) | `socket`, `http`, `urllib`, `subprocess`, `ssl`, `ctypes` are **not** authorized — the agent reaches the network only through `curl`/`pip` subprocesses, if the allowlist admits them. |
+| Shell commands | restricted ∪ `pip`, `npm`, `node`, `curl`, `jq`, `make` (10 names) | Basename allowlist. There is no `pnpm`, no `cargo`, and no read-only `docker` client, contrary to earlier drafts. |
+| Network | CIDR allowlist in `Tier.network_allowlist` (empty by default) | Kernel-enforced since v1.7/v1.8 by `docker/iptables-init.sh` (decision 0020; IPv6 since decision 0034). Empty default = loopback + Docker DNS only, i.e. **no egress**. See §7.2 and §16. |
+| MCP servers | only tools named in each server's own `allow` list | Default-deny per server. There is no name-pattern filter and no "readwrite" blanket; the allowlist is the boundary (Phase 6 / ADR 0041). |
+| `max_steps` | 20 | `Tier.max_steps`. |
+| Wall-clock timeout | per-command 180 s | `Tier.timeout_s=180` caps one `run` call; there is no whole-run wall clock in the CLI (see §3.1). |
 
 ### 3.3 Full-access (explicit, audited)
 
@@ -98,13 +115,27 @@ full-access run writes an `AuditEntry` to `logs/audit.jsonl`.
 
 | Capability | Allowed? | Notes |
 |---|---|---|
-| Filesystem | workspace + per-agent `extra_paths` | Each specialist agent declares its own extra paths; nothing is implicit. |
-| Python imports | elevated ∪ `socket`, `asyncio`, `requests`, `httpx`, `paramiko` | Still no `ctypes` and no `importlib` magic. |
-| Shell commands | elevated � `ssh`, `rsync`, `kubectl`, `terraform`, `helm` (where installed) | |
-| Network | broader, per-config | Still no raw socket creation outside the agent process. |
-| MCP servers | full set | Including any future write-capable servers. |
-| `max_steps` | 80 | |
-| Wall-clock timeout | 900 s | |
+| Filesystem | workspace only | Same boundary as restricted/elevated. Full access is wider in *commands, imports and network*, not in filesystem roots. |
+| Python imports | elevated ∪ `subprocess`, `threading`, `multiprocessing`, `asyncio`, `socket`, `http`, `http.client`, `urllib`, `urllib.parse`, `urllib.request`, `ssl`, `smtplib`, `secrets`, `base64`, `sqlite3`, `csv`, `configparser`, `xml`, `xml.etree`, `pickle`, `ctypes` (37 names total) | `requests`, `httpx` and `paramiko` are **not** authorized (the tier already has `urllib` + sockets). `pickle`/`ctypes` are deliberately allowed: this tier is the one that can do real damage and is audited as such. |
+| Shell commands | elevated ∪ `ssh`, `scp`, `rsync`, `docker`, `kubectl`, `terraform`, `ansible`, `aws`, `gcloud`, `az` (20 names) | `helm` is **not** in the allowlist. These binary names are also classified as destructive by the gate, so they need an approved policy (see the A3 note below). |
+| Network | open | `Tier.network="open"`, `network_allowlist=("*",)`: the Docker default bridge with no `iptables` init (that runs for elevated only). |
+| MCP servers | only tools named in each server's own `allow` list | Same default-deny rule; there is no "full set" bypass. |
+| `max_steps` | 40 | `Tier.max_steps`. |
+| Wall-clock timeout | per-command 300 s | `Tier.timeout_s=300` caps one `run` call; the whole-run wall clock exists only in the web runner (900 s default). |
+
+**Known limitation — destructive approval (A3, ADR 0041).** The host-side
+approval path works when the tool body runs on the host (`SMOLCODE_EXECUTOR=local`,
+or MCP tools). Under the **default Docker executor**, smolagents
+serialises the tool source into the container, where `smolcode.session` does
+not exist: the in-container path cannot reach `SessionState.confirm_callback`
+and can only consult the policy bound at build time. That policy is `deny`
+unless the session was already auto-approved when `build_tools()` ran, so
+in-container destructive calls are **refused, not prompted** (fail-closed).
+Consequence: `--auto-approve-destructive` and the web approval modal do not
+authorize a destructive command executed inside the Docker sandbox today. A
+host-side approval broker that ships decisions into the container is not
+built. Do not weaken the gate to make the modal work; ADR 0041 records the
+options considered.
 
 ---
 
@@ -134,9 +165,10 @@ callers). The check uses `os.path.commonpath` after
 
 Uploads are **persistent by default**. There is no TTL — the user
 explicitly required "do not lose my files" (decision 0010 D8 Q4).
-Deletion is always explicit: per-file button in the GUI,
-`smolcode uploads delete`, or `smolcode uploads clean --yes`
-for bulk. Every upload and delete emits an `upload.add` /
+Deletion is always explicit: per-file button in the GUI (`DELETE
+/api/uploads/{name}`), or `smolcode uploads clean [--older-than N] [--yes]`
+for bulk. There is **no** `smolcode uploads delete` verb — the CLI exposes
+`uploads path|list|clean` only. Every upload and delete emits an `upload.add` /
 `upload.delete` event in the audit log so the trail is complete.
 
 The full upload design is in `docs/decisions/0010-gui-design.md` D8.
@@ -145,84 +177,104 @@ The full upload design is in `docs/decisions/0010-gui-design.md` D8.
 ## 4. Layered controls
 
 Even within a tier, multiple independent layers must be bypassed for a
-genuine escape. The layers (innermost first):
+genuine escape. The layers, as actually implemented (innermost first):
 
 ```
-+----------------------------------------+
-| 1. Container OS (Linux, non-root)      |
-| 2. Capability drops (cap_drop=ALL...)  |
-| 3. network_mode (none / bridge / host) |
-| 4. Read-only root filesystem (Tier 1)  |
-| 5. tmpfs-only writable dirs (Tier 1)   |
-| 6. PIDs limit / memory cgroup         |
-| 7. additional_authorized_imports       |
-|    (smolagents LocalPythonExecutor)    |
-| 8. host-side PathPolicy                |
-|    (workspace boundary on fs/shell)    |
-| 9. host-side command allowlist         |
-|    (basename match in shell.run)       |
-| 10. Tier policy in config.py           |
-|     (Settings + Tier dataclasses)      |
-| 11. Wall-clock timeout (asyncio.wait)  |
-| 12. max_steps (CodeAgent built-in)     |
-| 13. Audit logging (full_access only)   |
-+----------------------------------------+
++--------------------------------------------+
+| 1. Container boundary (Linux; the tier     |
+|    image sets a non-root user)             |
+| 2. Network topology (internal bridge /     |
+|    iptables CIDR allowlist / open bridge)  |
+| 3. Runtime resource ceilings (mem_limit,   |
+|    pids_limit, nano_cpus - Phase 8/0043)   |
+| 4. additional_authorized_imports           |
+|    (smolagents LocalPythonExecutor)        |
+| 5. PathPolicy (realpath + commonpath       |
+|    workspace boundary on the fs tools)     |
+| 6. Command allowlist (basename match in    |
+|    shell.run; argv-only, shell=False)      |
+| 7. Tier policy in config.py                |
+|    (Settings + Tier dataclasses)           |
+| 8. max_steps (CodeAgent built-in)          |
+| 9. Audit logging (all tiers by default)    |
+| 10. Approval gates (host plane only;       |
+|     see the A3 limitation in section 3.3)  |
++--------------------------------------------+
 ```
 
-If layer 7 is bypassed (the agent somehow gets a non-allow-listed import
-in), layer 1-6 still constrain what the code can do. If layers 8-9 are
-bypassed (a tool is invoked with `..` paths), layer 7 still rejects
-the dangerous imports. If layers 1-6 are bypassed (e.g., `local`
-executor fallback), layers 7-13 still apply. **No single bypass breaks
-the model.**
+**Corrections from the 2026-06-28 draft (decision 0044):** smolcode does
+**not** pass `cap_drop=ALL`, a read-only root filesystem, or tmpfs mounts to
+`docker run` — those layers were aspirational, and no wall-clock watchdog is
+applied to `agent.run()` in the CLI. What exists is the container boundary
+plus the network topology, the Phase 8 runtime ceilings, and the
+Python/tool-level policy. The tier images define their own non-root user;
+tightening the images themselves is Phase 8 scope (`docker/*.Dockerfile`).
 
+The load-bearing boundary is the container (layers 1-3). If layer 4 is
+bypassed, layers 1-3 still constrain what the code can do; if the `local`
+executor is used instead, layers 1-3 are gone by definition and the CLI says
+so. No single *Python-level* bypass escapes the sandbox — but the sandbox is
+the thing that has to hold.
 ---
 
 ## 5. Path policy
 
-The `PathPolicy` helper is the host-side gate for every filesystem
-and shell operation. It enforces:
+The fs tools (`read_file`, `write_file`, `patch_file`, `list_dir`) are the
+gate for every filesystem operation the model can perform. In
+`src/smolcode/tools/fs.py` they:
 
-1. **Workspace containment.** Every path is resolved with
-   `Path.resolve()` (which follows symlinks) and then checked with
-   `is_relative_to(workspace)`. Symlinks that escape the workspace
-   are caught at resolve time, not at use time.
-2. **No traversal.** Paths containing `..` after the workspace
-   check are re-resolved and re-checked (defence against partial
-   resolve races). `os.path.realpath` + `os.path.normcase` on
-   Windows handles case-insensitive filesystems and junctions
-   (`SEC-10` pattern from sibling project).
-3. **Explicit per-tier paths.** Elevated and full_access can declare
-   `extra_paths` in config; the policy accepts only those exact
-   paths. There is no `extra_paths_glob`.
-4. **SHA-256 attestation.** Every file written by the agent is hashed
-   before write and recorded in the run log; the agent cannot
-   silently mutate a file it did not declare it was touching.
-5. **Read-only mounts.** For Tier 1 we will mount known read-only
-   data (system docs, vendored packages) into the container as
-   `:ro`; the agent cannot modify them even if it bypasses layers
-   7-9.
+1. **Contain the path in the workspace.** Every path is resolved with
+   `os.path.realpath()` and compared with the realpath of the workspace via
+   `os.path.normcase()` + `os.path.commonpath()`; when the common prefix is
+   not the workspace they raise `PermissionError("path resolves outside
+   workspace")`. This is not a lexical `..` filter — resolution follows
+   symlinks and junctions (case-insensitively on Windows), so `..` and
+   symlink escapes are handled by resolution itself.
+2. **Re-check after resolution.** Each call resolves twice and compares the
+   results (`"path changed during resolution"`), a cheap defence against a
+   symlink swapped between the check and the use.
+3. **Workspace only — no per-tier extra paths.** `Tier.paths` exists but is
+   empty for `restricted`, `elevated` and `full_access`, and no tool reads
+   it. Specialist agents may declare `extra_paths` in `agents.toml`; that
+   value is parsed and stored, but **no policy enforces it today** (known
+   limitation, Phase 7/8 scope). The earlier claims about enforced
+   `extra_paths` were false.
+4. **Read-only uploads at restricted tier.** The `<workspace>/.smolcode/uploads`
+   subtree is mounted `ro` into the restricted container (Phase 6, decision
+   0041), and `write_file`/`patch_file` additionally raise on that path at
+   the restricted tier. There is no other `:ro` mount and no hash attestation.
+5. **No SHA-256 write attestation.** Uploads record a SHA-256 in their
+   sidecar metadata, but host file writes are not hashed or signed. The
+   previous claim here was aspirational and has been removed.
 
 ---
 
 ## 6. Command policy
 
-The `shell.run` tool's contract:
+The `shell.run` tool's contract (`src/smolcode/tools/shell.py`):
 
-- **No `shell=True`.** Always `subprocess.run([cmd, *args], shell=False)`.
-- **Basename allowlist.** `cmd` is tokenised; the first token's
-  basename must appear in `tier.commands`. There is no regex; there
-  is no `startswith`.
-- **No untrusted argv.** Args are passed positionally; the agent
-  cannot inject shell metacharacters because there is no shell to
-  interpret them. `; `, `&&`, `|`, redirections all fail with a
-  clear error rather than executing.
-- **Timeout.** Every `subprocess.run` has a `timeout` kwarg set
-  from the tier's `timeout_s` (or shorter, per-command).
-- **Capture output.** `stdout` and `stderr` are captured, not
-  streamed, so the agent cannot spam the user's terminal.
-- **No backgrounding.** `&` and `nohup` are rejected by the
-  basename allowlist (neither is a registered command).
+- **No `shell=True`.** Always `subprocess.run([cmd, *args], shell=False)`;
+  `test_security.py::test_shell_run_uses_shell_false` pins this from the
+  source.
+- **Basename allowlist on `cmd` only.** `cmd` is a single executable name
+  (there is no tokenisation — passing arguments inside `cmd` fails the
+  basename check); its basename, after stripping a Windows `.exe/.bat/.cmd/
+  `.com` suffix, must equal an entry in `Tier.commands`. No regex, no
+  `startswith`.
+- **Args are strings, never shell syntax.** `args` must be a list and every
+  element a string, otherwise `PermissionError`. `;`, `&&`, `|`, `>`, `<`
+  are passed through as **literal argv**, because there is no shell to
+  interpret them (`test_shell_run_metachars_are_literal_args`). `..` in an
+  argument is likewise not rejected lexically; the allowlist stops the agent
+  from choosing a binary such as `cd` that would interpret it.
+- **Timeout.** Every `subprocess.run` gets a `timeout`; it defaults to 60 s,
+  must be positive, and is clamped down to `Tier.timeout_s` (120/180/300 s)
+  when the model asks for more.
+- **Output is captured and truncated.** `stdout`/`stderr` are returned as
+  text with a 1 MiB per-stream cap and an explicit `...[TRUNCATED ...]`
+  marker, so a chatty command cannot flood the model context.
+- **No backgrounding.** `&` is only ever a literal argument, and `nohup` is
+  not in any tier's command allowlist.
 
 
 
@@ -232,39 +284,32 @@ The `shell.run` tool's contract:
 
 ### 7.1 Restricted tier
 
-Container `network_mode="none"`. No socket syscall can succeed
-because there is no network namespace with a default route. The
-agent cannot call out to fetch a payload, cannot phone home, cannot
-make DNS queries.
+Container attaches **only** to the internal Docker bridge
+`smolcode-internal` (`smolcode.container.INTERNAL_NETWORK_NAME`), created
+without a default route; no `iptables` rules are involved. `Tier.network`
+is `"none"`. The container cannot call out, phone home, or resolve DNS; the
+topology enforces it (Phase 1/H1).
 
 ### 7.2 Elevated tier
 
-Container `network_mode="bridge"` + iptables allow-list (Milestone 4
-work — v1 ships the data structure `TIERS.elevated.network_allowlist`
-and refuses to run elevated with an empty list). The allow-list is
-host-glob patterns (`*.github.com`, `pypi.org`, etc.); anything
-outside the list is REJECT (DROP, not silently passed). DNS is also
-allow-listed.
-
-**Forward-looking (planned for M16, decision 0017):** the current
-`network_allowlist` is documented and passed to the container as the
-`SMOLCODE_NETWORK_ALLOWLIST` env var, but M4–M13 do NOT install the
-iptables rules inside the container. M16 will close this gap by
-shipping a new `docker/elevated-iptables.Dockerfile` that runs an init
-script as PID 1 with `CAP_NET_ADMIN`, reads the allowlist from
-`SMOLCODE_NETWORK_ALLOWLIST`, applies OUTPUT chain rules (ACCEPT for
-allow-listed CIDRs/hosts, DROP for everything else), and emits an
-`iptables_install` audit event before the agent process starts. The
-container is otherwise unchanged. Risk note: `CAP_NET_ADMIN` is broad;
-M16 will install the init script as PID 1 and run all subsequent
-processes as non-root inside the container. See decision 0017 for the
-full design and risk register.
+The allowlist is a tuple of **CIDRs**, not hostnames, enforced at the kernel
+level since v1.7 (decision 0020; IPv6 since v1.9/decision 0034). The
+container's ENTRYPOINT `docker/iptables-init.sh` runs as root with
+`CAP_NET_ADMIN`, applies default-deny OUTPUT chains on `iptables` **and**
+`ip6tables`, accepts loopback + Docker DNS, accepts one rule per allowlisted
+CIDR (classified by family in `smolcode.container.classify_cidrs`), then
+`exec`s `gosu 1000:1000` so the agent process never holds `CAP_NET_ADMIN`.
+An empty allowlist is legal and is the default: it yields loopback + DNS and
+**no egress**. A malformed CIDR fails closed (exit 78) before any partial
+rules are applied, and the Python side rejects it earlier still in
+`elevated_container_env()`. Full mechanics and the kill switch are in §16.
 
 ### 7.3 Full-access tier
 
-`network_mode="bridge"` with no host allow-list (or a per-agent
-allow-list). Still no `network_mode="host"` — that would bypass
-container isolation entirely.
+`Tier.network="open"` with `network_allowlist=("*",)`: the container joins
+the Docker default bridge with unrestricted egress. No `iptables` init runs
+for this tier (it is elevated-only). Still never `network_mode="host"` —
+that would bypass container isolation entirely, and smolcode never sets it.
 
 ### 7.4 Outbound MCP servers
 
@@ -320,12 +365,12 @@ destructive gate for tools whose names read as destructive.
 | API key in source | None. We refuse to merge any commit containing a key matching `sk-`, `sk-ant-`, `hf_`, `ghp_`, `gho_`, `ghu_`, `ghs_`, `AIza*`, `AKIA*`, etc. (M7 + M13 prefixes, see `smolcode/redact.py:DEFAULT_PATTERNS`; `SEC-18` pattern from sibling project). |
 | API key in `.env` | `chmod 600`, gitignored, never logged. |
 | API key in CLI args | `--api-key` is **not** a flag. Keys come from env only. |
-| API key in process env of the agent container | The container env is a **whitelist** (`KG_AUTH_TOKEN`, `PATH`, no `MINIMAX_API_KEY`, no `OPENCODE_API_KEY`). The agent's LLM calls go through the host, not the container. |
+| API key in process env of the agent container | smolcode passes an `environment` dict only for the elevated tier (allowlist + kill switch, decision 0020); for every tier smolagents' `DockerExecutor` adds `KG_AUTH_TOKEN` and the image default `PATH`. No provider key is ever placed in that dict: model calls are made from the host process, not the container. This is reviewed code, not a pinned test. |
 | Key leak via structured logs | A single `RedactSecretsFilter` redacts values matching its **9 prefix families** — `sk-ant-…`, `sk-…`, `hf_…`, `ghp_…`, `gho_…`, `ghu_…`, `ghs_…`, `AIza…`, `AKIA…` — before log emission (M7 + M13; canonical list in `smolcode/redact.py:DEFAULT_PATTERNS`). Generic `KEY=` / `TOKEN=` assignment shapes are deliberately NOT matched (over-redaction risk); adding a family requires updating this row plus `test_redact.py`. Reconciled with the implementation in Phase 2 (the previous wording claimed a `*KEY=*...` rule that never existed). |
 | Key in crash dump | The CLI catches exceptions and emits a structured error; raw tracebacks are not printed when a key is in `os.environ`. |
 | Web UI traceback leak (decision 0024) | `agent_runner.run_in_thread`'s broad `except Exception` block now appends `traceback.format_exc()` to `run.error` AND surfaces it in the `EVT_ERROR.traceback` SSE field. The `RedactSecretsFilter` is applied to all SSE events before publish (per `web/api.py` + `redact.py`), so any API key, OAuth token, or env-var value that lands in a traceback frame variable name is scrubbed before it leaves the server. Capped at 8 KB so a runaway traceback cannot blow up the SSE queue. |
 | Provider response caching | LiteLLM's `caching` plugin is **off** by default. Enabling it stores API responses on disk and could leak data across runs. |
-| Token usage surfaced in CLI | `TokenUsage` is shown but the response text is **not** written to disk by default; the user must `--save-run <path>` to opt in. |
+| Token usage surfaced in CLI | `TokenUsage` is shown on stderr; the model answer is printed to stdout and is **not** persisted by default. There is no `--save-run` flag (it never existed) — the durable record is the audit log, which stores run metadata and gate decisions, not the answer text. |
 
 **Third-party integration surface (M15.2, decision 0019):** External
 integrators that need to redact known secret prefixes (e.g. a custom
@@ -357,7 +402,8 @@ to confirm chain integrity (CI-friendly; exit 0 = clean, exit 1 =
 tampered/unverifiable). See `docs/decisions/0016-m13-audit-integrity-redact-expansion.md`
 for the chain construction and `smolcode/src/smolcode/audit.py:verify_chain`
 for the verifier. The chain is **on by default**; set
-`SMOLCODE_AUDIT_HASH_CHAIN=1` to disable (not recommended).
+`SMOLCODE_AUDIT_HASH_CHAIN=0` to disable it (not recommended). Any other value
+leaves it enabled: the flag is parsed as a boolean, so `=1` keeps the chain on.
 
 Phase 2 chain semantics across runs: each new sink **continues**
 the chain found at the end of the log file, so legitimate multi-run
@@ -369,23 +415,23 @@ not be silently laundered by further writes; rotate or restore first.
 Each entry contains:
 
 ```jsonc
-{
-  "ts": "2026-06-28T14:33:01Z",
-  "tier": "full_access",
-  "agent": "deploy-staging",
-  "task": "deploy commit abc123 to staging",
-  "user": "ahmad",
-  "host": "workstation-1",
-  "pid": 12345,
-  "model": {"provider": "MiniMax", "model_id": "MiniMax-M3"},
-  "tools_called": ["shell.run", "git.push", "kubectl.apply"],
-  "files_written": ["/workspace/src/x.py", "/workspace/.git/refs/heads/main"],
-  "duration_s": 47.2,
-  "token_usage": {"input": 8123, "output": 1456},
-  "exit_status": "success",
-  "errors": []
-}
+{"ts": "2026-10-24T14:33:01Z", "event": "start", "pid": 12345,
+ "tier": "full_access", "task": "deploy commit abc123 to staging",
+ "model": "MiniMax-M3", "provider": "minimax", "executor": "docker",
+ "workspace": "E:\\python_projects\\smol_code\\workspace"}
+{"ts": "...", "event": "step", "pid": 12345, "step": 3, "action": "shell.run"}
+{"ts": "...", "event": "end", "pid": 12345, "exit_code": 0, "duration_s": 47.2}
+{"ts": "...", "event": "error", "pid": 12345, "kind": "PermissionError",
+ "message": "destructive run blocked: docker (policy='deny')"}
 ```
+
+Gate and integration events add their own fields on the same shape:
+`destructive_decision` (`tool`, `summary`, `approved`, `reason`,
+`auto_approve_now`, `auto_approve_off`), `diff_decision` (`tool`, `path`,
+`summary`, `approved`, `reason`, `edited`, `run_id`), `upload.add` /
+`upload.delete`, `checkpoint`, `subagent`, `full_access_confirmed`. When the
+hash chain is on, every line additionally carries `prev_hash` and
+`entry_hash` (64 hex chars each).
 
 The audit log is **append-only** (write mode `'a'`, never `'w'`)
 and rotates via `smolcode audit rotate --keep-days N` (M14.3,
@@ -424,12 +470,12 @@ Full retention policy (size, age, archive sweep, backup) lives in
 |---|---|---|---|---|---|---|---|---|
 | Read file outside workspace | Y | Y | n/a | n/a | n/a | n/a | n/a | n/a |
 | Write file outside workspace | Y | Y | n/a | n/a | n/a | n/a | n/a | logged |
-| Run arbitrary binary | Y (cap_drop) | n/a | Y | n/a | n/a | Y | Y | logged |
-| Install pip package | Y | n/a | Y (allowlist) | Y (pypi.org only for elevated) | n/a | Y | Y | logged |
+| Run arbitrary binary | Y (container boundary; non-root image user) | n/a | Y | n/a | n/a | Y | Y | logged |
+| Install pip package | Y | n/a | Y (allowlist) | Y (elevated needs a pypi CIDR in the allowlist; empty default blocks it) | n/a | Y | Y | logged |
 | Open outbound socket | Y (network_mode) | n/a | n/a | Y | n/a | n/a | n/a | logged |
 | Import `os`, `subprocess` | n/a | n/a | n/a | n/a | Y | n/a | n/a | n/a |
 | Import `ctypes`, `importlib` | n/a | n/a | n/a | n/a | Y | n/a | n/a | n/a |
-| Loop forever | Y (PIDs limit) | n/a | n/a | n/a | n/a | Y | Y | logged |
+| Loop forever | Y (pids_limit, Phase 8 default 256/512) | n/a | n/a | n/a | n/a | Y | Y | logged |
 | Exfiltrate via DNS | Y (network_mode) | n/a | n/a | Y | n/a | Y | n/a | logged |
 | Prompt injection → privilege escalation | n/a (tier is set at boot) | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 
@@ -466,26 +512,42 @@ scope:
 
 ## 12. Security testing plan
 
-Per the project's testing discipline (`smolagents/AGENTS.md` →
-`make quality` then `make test`), every milestone ends with:
+Security is not a separate suite that can quietly rot: the controls above are
+pinned by tests that fail when the implementation and this document disagree.
 
-1. **Static:** `ruff check` + `ruff format --check`.
-2. **Unit:** `pytest` with `--cov-fail-under=80`.
-3. **Security tests** (in `tests/test_security.py`):
-   - Tier policy cannot be downgraded by env var (`SEC-2`).
-   - `shell.run` rejects `..`, `;`, `&&`, `|`, `>`, `<`.
-   - `PathPolicy.resolve_under_workspace` rejects symlinks that
-     escape the workspace.
-   - `MCPClient` readonly mode rejects `delete_*` tool names.
-   - `RedactSecretsFilter` redacts `sk-`, `sk-ant-`, `hf_`,
-     `ghp_` in log output.
-   - `AuditSink` rejects `'w'` mode.
-4. **Smoke:** `--smoke` exercises every tier with the stub model
-   and asserts each allowlist is honoured.
+1. **Static:** `ruff check` + `ruff format --check` on every changed file (CI
+   `lint` job, `make quality`).
+2. **Unit + integration:** `pytest` across `smolcode/src/smolcode/tests/`. CI
+   enforces `--cov-fail-under=80` in the blocking `coverage` job; the coverage
+   flags live in `Makefile`, not `pyproject.toml`.
+3. **Security tests** (`tests/test_security.py`, 26 test cases):
+   - Tier policy cannot be downgraded by env var (`SEC-2`); `SMOLCODE_TIER` is
+     deliberately not honoured.
+   - `shell.run`: `args` must be a list of strings; a `cmd` basename outside
+     the allowlist is rejected; `shell=False` is asserted from the source;
+     `;`, `&&`, `|`, `>` are passed as literal argv (no shell exists to
+     interpret them). `..` in an argument is *not* rejected lexically — path
+     safety belongs to the fs tools' `PathPolicy`, and the command allowlist
+     stops the agent from selecting a binary such as `cd` that would
+     interpret it.
+   - `PathPolicy` rejects symlink escapes, `..` traversal and absolute paths
+     outside the workspace.
+   - MCP tools are exposed only when named in the per-server `allow` list;
+     allowlisted names that read as destructive are still gated; shadowed
+     names are rejected.
+   - `RedactSecretsFilter` covers all nine prefix families in messages,
+     format strings and exception text.
+   - `AuditSink` rejects write mode `'w'` and accepts append modes.
+   - Per-tier baselines: restricted has no `os`/`sys`/`subprocess`, elevated
+     adds no `socket`/`http`, full_access is the only open-network tier.
+4. **Smoke:** `--smoke` forces the `local` executor and a stub model, then
+   runs the selected tier once offline. It is not a per-tier matrix.
+5. **Container contract:** the Docker-gated tests in §16.8 are the only place
+   the firewall and executor boundary are executed; they skip when no daemon
+   is available, which is why CI runs them on the Docker job.
 
-Milestone 5 ships the full security test suite; Milestone 1 ships the
-basics (`shell.run` + `PathPolicy` rejection tests).
-
+Known gap: nothing asserted that *this document* matched the code until the
+textual docs-guard CI job added by decision 0044 §8.
 ### 3.5 Web Live Execution (M9)
 
 **Status:** SHIPPED 2026-08-21 (decision 0012).
@@ -661,9 +723,14 @@ adds the UX layer.
 - Per-file diff policy (e.g. allow `*.md` to skip the gate,
   require `*.py` to always gate). v1.1 followup.
 
-## 9. Kernel-level network enforcement for elevated tier (M16, decision 0020)
+## 16. Kernel-level network enforcement for elevated tier (M16, decision 0020)
 
-### 9.1 Why this exists
+> **Renumbered in Phase 9 (decision 0044 §2):** this block used to be a second
+> `## 9.` heading, colliding with §9 (audit log). It is §16 now, matching
+> milestone M16, and the subsections moved with it (9.x → 16.x). ADRs 0020 and
+> 0034 cite the old numbers, which is correct for those historical records.
+
+### 16.1 Why this exists
 
 v1.0's elevated tier was declared "restricted" network but the
 container actually ran with `network_mode=none` (same as restricted);
@@ -676,7 +743,7 @@ or the `LocalPythonExecutor` imports check is bypassed, packets are
 still dropped at the network stack unless they target an explicitly
 allowlisted CIDR.
 
-### 9.2 Container boot sequence
+### 16.2 Container boot sequence
 
 The elevated image's ENTRYPOINT is `/usr/local/bin/iptables-init.sh`
 (see `smolcode/src/smolcode/docker/`). The script runs as root
@@ -703,7 +770,7 @@ The init script:
    rules (fail-closed)
 7. **Drop to UID 1000** via `/usr/local/bin/gosu 1000:1000 "$@"`
 
-### 9.3 Schema semantics
+### 16.3 Schema semantics
 
 `Tier.network_allowlist` is a tuple of **CIDR strings** (e.g.
 `"140.82.112.0/24"`), not hostnames. The v1.0 hostname form had no
@@ -718,7 +785,7 @@ intentionally out of scope for M16 because resolution races (an
 agent could trigger a different DNS resolution at request time vs.
 rule application time) would weaken the guarantee.
 
-### 9.4 Operator-supplied configuration
+### 16.4 Operator-supplied configuration
 
 `smolcode` populates the env-var dict via
 `smolcode.container.elevated_container_env(tier)`. The helper
@@ -730,7 +797,7 @@ Operators can also bypass `smolcode` entirely by setting
 `ELEVATED_NET_ALLOWLIST` directly on the container (e.g. for
 `docker run` experimentation).
 
-### 9.5 Kill switch (ELEVATED_DISABLE_IPTABLES)
+### 16.5 Kill switch (ELEVATED_DISABLE_IPTABLES)
 
 A container env var `ELEVATED_DISABLE_IPTABLES=1` causes the init
 script to skip firewall setup entirely. The script logs a WARN to
@@ -748,7 +815,7 @@ When the kill switch is active, the firewall setup is bypassed but
 `parse_cidr_allowlist` before launching the container, so a
 malformed allowlist is still caught at container-launch time.
 
-### 9.6 Capability requirements
+### 16.6 Capability requirements
 
 The elevated container must be launched with `cap_add=["NET_ADMIN"]`.
 `smolcode` adds this automatically in
@@ -763,30 +830,30 @@ as PID 1. After `gosu` drops privileges, the agent process has no
 `capabilities: ["NET_ADMIN"]` is added to the container; we don't
 do that, so the cap is gone by the time the agent runs).
 
-### 9.7 Known limitations
+### 16.7 Known limitations
 
-- **IPv6 is dropped.** v1.7 ships v4-only. The elevated container's
-  `ip6tables` OUTPUT policy is unchanged (typically ACCEPT by
-  default), but since the v4 OUTPUT chain drops everything except
-  allowlisted v4 CIDRs, and DNS AAAA queries still happen, an
-  agent could theoretically still leak v6 metadata via DNS. IPv6
-  support is a v1.8 candidate (decision 0021).
-- **No per-process filtering.** The firewall applies to ALL processes
-  in the container, not just UID 1000. A v1.9 candidate adds
-  `--uid-owner` filtering.
-- **CAP_NET_ADMIN after firewall setup is not dropped.** The init
-  script drops UID via `gosu` but the container's
-  `capabilities` list still includes `NET_ADMIN`. A future v1.8
-  improvement is to use `cap_drop=["NET_ADMIN"]` after the
-  firewall is configured (mitigates R-M16-H).
-- **Container-internal only.** The host's network namespace is
-  untouched. `smolcode` does not require `CAP_NET_ADMIN` on the
-  host.
+- **IPv6 is enforced since v1.9 (decision 0034).** Both `iptables` (v4) and
+  `ip6tables` (v6) get default-deny OUTPUT chains, loopback + Docker DNS
+  accepts, and one ACCEPT per allowlisted CIDR (classified by address family
+  in `smolcode.container.classify_cidrs`). This closes the v1.7 gap where the
+  v6 policy stayed ACCEPT while the docs claimed it was dropped. The kill
+  switch `ELEVATED_DISABLE_IPTABLES=1` disables **both** chains.
+- **No per-process filtering.** The firewall applies to ALL processes in the
+  container, not just UID 1000; a `--uid-owner` refinement remains a
+  candidate (decision 0020 risk register).
+- **`CAP_NET_ADMIN` is gone after setup.** The init script runs as PID 1
+  while the container holds `NET_ADMIN`, applies the rules, then `exec`s
+  `gosu 1000:1000`; Linux clears the capability set on the UID change and
+  smolcode does not re-add it. The v1.7 wording that claimed the cap survived
+  into the agent process was wrong.
+- **Container-internal only.** The host's network namespace is untouched.
+  `smolcode` does not require `CAP_NET_ADMIN` on the host.
 
-### 9.8 Test coverage
+### 16.8 Test coverage
 
 The unit tests in `smolcode/src/smolcode/tests/test_elevated_iptables.py`
-(19 tests, always run) cover:
+collect **33 tests**: 28 always run, 4 are gated on `@pytest.mark.docker`
+and 1 on `@pytest.mark.shellcheck`. The always-run set covers:
 
 - CIDR parsing (basic, empty, whitespace, trailing comma, IPv6, invalid)
 - Format/parse round-trip
@@ -794,7 +861,7 @@ The unit tests in `smolcode/src/smolcode/tests/test_elevated_iptables.py`
   allowlist, invalid CIDR, wrong tier)
 - Kill-switch detection (truthy "1" only; "true"/"yes"/"on" ignored)
 
-The contract tests gated on `@pytest.mark.docker` (4 tests) cover:
+The contract tests gated on `@pytest.mark.docker` (4) and `@pytest.mark.shellcheck` (1) cover:
 
 - Default-deny: curl to a public IP times out
 - Fail-closed: malformed CIDR makes the container exit non-zero
@@ -804,12 +871,13 @@ The contract tests gated on `@pytest.mark.docker` (4 tests) cover:
 - Shellcheck: `iptables-init.sh` lints clean under shellcheck
   (skipped when shellcheck is not installed)
 
-**v1.7 firewall-status invariants:**
+**Firewall-status invariants (v1.7, extended to IPv6 by decision 0034):**
 
 - Empty `network_allowlist` → container has loopback + DNS egress
   only (no external connectivity)
 - Populated `network_allowlist` → loopback + DNS + each CIDR
 - Malformed CIDR → container exits 78, agent never starts
 - `ELEVATED_DISABLE_IPTABLES=1` → no firewall; agent runs with
-  unrestricted egress (kill switch)
+  unrestricted egress (kill switch, both families)
+- Both invariants hold for v4 **and** v6 chains since decision 0034
 

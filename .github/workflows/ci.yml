@@ -1,15 +1,31 @@
 # Continuous integration for smolcode.
 #
-# Phase 0 (2026-08-26 plan): lint / tests / sandbox-contract / coverage.
-# Phase 3 (decision 0038, 2026-09-24 review R2/R5/R6) added:
-#   web         - frontend install + lint + typecheck + build + unit + e2e
-#                 (R2: `pnpm build` failed with 8 TS errors and vitest did not
-#                  type-check, so 114/114 tests passed on an uncompilable tree)
-#   tier-images - every sandboxed tier image BUILDS on a real daemon (R6: CI
-#                 never built full_access; decision 0035 proved it builds)
-#   packaging   - the wheel installs in a clean venv and carries the tier
-#                 Dockerfiles (R1: `images hash` failed with build input missing)
-#   audit       - pip-audit against the lockfile + pnpm audit (R6: no scanning)
+# Every job in this file, and what it actually gates (verified 2026-10-24,
+# decision 0044). Keep this list in sync with the jobs below; a job that is
+# missing from this header is a documentation bug.
+#
+#   lint             ruff check + ruff format --check on src/            (ubuntu, windows)
+#   tests            pytest suite, docker-marked tests deselected        (ubuntu, windows)
+#   sandbox-contract shellcheck + iptables script contract + firewall e2e
+#   coverage         pytest --cov-fail-under=80 -- BLOCKING gate. The 80%
+#                    baseline was verified locally on 2026-08-26; an earlier
+#                    header called this gate non-blocking, which was stale.
+#   web              pnpm install --frozen-lockfile + oxlint + tsc -b + vite
+#                    build + vitest + Playwright (chromium on PRs, full
+#                    chromium/firefox/webkit matrix on main)
+#   tier-images      all three tier images build on a real Docker daemon +
+#                    tier contract / network posture tests
+#   packaging        wheel builds, installs into a throwaway venv, ships the
+#                    tier Dockerfiles, console script works without a provider
+#                    key, `images ensure` exits 6 instead of tracebacking
+#   audit            pip-audit + pnpm audit -- ADVISORY only: both steps set
+#                    continue-on-error, findings are triaged, they do not block
+#   docs-guard       fails on stale references in current-state docs (0044 §8)
+#
+# Phase history: Phase 0 (2026-08-26 plan) added lint / tests /
+# sandbox-contract / coverage; Phase 3 (decision 0038, 2026-09-24 review
+# R2/R5/R6) added web / tier-images / packaging / audit; Phase 9
+# (decision 0044) added docs-guard and re-verified the header above.
 #
 # The suite defaults to SMOLCODE_EXECUTOR=local (tests/conftest.py), so every
 # job here runs without a Docker daemon except tier-images and sandbox-contract.
@@ -257,3 +273,63 @@ jobs:
         continue-on-error: true
         working-directory: smolcode/web
         run: pnpm audit --audit-level=high
+
+  docs-guard:
+    name: docs guard (stale references, decision 0044 §8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The guard reads files across the whole repo, so it must NOT inherit the
+    # repo-wide `working-directory: smolcode` default set above.
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - name: Current-state docs carry no stale references
+        # Textual guard, deliberately narrow: a document cannot be executed,
+        # so this only catches regressions of facts that were fixed in
+        # decision 0044. Scope is an explicit list of CURRENT-STATE files.
+        #
+        # Excluded by design (frozen history, not laziness):
+        #   docs/reviews/2026-*/, docs/decisions/0003-003*, TASKS.md,
+        #   .gitignore, git history. Those are records of what was true at a
+        #   past date; rewriting them to satisfy a grep would destroy the
+        #   audit trail (ADR 0044 §2). smolcode/docs/litellm-proxy.md is still
+        #   on the stale-path list (finding A6) but is out of Phase 9 scope,
+        #   so it is not scanned here either.
+        run: |
+          set -u
+          fail=0
+          # Split so this file does not match its own scan.
+          pat="smol_clone_""2"
+          files="
+            smolcode/README.md
+            smolcode/.env.example
+            smolcode/web/README.md
+            .github/workflows/ci.yml
+            docs/environment.md
+            docs/security.md
+            docs/architecture.md
+            docs/roadmap.md
+            docs/operations.md
+          "
+          for f in $files; do
+            if [ ! -f "$f" ]; then
+              echo "::error::docs-guard: expected current-state file is missing: $f"
+              fail=1
+              continue
+            fi
+            if grep -nH "$pat" "$f"; then
+              echo "::error::docs-guard: stale pre-rename path found in $f"
+              fail=1
+            fi
+          done
+          if grep -nH "This template provides a minimal setup" smolcode/web/README.md; then
+            echo "::error::docs-guard: stock Vite template text is back in smolcode/web/README.md"
+            fail=1
+          fi
+          if grep -nH "SHIPPED on 2026-08-25" smolcode/README.md; then
+            echo "::error::docs-guard: stale 2026-08-25 status block is back in smolcode/README.md"
+            fail=1
+          fi
+          exit "$fail"

@@ -227,6 +227,8 @@ This report pauses and asks (§7 below).
 
 ## 6. Gaps (where this differs from CLAUDE.md)
 
+> **Superseded (2026-10-24):** §6.1 is no longer true — per-tier Dockerfiles now exist at `smolcode/src/smolcode/docker/restricted.Dockerfile`, `elevated.Dockerfile` and `full_access.Dockerfile` (Phase 8, decision 0043); this report stays a historical snapshot of 2026-08-27 and current state lives in `docs/reviews/2026-09-24-full-app-review/REVIEW-REPORT.md` and `docs/reviews/2026-10-24-repair-assessment/REPORT.md`.
+
 ### 6.1 Per-tier Dockerfiles — **MISSING**
 
 CLAUDE.md Step 4 explicitly requires:
