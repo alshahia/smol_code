@@ -150,4 +150,8 @@ wheel 153 entries. Baseline for comparison: 1484 passed / 17 skipped / 1 flaky.
 
 **Remaining release evidence:** `pytest -m docker` + tier-image contract on a
 live daemon; one live hosted-provider e2e with audit-chain verification; CI green
-on the pushed branch.
+on the pushed branch. Note: `ci.yml` triggers only on `push: branches: [main]`
+and `pull_request` (no `workflow_dispatch`), so pushing the feature branch did
+not schedule a run — CI evidence requires opening a PR (or merging to `main`).
+The last runs on `main` (2026-08-27..09-02) all failed, so that workflow also
+needs a fresh green run before release.
