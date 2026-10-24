@@ -141,8 +141,8 @@ started, and the partial Phase-3 landing is runtime-broken.
 |---|---|---|---|---|
 | 3 | Build/install/test isolation + CI can see the product | 0038 | **shipped** (`7f284ff`) | R1, R2, R5, R6 |
 | 4 | Backend feature repair: retry/rerun/export/queue/caps | 0039 | **shipped** (`9eea09f`, `55cf0f2`, `44ef539`) | H7, H8, H9 |
-| 5 | Frontend correctness + strict TS | 0040 | pending (after 3, 4) | H10 + FE mediums |
-| 6 | Tool/MCP hardening + in-container plane truth | 0041 | pending (after 3; parallel with 4) | R8, H2, H3, H4, H11 |
+| 5 | Frontend correctness + strict TS | 0040 | **shipped** (`ff4109e`…`d930b78`) | H10 + FE mediums |
+| 6 | Tool/MCP hardening + in-container plane truth | 0041 | **partially complete** (see below) | R8, H2, H3, H4, H11 |
 | 7 | Web/session robustness | 0042 | pending (after 6) | TOCTOU, Host, stop, eviction |
 | 8 | Ops & release plumbing | 0043 | pending (after 3) | host Dockerfile, shutdown, scans |
 | 9 | Docs alignment + release evidence | 0044 | pending (after 3-8) | doc drift table |
@@ -387,6 +387,45 @@ phase, not inherited.
    (the callback lives on the host). The host path is unaffected.
 3. The `tier-images` and `packaging` CI jobs have still never had a real run;
    this host has no hosted key to exercise them.
+
+---
+
+## 0c. Repair assessment + repair sequence (2026-10-24)
+
+Independent re-verification of HEAD `c79705b` (branch `fix/review-remediation`,
+45 commits ahead of `main`, no upstream). Full report:
+`docs/reviews/2026-10-24-repair-assessment/REPORT.md`.
+
+**Verdict: REPAIR, not a rewrite.** ~15.3k LOC Python source / ~16.5k LOC tests
+(1.17 ratio) / ~8.6k LOC TS / 41 ADRs are sound and reusable; the remaining
+defects are localized and scoped. Measured on 2026-10-24: pytest **1484 passed,
+17 skipped, 1 flaky** (SSE under full-suite load; 5/5 pass isolated), ruff clean,
+wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
+0 lint / build ok**.
+
+**New findings at HEAD (this assessment):**
+
+| ID | Finding | Severity |
+|---|---|---|
+| A1 | 45 remediation commits have **no upstream** — single copy; no CI has ever run on them | critical (operational) |
+| A2 | `web/pnpm-workspace.yaml` is untracked (`.gitignore:107`), so a fresh clone still fails `pnpm install --frozen-lockfile` with `ERR_PNPM_IGNORED_BUILDS` — Phase 3's R2c claim is false at HEAD | high (release blocker) |
+| A3 | Destructive approval is inert under the default Docker executor (tools built at `cli.py:370` before the session at `:471` → bound policy always `deny`); elevated cannot push; auto-approve cannot reach the container. Fail-closed, documented in ADR 0041 | high (capability) |
+| A4 | R7 unfixed and unassigned: web boot never calls `ensure_internal_network()`, so restricted web runs fail on a fresh Docker host | high |
+| A5 | Container path unverified here (daemon down, no key); `full_access` blocked by upstream 404; CI never ran | high (validation) |
+| A6 | Doc drift persists (README 2026-08-25, environment.md 2026-06-28, 12× `smol_clone_2`, TASKS table, Dockerfile import-allowlist comment) | medium |
+| A7 | Hygiene: stale `web/dist` served without a freshness gate; `tsc -b` never up-to-date; SSE test load-sensitive; no root README/LICENSE; package metadata incomplete | low–medium |
+
+**Work order (in progress):**
+
+| Step | Theme | Status |
+|---|---|---|
+| Step 0 | push branch; track pnpm-workspace; dist freshness gate; doc truth; SSE flake | in progress |
+| Phase 7 | web/session robustness + A4 (ADR 0042) | pending |
+| Phase 8 | ops/release plumbing (ADR 0043) | pending |
+| Phase 9 | docs alignment (ADR 0044) | pending |
+| Phase 6 leftover | docker-marked real in-container tool-call test (skips without a daemon); host-side approval-broker design for A3 | pending |
+
+Resolved rows are added here as each step lands.
 
 ---
 
