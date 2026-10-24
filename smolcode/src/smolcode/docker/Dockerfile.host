@@ -35,9 +35,10 @@ FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e
 ARG SMOLCODE_WHEEL
 ARG SMOLCODE_VERSION=0.1.0
 
-# OCI labels: source/url point at the canonical repository (no license label -
-# the project has not declared one; see pyproject.toml and decision 0043).
+# OCI labels: source/url point at the canonical repository and the license
+# mirror the MIT decision recorded in pyproject.toml (2026-10-24).
 LABEL org.opencontainers.image.title="smolcode" \
+      org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.description="smolcode web server and CLI (host control plane; agent code runs in Docker sandbox tiers)" \
       org.opencontainers.image.source="https://github.com/alshahia/smol_code" \
       org.opencontainers.image.url="https://github.com/alshahia/smol_code" \
