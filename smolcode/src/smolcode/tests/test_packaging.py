@@ -117,9 +117,15 @@ def test_pyproject_has_pypi_readme_urls_and_classifiers():
     assert any(c.startswith("Topic ::") for c in classifiers)
     assert project["keywords"]
 
-    # Deliberately NOT invented: the repo has no license/authors.
-    assert "license" not in project
-    assert "authors" not in project
+    # Owner decision (2026-10-24): MIT, author = GitHub account name. The
+    # expression must be the SPDX id and the text must actually ship.
+    assert project["license"] == "MIT"
+    assert project["license-files"] == ["LICENSE"]
+    assert project["authors"] == [{"name": "ahmadmhmdsy"}]
+    project_dir = Path(__file__).resolve().parents[3]
+    assert (project_dir / "LICENSE").is_file()
+    # A root mirror exists for GitHub's license detection.
+    assert (project_dir.parent / "LICENSE").is_file()
 
 
 def test_package_data_includes_every_docker_build_input():

@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+# setuptools>=77 is required for PEP 639 SPDX license metadata
+# (`license = "MIT"` + `license-files`); older versions only accept the
+# deprecated license table.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,9 +12,15 @@ description = "Local/Docker multi-agent coding assistant built on smolagents."
 # Phase 8 (decision 0043): the README is the PyPI long description. It lives
 # at smolcode/README.md, alongside this file.
 readme = "README.md"
-# NOTE: no `license` and no `authors` on purpose - the project has not
-# declared either, and PEP 621 metadata must not be invented. Add them here
-# (and only here) once the owner decides.
+# License decided by the owner on 2026-10-24: MIT. `license` is the SPDX
+# expression (PEP 639, needs setuptools>=77 above); the license text ships as
+# `smolcode/LICENSE` (included in the wheel) and a repository-root `LICENSE`
+# mirror exists for GitHub's license detection.
+license = "MIT"
+license-files = ["LICENSE"]
+# Author = the GitHub account name that owns the repository (owner decision,
+# 2026-10-24). No email is published here on purpose.
+authors = [{ name = "ahmadmhmdsy" }]
 requires-python = ">=3.10"
 keywords = [
     "ai",

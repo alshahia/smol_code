@@ -171,9 +171,13 @@ the silence.
 `smolcode/README.md`), `[project.urls]` pointing at
 `https://github.com/alshahia/smol_code`, and classifiers for Python 3.10–3.13,
 OS independence, environment/console/topic groups, plus keywords.
-**License and authors are deliberately absent**: the repository has no
-`LICENSE` file and no copyright statement, and inventing either would be a
-legal statement this project cannot make. That remains a user decision.
+**License and authors (resolved 2026-10-24 by the owner):** MIT, with the
+author given as the repository account name `ahmadmhmdsy`. Declared with PEP 639
+SPDX metadata (`license = "MIT"` plus `license-files = ["LICENSE"]`, requiring
+`setuptools>=77` in `[build-system]`); the license text ships as
+`smolcode/LICENSE` (built into the wheel's `dist-info/licenses/`) and a
+repository-root `LICENSE` mirror exists for GitHub's license detection. No email
+is published.
 
 ### 8. OS-aware Makefile and scripts
 
@@ -211,11 +215,13 @@ advisory there. No behaviour change.
 - Container memory/CPU/PID ceilings apply to new containers only. An operator
   cannot raise them from the CLI yet; that needs a settings/CLI knob, not a
   code constant.
-- License/authors remain unset, so a PyPI release is still blocked on that
-  decision even though the rest of the metadata is present.
-- The graceful-shutdown helper exists but only takes effect once
-  `web/server.py` calls it (Lead's lifespan wiring). Until then shutdown is
-  still cosmetic, and this ADR says so rather than claiming the fix.
+- License and author metadata are now present (MIT + repository account name),
+  so the PyPI metadata is complete; publishing itself still needs an explicit
+  release action.
+- The graceful-shutdown helper is wired into the web lifespan
+  (`web/server.py` calls `await graceful_shutdown(app.state)` in the lifespan
+  `finally:` block) and covered by the shutdown + web-server tests; the real
+  SIGTERM-to-uvicorn path is still only unit-tested.
 
 ## Alternatives considered
 
@@ -233,8 +239,9 @@ advisory there. No behaviour change.
 5. **Imposing full_access container ceilings** — rejected as a default: it
    can break legitimate terraform/rsync workloads in the one tier that exists
    to be powerful. Kept configurable.
-6. **Adding `license = "MIT"` to unblock PyPI** — rejected: no license file
-   or grant exists in the repo; that is the user's decision.
+6. **Leaving `license`/`authors` unset to unblock PyPI later** — rejected
+   once the owner decided (2026-10-24): MIT + repository account name, declared
+   as SPDX metadata with a shipped license file.
 
 ## Validation
 
@@ -256,8 +263,11 @@ after the external auto-checkpoint wipe was recovered (safety commit
 - `uv build --wheel` into a temporary directory → succeeds; **153 entries**;
   contains `web/health.py`, `web/shutdown.py` and all four
   `docker/*Dockerfile` files; `METADATA` embeds the README (46.4 kB), 4
-  `Project-URL`s and 11 classifiers and carries **no** `License`/`Author`
-  field (deliberate — see the open question below).
+  `Project-URL`s, 11 classifiers, `Metadata-Version: 2.4`,
+  `License-Expression: MIT`, `License-File: LICENSE` and
+  `Author: ahmadmhmdsy`; the wheel includes
+  `smolcode-0.1.0.dist-info/licenses/LICENSE`. Re-verified on 2026-10-24 after
+  the license decision: `test_packaging` → **19 passed**.
 - Base-image digests resolved from the registry and cross-checked
   (`Docker-Content-Digest` equals the SHA-256 of the manifest body) for
   `python:3.12-bookworm` and `python:3.12-slim`. gosu 1.17 SHA-256 values were
@@ -280,13 +290,16 @@ Not runnable on this host and therefore **NOT verified**:
 - A live `/api/health` 503 against a real unreachable daemon: the unit tests
   use a fake Docker client; the real `docker.from_env` path is exercised only
   for "daemon unreachable at construction".
-- A live graceful shutdown against a real uvicorn lifespan — the helper is
-  called from `web/server.py` only after the Lead's lifespan wiring, and the
-  process signal path is not exercised end-to-end here.
+- A live graceful shutdown against a real uvicorn SIGTERM — the helper is
+  wired into the lifespan and unit-tested, but the process signal path is not
+  exercised end-to-end here.
 
-## Open question (NEEDS USER DECISION)
+## Resolved question (was NEEDS USER DECISION)
 
-`pyproject.toml` intentionally has no `license` and no `authors`: the repo
-contains no license file and no grant to fabricate one from. Everything else
-`[project]` metadata needs for a PyPI release is present (readme, URLs,
-classifiers, keywords), so a release stays blocked exactly on that decision.
+**Decided by the owner on 2026-10-24:** `license = "MIT"` and
+`authors = [{ name = "ahmadmhmdsy" }]`, declared with PEP 639 metadata and a
+shipped `LICENSE` (plus a root mirror). `pyproject.toml` no longer claims
+license/author are absent, and `test_packaging` asserts the SPDX expression,
+the author, and both files. The remaining non-code blocker for a PyPI release is
+no longer metadata — it is the release action itself (and the usual live-Docker
+evidence for the sandbox claims).
