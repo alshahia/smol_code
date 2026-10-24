@@ -96,6 +96,10 @@ class TestSpaFreshness:
 
         from smolcode.web import create_app
 
+        # Inject a dist/ that exists: CI checkouts have no built SPA, and the
+        # warning only fires when create_app mounted a bundle.
+        dist, _src = self._dirs(tmp_path)
+        monkeypatch.setattr("smolcode.web.server._spa_dist_dir", lambda: dist)
         monkeypatch.setattr("smolcode.web.server.spa_is_stale", lambda *a, **k: True)
         with caplog.at_level(logging.WARNING, logger="smolcode.web"):
             create_app(settings=_settings(tmp_path))

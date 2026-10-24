@@ -12,6 +12,11 @@ failed, or while the served SPA bundle was older than its sources.
 * `503` - ONLY when `SMOLCODE_EXECUTOR=docker` and the Docker daemon is
   unreachable. Under the local executor a dead daemon is informational
   (nothing needs it), so the historical 200/`status="ok"` contract holds.
+* `degraded` - ONLY when `SMOLCODE_EXECUTOR=docker`: a tier image is missing
+  or stale. Under the local executor the images are not used at all, so their
+  state is reported in `images` but never changes the status (CI caught the
+  earlier version reporting degraded just because a runner happens to have a
+  Docker daemon with no smolcode images; see decision 0043 validation).
 
 Every body key that existed before is preserved; all new keys are additive
 (the SPA's HealthResponse interface is a subset and ignores unknown keys).
@@ -185,7 +190,7 @@ def build_health_snapshot(settings, run_manager, uploads_store, *, docker_client
         status = "unhealthy"
         status_code = 503
         _log.warning("health: executor=docker but the Docker daemon is unreachable: %s", docker_error)
-    elif docker_state == "reachable" and any(state != "current" for state in images.values()):
+    elif executor == "docker" and docker_state == "reachable" and any(state != "current" for state in images.values()):
         # Serving is still possible (the boot check already refuses stale
         # images), but an operator should see it before the first run does.
         status = "degraded"

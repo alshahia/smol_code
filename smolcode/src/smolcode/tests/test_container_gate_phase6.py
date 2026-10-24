@@ -48,12 +48,33 @@ needs_daemon = pytest.mark.skipif(not _docker_available(), reason="docker daemon
 RESTRICTED = "smolcode:restricted"
 
 
+def _image_present(tag: str) -> bool:
+    import subprocess
+
+    try:
+        r = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, text=True, timeout=30)
+    except Exception:
+        return False
+    return r.returncode == 0
+
+
+# A runner can have a daemon but no images (CI unit jobs build none), and
+# `docker run smolcode:restricted` would then try a registry pull and fail with
+# exit 125 rather than exercising the sandbox. Skip on image absence, not just
+# daemon absence.
+needs_restricted_image = pytest.mark.skipif(
+    not _docker_available() or not _image_present(RESTRICTED),
+    reason="smolcode:restricted image not built on this host",
+)
+
+
 class TestSmolcodeIsNotInstalledInTheSandbox:
     """The premise of the whole decision. If smolcode WERE installed,
     tools/shell.py would be right and sandbox_guard.py would be wrong."""
 
     @docker_required
     @needs_daemon
+    @needs_restricted_image
     def test_importing_smolcode_inside_the_container_fails(self):
         import subprocess
 
@@ -92,6 +113,7 @@ class TestSmolcodeIsNotInstalledInTheSandbox:
 class TestTheGateCannotRunInContainerToday:
     @docker_required
     @needs_daemon
+    @needs_restricted_image
     def test_a_tool_body_importing_smolcode_fails_in_the_container(self):
         """Exactly what smolagents does when it serialises the run tool: the
         tool's source text is executed in the container, so the guard line
@@ -111,6 +133,7 @@ class TestTheGateCannotRunInContainerToday:
 
     @docker_required
     @needs_daemon
+    @needs_restricted_image
     def test_restricted_image_has_git_so_the_push_vector_is_real(self):
         """The test above only matters if the image can actually run git --
         and it can, which is what makes the missing gate a real hole."""

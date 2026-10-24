@@ -41,6 +41,15 @@ WEB_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "::1", "testserver")
 _log = logging.getLogger("smolcode.web")
 
 
+def _spa_dist_dir() -> Path:
+    """Return the built-SPA directory (overridable in tests).
+
+    A module-level helper rather than an inline expression so a test can
+    point it at a temporary dist/ without creating files in the source tree.
+    """
+    return Path(__file__).resolve().parents[3] / "web" / "dist"
+
+
 def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> FastAPI:
     """Build a FastAPI app bound to the given Settings.
 
@@ -168,7 +177,7 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
     # through a browser. Bind-address validation alone does not cover that.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(WEB_ALLOWED_HOSTS))
 
-    spa_dir = Path(__file__).resolve().parents[3] / "web" / "dist"
+    spa_dir = _spa_dist_dir()
     if spa_dir.is_dir():
         # Step 0.3: never serve a stale bundle silently. The bundle is a
         # generated artifact; if src/ is newer than dist/index.html the

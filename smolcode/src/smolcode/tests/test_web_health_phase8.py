@@ -129,20 +129,43 @@ class TestSnapshotBody:
         monkeypatch.setattr(health, "_spa_stale", lambda: False)
         labels = _current_labels(settings)
         labels[settings.tiers["elevated"].docker_image] = {images.IMAGE_SRC_LABEL: "0" * 64}
+        # Images only matter to a docker-executor deployment (see the
+        # local-executor regression test below).
+        docker_settings = settings.with_executor("docker")
         payload, status_code = build_health_snapshot(
-            settings, _FakeManager(), _FakeStore("u"), docker_client=_FakeDocker(labels)
+            docker_settings, _FakeManager(), _FakeStore("u"), docker_client=_FakeDocker(labels)
         )
         assert status_code == 200
         assert payload["status"] == "degraded"
         assert payload["images"]["elevated"] == "stale"
         assert payload["images"]["restricted"] == "current"
 
+    def test_local_executor_ignores_image_state(self, settings, monkeypatch):
+        # CI regression (2026-10-24): a runner with a Docker daemon but no
+        # smolcode images reported "degraded" for a local-executor app, whose
+        # runs never touch those images. Status must stay "ok"; the image
+        # states are still reported for observability.
+        monkeypatch.setattr(health, "_spa_stale", lambda: False)
+        stale = _current_labels(settings)
+        for tier in images.SANDBOXED_TIERS:
+            stale[settings.tiers[tier].docker_image] = {images.IMAGE_SRC_LABEL: "0" * 64}
+        payload, status_code = build_health_snapshot(
+            settings.with_executor("local"), _FakeManager(), _FakeStore("u"), docker_client=_FakeDocker(stale)
+        )
+        assert status_code == 200
+        assert payload["status"] == "ok"
+        assert payload["docker"] == "reachable"
+        assert all(state == "stale" for state in payload["images"].values())
+
     def test_missing_image_is_reported(self, settings, monkeypatch):
         monkeypatch.setattr(health, "_spa_stale", lambda: None)
         labels = _current_labels(settings)
         missing = settings.tiers["full_access"].docker_image
         payload, status_code = build_health_snapshot(
-            settings, _FakeManager(), _FakeStore("u"), docker_client=_FakeDocker(labels, missing=[missing])
+            settings.with_executor("docker"),
+            _FakeManager(),
+            _FakeStore("u"),
+            docker_client=_FakeDocker(labels, missing=[missing]),
         )
         assert status_code == 200
         assert payload["status"] == "degraded"

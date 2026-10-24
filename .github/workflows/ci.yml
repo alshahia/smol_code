@@ -233,6 +233,11 @@ jobs:
       - name: images ensure exits 6 (not a traceback) with no daemon
         # The module CLI used to print a raw DockerException traceback when
         # the daemon was down; decision 0038 routes it through ImageBuildError.
+        # ubuntu-latest HAS a working daemon, so point DOCKER_HOST at a socket
+        # that cannot exist: the assertion is about the error path, not about
+        # what the runner happens to provide.
+        env:
+          DOCKER_HOST: unix:///var/run/smolcode-intentionally-absent.sock
         run: |
           set +e
           /tmp/smolcode-wheel/bin/python -m smolcode.images ensure --tier restricted
@@ -257,9 +262,11 @@ jobs:
           version: 12
       - uses: actions/setup-node@v4
         with:
+          # No dependency install happens in this job, so pnpm's store dir is
+          # never populated; enabling the cache here made the action's post
+          # step fail ("path ... does not exist") and fail the whole job even
+          # though both audits are continue-on-error.
           node-version: "24"
-          cache: pnpm
-          cache-dependency-path: smolcode/web/pnpm-lock.yaml
       - name: Install dependencies
         run: uv sync --all-extras
       - name: pip-audit (locked python dependencies)
