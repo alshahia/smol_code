@@ -415,17 +415,45 @@ wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
 | A6 | Doc drift persists (README 2026-08-25, environment.md 2026-06-28, 12× `smol_clone_2`, TASKS table, Dockerfile import-allowlist comment) | medium |
 | A7 | Hygiene: stale `web/dist` served without a freshness gate; `tsc -b` never up-to-date; SSE test load-sensitive; no root README/LICENSE; package metadata incomplete | low–medium |
 
-**Work order (in progress):**
+**Work order (execution, 2026-10-24):**
 
 | Step | Theme | Status |
 |---|---|---|
-| Step 0 | push branch; track pnpm-workspace; dist freshness gate; doc truth; SSE flake | in progress |
-| Phase 7 | web/session robustness + A4 (ADR 0042) | pending |
-| Phase 8 | ops/release plumbing (ADR 0043) | pending |
-| Phase 9 | docs alignment (ADR 0044) | pending |
-| Phase 6 leftover | docker-marked real in-container tool-call test (skips without a daemon); host-side approval-broker design for A3 | pending |
+| Step 0 | push branch; track pnpm-workspace; dist freshness gate; doc truth; SSE flake | **done** — `7ba1705` (A2), `230e811` (freshness/A4); doc truth in Phase 9; SSE in Phase 7 |
+| Phase 7 | web/session robustness + A4 (ADR 0042) | **done** — `3fc65ba` |
+| Phase 8 | ops/release plumbing (ADR 0043) | **partially shipped** — `d117b88`; license/authors + live-Docker evidence open |
+| Phase 9 | docs alignment (ADR 0044) | **done** — `09646cd` |
+| Phase 6 leftover | docker-marked real in-container tool-call test; host-side approval broker for A3 | test **done** (`d7fa62d`, skips without daemon); broker **open** (design, A3) |
 
-Resolved rows are added here as each step lands.
+**Repair execution log (2026-10-24, branch `fix/review-remediation`):**
+
+| Commit | Contents |
+|---|---|
+| `c8185bb` | assessment report + this tracker section (§0c), §0b phase-row corrections |
+| `7ba1705` | track `smolcode/web/pnpm-workspace.yaml`; fresh-clone `pnpm install --frozen-lockfile` verified from a `git archive` extract |
+| `230e811` | web boot provisions the restricted internal network (A4, fail-closed), Host-header allowlist (DNS-rebinding), stale-SPA warning + helper/tests |
+| `3fc65ba` | Phase 7: atomic submit + drain claim, run-scoped auto-approve, `clear_session_for_run`, fail-closed `stop()`, TTL eviction + key zeroing, sentinel-based SSE `end_stream()` (flake root cause) |
+| `d7fa62d` | docker-marked end-to-end in-container destructive-denial test (Phase 6 leftover; skipped without a daemon) |
+| `d117b88` | Phase 8: real `/api/health`, graceful shutdown wired into the web lifespan, `Dockerfile.host` + `docs/operations.md`, digest-pinned tier bases + source hash, container limits, cost-cap warning, packaging metadata, OS-aware Makefile/`install.ps1` |
+| `09646cd` | Phase 9: README/environment/security/.env.example/SPA README current-state alignment, superseded note, CI docs-guard job |
+
+**Validation of this batch (2026-10-24, venv Python 3.13.1):** full pytest
+**1567 passed / 18 skipped / 0 failed** (195 s; the previously flaky SSE test
+passed under full-suite load); `ruff check` + `ruff format --check` clean
+(143 files); frontend **tsc 0 / oxlint 0 / vitest 139 passed / build ok**;
+wheel **153 entries** including `web/health.py`, `web/shutdown.py` and all
+four Dockerfiles.
+
+**Operational hazard during this batch:** an external host tool
+(`smolcode-checkpoint`) ran `git stash push --include-untracked` and reset the
+worktree mid-execution, wiping ~40 uncommitted files. Everything was recovered
+from the resulting stash and verified; mitigation adopted = commit validated
+increments immediately, keep uncommitted windows short (see
+`docs/reviews/2026-08-26-full-app-review/INCIDENT-2026-08-26-tree-revert.md`).
+
+**Still open after this batch:** live-Docker + provider-key release evidence;
+A3 host-side approval-broker design; `full_access` upstream 404; license/authors
+decision; loopback-vs-port-publishing decision for the host image (ADR 0043).
 
 ---
 
