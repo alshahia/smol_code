@@ -421,7 +421,7 @@ wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
 |---|---|---|
 | Step 0 | push branch; track pnpm-workspace; dist freshness gate; doc truth; SSE flake | **done** — `7ba1705` (A2), `230e811` (freshness/A4); doc truth in Phase 9; SSE in Phase 7 |
 | Phase 7 | web/session robustness + A4 (ADR 0042) | **done** — `3fc65ba` |
-| Phase 8 | ops/release plumbing (ADR 0043) | **partially shipped** — `d117b88`; license/authors + live-Docker evidence open |
+| Phase 8 | ops/release plumbing (ADR 0043) | **shipped** — `d117b88`, license/authors `3c2d4d6`; live-Docker evidence open |
 | Phase 9 | docs alignment (ADR 0044) | **done** — `09646cd` |
 | Phase 6 leftover | docker-marked real in-container tool-call test; host-side approval broker for A3 | test **done** (`d7fa62d`, skips without daemon); broker **open** (design, A3) |
 
@@ -436,6 +436,7 @@ wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
 | `d7fa62d` | docker-marked end-to-end in-container destructive-denial test (Phase 6 leftover; skipped without a daemon) |
 | `d117b88` | Phase 8: real `/api/health`, graceful shutdown wired into the web lifespan, `Dockerfile.host` + `docs/operations.md`, digest-pinned tier bases + source hash, container limits, cost-cap warning, packaging metadata, OS-aware Makefile/`install.ps1` |
 | `09646cd` | Phase 9: README/environment/security/.env.example/SPA README current-state alignment, superseded note, CI docs-guard job |
+| `3c2d4d6` | license/authors decided (MIT + repository account name), PEP 639 metadata, `smolcode/LICENSE` + root mirror, `test_packaging` assertions, ADR 0043 updated |
 
 **Validation of this batch (2026-10-24, venv Python 3.13.1):** full pytest
 **1567 passed / 18 skipped / 0 failed** (195 s; the previously flaky SSE test
@@ -452,8 +453,9 @@ increments immediately, keep uncommitted windows short (see
 `docs/reviews/2026-08-26-full-app-review/INCIDENT-2026-08-26-tree-revert.md`).
 
 **Still open after this batch:** live-Docker + provider-key release evidence;
-A3 host-side approval-broker design; `full_access` upstream 404; license/authors
-decision; loopback-vs-port-publishing decision for the host image (ADR 0043).
+A3 host-side approval-broker design; `full_access` upstream 404; host-image
+binding-model decision (loopback-only server vs container port publishing,
+ADR 0043); PyPI publish action now that metadata is complete.
 
 ---
 

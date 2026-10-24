@@ -140,13 +140,15 @@ Phases 7 (web/session robustness, 2–3 d), 8 (ops/release, 2–3 d), 9 (docs, 1
 | A4 R7 internal network | **resolved** — web boot provisions the bridge, fail-closed | `230e811` |
 | A5 sandbox unverified | **blocked on environment** — daemon down, no provider key; docker-marked e2e test now exists and skips cleanly | `d7fa62d` |
 | A6 documentation drift | **resolved** — current-state docs + docs-guard CI job | `09646cd` |
-| A7 hygiene items | **mostly resolved** — SPA freshness gate, SSE flake root-caused/fixed, packaging metadata, OS-aware Makefile; root LICENSE still a decision | `230e811`, `3fc65ba`, `d117b88` |
+| A7 hygiene items | **resolved** — SPA freshness gate, SSE flake root-caused/fixed, packaging metadata, OS-aware Makefile, MIT license + author declared with a shipped LICENSE | `230e811`, `3fc65ba`, `d117b88`, `3c2d4d6` |
 | A8 planned phases | Phases 7–9 **shipped**; release evidence (live daemon + key, CI green) outstanding | this log |
 
 **Batch validation (2026-10-24, after all commits):** full pytest **1567 passed /
 18 skipped / 0 failed** (195 s; includes the SSE test that was flaky at baseline),
 ruff check + format clean, frontend tsc 0 / oxlint 0 / 139 vitest / build ok,
-wheel 153 entries. Baseline for comparison: 1484 passed / 17 skipped / 1 flaky.
+wheel 153 entries (+ `License-Expression: MIT`, `Author: ahmadmhmdsy` and a
+shipped LICENSE after `3c2d4d6`). Baseline for comparison: 1484 passed /
+17 skipped / 1 flaky.
 
 **Remaining release evidence:** `pytest -m docker` + tier-image contract on a
 live daemon; one live hosted-provider e2e with audit-chain verification; CI green
