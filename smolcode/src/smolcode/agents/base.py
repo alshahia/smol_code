@@ -73,6 +73,46 @@ def _filter_third_party_imports(imports):
     return out
 
 
+def _container_limit_kwargs(tier_name, settings):
+    """Translate `Settings.container_limits[tier_name]` into Docker SDK kwargs.
+
+    Phase 8 (decision 0043). The mapping lives on Settings rather than in the
+    Dockerfiles because these are runtime `docker run` caps, not image
+    contents: ``mem_limit`` and ``cpus`` bound the sandbox, ``pids_limit``
+    bounds a fork bomb.
+
+    smolagents 1.26 `DockerExecutor` forwards `container_run_kwargs` verbatim
+    to `docker.from_env().containers.run(...)`, so these keys are honored
+    without patching smolagents. ``cpus`` is deliberately NOT emitted: the
+    Docker SDK wants `nano_cpus` (int, 1e-9 CPU units); passing a float
+    ``cpus=`` is not a containers.run kwarg.
+
+    An absent tier or empty dict means "no limit" (full_access by default).
+    A malformed value raises ValueError instead of silently running unbounded.
+    """
+    limits = getattr(settings, "container_limits", None) or {}
+    ceiling = limits.get(tier_name) or {}
+    kwargs = {}
+    mem_limit = ceiling.get("mem_limit")
+    if mem_limit:
+        kwargs["mem_limit"] = str(mem_limit)
+    cpus = ceiling.get("cpus")
+    if cpus:
+        try:
+            kwargs["nano_cpus"] = int(round(float(cpus) * 1_000_000_000))
+        except (TypeError, ValueError) as e:
+            raise ValueError("container_limits[" + repr(tier_name) + "].cpus must be a number: " + repr(cpus)) from e
+    pids_limit = ceiling.get("pids_limit")
+    if pids_limit:
+        try:
+            kwargs["pids_limit"] = int(pids_limit)
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                "container_limits[" + repr(tier_name) + "].pids_limit must be an integer: " + repr(pids_limit)
+            ) from e
+    return kwargs
+
+
 def _executor_kwargs_for(executor_type, tier, settings):
     """Build executor_kwargs filtered for the executor type.
 
@@ -92,6 +132,12 @@ def _executor_kwargs_for(executor_type, tier, settings):
 
     The audit log gets a WARN entry when the kill switch
     ``ELEVATED_DISABLE_IPTABLES=1`` is active (see audit.py).
+
+    Phase 8 (decision 0043) merges `settings.container_limits[tier]` into
+    ``container_run_kwargs``: ``mem_limit``, ``pids_limit`` and (after
+    converting the fractional CPU count) ``nano_cpus``. Without them a
+    model-written loop can exhaust host RAM or fork-bomb the machine; the
+    image boundary bounds WHAT runs, not HOW MUCH it consumes.
     """
     if executor_type == "docker":
         host_ws = str(settings.workspace)
@@ -138,6 +184,10 @@ def _executor_kwargs_for(executor_type, tier, settings):
                         "bind": _CONTAINER_WORKSPACE + "/" + rel,
                         "mode": "ro",
                     }
+        # Phase 8 (decision 0043): resource ceilings. Applied AFTER the
+        # tier-specific keys so nothing above can be silently dropped, and
+        # only keys the Docker SDK actually accepts are emitted.
+        run_kwargs.update(_container_limit_kwargs(tier.name, settings))
         return {
             "image_name": tier.docker_image,
             # Phase 1 (C2): smolagents defaults to build_new_image=True and

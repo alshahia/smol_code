@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,6 +54,14 @@ _TIER_CONTEXT_FILES = {
     "full_access": ("full_access.Dockerfile",),
 }
 
+# Phase 8 (decision 0043): every tier Dockerfile pins its base image by
+# digest (`FROM python:3.12-bookworm@sha256:...`). A tag is mutable: the
+# registry can repoint it, and a rebuild then silently swaps the base OS +
+# interpreter under a sandbox whose policy we reviewed. The digest is a
+# hash INPUT as well as a pin, so editing it forces a rebuild through the
+# normal source-hash path (label mismatch -> ensure_tier_images rebuilds).
+_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
 _SANDBOXED_TIERS = ("restricted", "elevated", "full_access")
 # Public alias for callers enumerating sandboxed tiers.
 SANDBOXED_TIERS = _SANDBOXED_TIERS
@@ -60,7 +69,9 @@ SANDBOXED_TIERS = _SANDBOXED_TIERS
 __all__ = [
     "ImageBuildError",
     "SANDBOXED_TIERS",
+    "base_image_digest",
     "ensure_tier_images",
+    "hash_and_digest",
     "image_is_current",
     "source_hash",
     "tier_build_context",
@@ -87,8 +98,60 @@ def _context_files(tier_name):
     return sorted(names)
 
 
+def _tier_dockerfile(tier_name, ctx):
+    """Return the *.Dockerfile name for a tier inside `ctx`."""
+    for name in _context_files(tier_name):
+        if name.endswith(".Dockerfile"):
+            return name
+    raise ImageBuildError("no *.Dockerfile in build context for tier " + repr(tier_name))
+
+
+def base_image_digest(tier_name, context_dir=None):
+    """Return the base-image `sha256:...` digest pinned in a tier Dockerfile.
+
+    Phase 8 (decision 0043): the `FROM` base is pinned by digest and the
+    digest is part of `source_hash`, so a repointed base tag can neither
+    silently change the sandbox nor fail to trigger a rebuild.
+
+    Raises ImageBuildError when the pin is missing (a tag-only base is the
+    regression this function exists to catch) or when more than one digest
+    appears (ambiguous pin).
+    """
+    ctx = Path(context_dir) if context_dir else tier_build_context()
+    name = _tier_dockerfile(tier_name, ctx)
+    p = ctx / name
+    if not p.is_file():
+        raise ImageBuildError("build input missing: " + str(p))
+    digests = _DIGEST_RE.findall(p.read_text(encoding="utf-8"))
+    if not digests:
+        raise ImageBuildError(
+            "tier Dockerfile "
+            + str(p)
+            + " does not pin its base image by digest "
+            + "(expected e.g. 'FROM python:3.12-bookworm@sha256:...')"
+        )
+    if len(set(digests)) > 1:
+        raise ImageBuildError(
+            "tier Dockerfile "
+            + str(p)
+            + " contains multiple distinct base-image digests: "
+            + repr(sorted(set(digests)))
+        )
+    return digests[0]
+
+
+def hash_and_digest(tier_name, context_dir=None):
+    """Return `(source_hash, base_image_digest)` for one tier."""
+    return source_hash(tier_name, context_dir), base_image_digest(tier_name, context_dir)
+
+
 def source_hash(tier_name, context_dir=None):
-    """sha256 over the tier build inputs (name-prefixed, order-stable)."""
+    """sha256 over the tier build inputs (name-prefixed, order-stable).
+
+    Inputs are the tier Dockerfile, its COPYed scripts, and (Phase 8) the
+    digest-pinned base image reference. The label value baked into the image
+    is this hash, so any change to any input forces exactly one rebuild.
+    """
     ctx = Path(context_dir) if context_dir else tier_build_context()
     h = hashlib.sha256()
     for name in _context_files(tier_name):
@@ -98,6 +161,8 @@ def source_hash(tier_name, context_dir=None):
         h.update(name.encode("utf-8"))
         h.update(b"\x00")
         h.update(p.read_bytes())
+    h.update(b"base-image-digest\x00")
+    h.update(base_image_digest(tier_name, ctx).encode("utf-8"))
     return h.hexdigest()
 
 
@@ -119,13 +184,7 @@ def _plans_for(settings, tier_names, context_dir=None):
         # 2026-09-02 C-A layer 1: pick the tier Dockerfile by suffix.
         # _context_files returns a sorted list, so [0] used to pick
         # iptables-init.sh for the restricted tier.
-        dockerfile = ""
-        for name in _context_files(t):
-            if name.endswith(".Dockerfile"):
-                dockerfile = name
-                break
-        if not dockerfile:
-            raise ImageBuildError("no *.Dockerfile in build context for tier " + repr(t))
+        dockerfile = _tier_dockerfile(t, ctx)
         plans.append(
             _BuildPlan(
                 tag=tier.docker_image,

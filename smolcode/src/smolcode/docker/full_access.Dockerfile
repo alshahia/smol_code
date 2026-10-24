@@ -27,9 +27,15 @@
 
 # Phase 6: bumped bullseye -> bookworm (2026-09-24). See
 # restricted.Dockerfile for why the bullseye base no longer builds.
-ARG PYTHON_BASE=3.12-bookworm
-# Pin note: convert to a digest pin for supply-chain hardening; obtain via
-# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bookworm
+# Supply-chain pin (Phase 8, decision 0043): the base image is referenced by
+# DIGEST, not by tag. A tag is mutable in the registry, so a rebuild could
+# silently swap the OS/interpreter under a sandbox whose policy we reviewed.
+# The digest is also part of smolcode.images.source_hash(), so bumping it
+# forces ensure_tier_images() to rebuild instead of reusing the old image.
+#   python:3.12-bookworm@sha256:14a4933e6cef421424f7a66d89a3f4eafcbd0d90e0a822251f298e05132dc735
+# Refresh procedure: pull the new digest, update this ARG, then rebuild via
+#   python -m smolcode.images ensure --tier full_access
+ARG PYTHON_BASE=3.12-bookworm@sha256:14a4933e6cef421424f7a66d89a3f4eafcbd0d90e0a822251f298e05132dc735
 FROM python:${PYTHON_BASE}
 
 RUN apt-get update \

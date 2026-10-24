@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..audit import AuditSink
-from ..config import Settings, load_settings
+from ..config import Settings, load_settings, warn_if_no_cost_caps
 from ..uploads import DEFAULT_ALLOWED_MIME, DEFAULT_MAX_BYTES, UploadsStore
 from .api import router as api_router
 from .cost_caps import CostCapTracker
@@ -53,6 +53,11 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
     """
     if settings is None:
         settings = load_settings()
+
+    # Phase 8 (ADR 0043): warn once at boot when no per-provider cost cap is
+    # configured. Advisory only (never raises); the CLI web path warns too --
+    # the once-per-process guard keeps it to a single line.
+    warn_if_no_cost_caps(settings)
 
     # M11 (decision 0014): install the secret-redacting LogRecord
     # factory up-front so any logger -- including uvicorn's access /
@@ -142,7 +147,13 @@ def create_app(settings: Settings | None = None, *, no_audit: bool = False) -> F
         try:
             yield
         finally:
-            pass
+            # Phase 8 (ADR 0043): graceful shutdown -- cancel queued work FIRST
+            # (otherwise the drain starts the next run), stop active runs and
+            # join their threads under one bounded deadline, close MCP
+            # sessions, and flush/close the audit sink. Never raises.
+            from .shutdown import graceful_shutdown
+
+            await graceful_shutdown(app.state)
 
     app = FastAPI(
         title="smolcode viewer",

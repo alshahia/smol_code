@@ -57,9 +57,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from .. import __version__
 from ..audit import AuditSink
 from ..audit_reader import audit_chain_status, read_audit_entries
 from ..config import Project, Settings, as_dict
@@ -103,7 +102,6 @@ from .schemas import (
     CostCapsUpdateResponse,
     DashboardResponse,
     FileReadResponse,
-    HealthResponse,
     ModelListResponse,
     OpenPathRequest,
     OpenPathResponse,
@@ -141,14 +139,33 @@ router = APIRouter(prefix="/api")
 # ---- Read-only viewer endpoints -------------------------------------------
 
 
-@router.get("/health", response_model=HealthResponse)
-def get_health(request: Request, store: UploadsStore = Depends(get_uploads_store)) -> dict:
-    return {
-        "status": "ok",
-        "version": __version__,
-        "uploads_dir": str(store.dir),
-        "uploads_count": len(store.list_metadata()),
-    }
+@router.get("/health")
+def get_health(
+    request: Request,
+    store: UploadsStore = Depends(get_uploads_store),
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    """Real readiness snapshot (Phase 8, decision 0043).
+
+    Additive body keys on top of the historical status/version/uploads_*:
+    docker, images, queue_depth, active_run, queue_drain_error, spa_stale.
+    503 ONLY when the configured executor is docker and the daemon is
+    unreachable; the local executor keeps the historical 200/status=ok.
+
+    The route deliberately has no `response_model` any more: a Pydantic
+    response model strips fields it does not declare, and the additive health
+    fields live in web/health.py (schemas.HealthResponse is not owned by this
+    phase). Unknown keys are ignored by the SPA, whose interface declares
+    only the historical four.
+    """
+    from .health import build_health_snapshot
+
+    # Do NOT use the get_run_manager dependency here: it would create a
+    # manager as a side effect of a health probe. A fresh app legitimately
+    # has none yet, and health must not change that.
+    manager = getattr(request.app.state, "run_manager", None)
+    payload, status_code = build_health_snapshot(settings, manager, store)
+    return JSONResponse(payload, status_code=status_code)
 
 
 @router.get("/config", response_model=ConfigResponse)

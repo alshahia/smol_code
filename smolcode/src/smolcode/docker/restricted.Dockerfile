@@ -7,18 +7,28 @@
 # Hardening applied here:
 #   - non-root user (`smolagent`)
 #   - no curl/wget/network tools (use api_key over the LiteLLM socket only)
-#   - the restricted import allowlist is enforced by smolagents
-#     LocalPythonExecutor inside the container, not by this image
+#   - THERE IS NO IMPORT ALLOWLIST INSIDE THIS IMAGE. smolagents'
+#     LocalPythonExecutor allowlist is a LOCAL-executor feature; under
+#     DockerExecutor model-written code runs in the Jupyter kernel inside
+#     this container, and additional_authorized_imports is only used to
+#     pip-install names. The image itself is the boundary here (plus the
+#     runtime flags: network=none internal bridge, read-only uploads,
+#     non-root uid). Anything installed below is reachable by model code.
 
 # Phase 6: bumped bullseye -> bookworm (2026-09-24). bullseye-security
 # has superseded the exact git version python:3.12-bullseye pins, so the
 # install now 404s and THIS IMAGE CANNOT BUILD AT ALL. The sandboxed
 # executor was therefore entirely non-functional; the docker-marked tests
 # had been skipping because the daemon was down, which hid it.
-ARG PYTHON_BASE=3.12-bookworm
-# Pin note: convert to a digest pin (python@sha256:<digest>) for
-# supply-chain hardening; obtain the digest via
-# docker image inspect --format "{{index .RepoDigests 0}}" python:3.12-bookworm
+# Supply-chain pin (Phase 8, decision 0043): the base image is referenced by
+# DIGEST, not by tag. A tag is mutable in the registry, so a rebuild could
+# silently swap the OS/interpreter under a sandbox whose policy we reviewed.
+# The digest is also part of smolcode.images.source_hash(), so bumping it
+# forces ensure_tier_images() to rebuild instead of reusing the old image.
+#   python:3.12-bookworm@sha256:14a4933e6cef421424f7a66d89a3f4eafcbd0d90e0a822251f298e05132dc735
+# Refresh procedure: pull the new digest, update this ARG, then rebuild via
+#   python -m smolcode.images ensure --tier restricted
+ARG PYTHON_BASE=3.12-bookworm@sha256:14a4933e6cef421424f7a66d89a3f4eafcbd0d90e0a822251f298e05132dc735
 FROM python:${PYTHON_BASE}
 # 2026-09-02 review finding 6: the restricted command allowlist includes
 # git, so the binary must exist in the image.

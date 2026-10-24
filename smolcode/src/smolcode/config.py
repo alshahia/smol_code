@@ -13,6 +13,7 @@ section 11 for the parent .env loading rules.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -195,6 +196,11 @@ class Settings:
         # R13: operator acceptance that MCP tools run on the host even when
         # the executor is docker. Default False = refused.
         "allow_unsandboxed_mcp",
+        # Phase 8 (decision 0043): per-tier Docker container resource
+        # ceilings, as {tier: {mem_limit, cpus, pids_limit}}. Passed to the
+        # DockerExecutor as `container_run_kwargs` by agents/base.py.
+        # Missing tiers mean "no limit" (see DEFAULT_CONTAINER_LIMITS).
+        "container_limits",
     )
 
     def __init__(
@@ -213,6 +219,7 @@ class Settings:
         cost_rates=None,
         cost_caps=None,
         allow_unsandboxed_mcp=False,
+        container_limits=None,
     ):
         self.workspace = Path(workspace)
         self.executor = executor
@@ -238,6 +245,10 @@ class Settings:
         # R13: default-deny. Enabling MCP under the docker executor runs
         # model-reachable code on this host, outside every container.
         self.allow_unsandboxed_mcp = bool(allow_unsandboxed_mcp)
+        # Phase 8 (decision 0043): a None mapping means "use the conservative
+        # per-tier defaults"; an explicit mapping REPLACES the whole mapping
+        # (per-tier dicts are shallow-copied so callers cannot mutate ours).
+        self.container_limits = _copy_container_limits(container_limits)
 
     def with_executor(self, executor):
         """Return a new Settings with the executor swapped."""
@@ -256,6 +267,7 @@ class Settings:
             cost_rates=self.cost_rates,
             cost_caps=self.cost_caps,
             allow_unsandboxed_mcp=self.allow_unsandboxed_mcp,
+            container_limits=self.container_limits,
         )
 
     def with_overrides(
@@ -266,6 +278,7 @@ class Settings:
         workspace=None,
         projects=None,
         allow_unsandboxed_mcp=None,
+        container_limits=None,
     ):
         """Return a new Settings with the given overrides applied.
 
@@ -296,6 +309,9 @@ class Settings:
             ),
             cost_rates=self.cost_rates,
             cost_caps=self.cost_caps,
+            container_limits=(
+                self.container_limits if container_limits is None else _copy_container_limits(container_limits)
+            ),
         )
 
     def __repr__(self):
@@ -477,6 +493,48 @@ def _default_tiers():
             uploads="readwrite",  # M8: full_access can modify/delete
         ),
     }
+
+
+# --- Phase 8 (decision 0043): Docker container resource ceilings -----------
+
+
+# Conservative per-tier ceilings applied to every sandbox container. These are
+# Docker SDK kwargs handed to `DockerExecutor(container_run_kwargs=...) `and
+# forwarded verbatim to `containers.run(...)` (smolagents 1.26 passes them
+# through). They exist because a model-written loop can allocate host RAM
+# until the machine swaps: the sandbox image bounds what code may import and
+# which commands it may run, but not how much memory/a fork bomb it consumes.
+#
+#   mem_limit  - string accepted by docker-py ("2g", "512m", bytes)
+#   cpus       - fractional CPU count; agents/base.py converts to nano_cpus
+#   pids_limit - max processes/threads in the container (fork-bomb ceiling)
+#
+# `full_access` is deliberately EMPTY: it is the operator's explicit
+# "powerful" tier, and a hidden RAM/CPU ceiling would break legitimate
+# long-running builds and transfers in ways that look like random OOMs. Podman/
+# Docker users who want a ceiling there can pass
+# `Settings(container_limits={"full_access": {...}})`.
+DEFAULT_CONTAINER_LIMITS = {
+    "restricted": {"mem_limit": "2g", "cpus": 1.0, "pids_limit": 256},
+    "elevated": {"mem_limit": "4g", "cpus": 2.0, "pids_limit": 512},
+    "full_access": {},
+}
+
+
+def _copy_container_limits(limits=None):
+    """Return a defensive copy of a container-limits mapping.
+
+    `None` selects DEFAULT_CONTAINER_LIMITS; an explicit mapping replaces it
+    wholesale (documented in decision 0043 so an operator who sets only
+    `restricted` does not silently keep a default `elevated` ceiling). Unknown
+    tier names are preserved (the caller may define its own tier), and empty
+    per-tier dicts mean "no limit".
+    """
+    source = DEFAULT_CONTAINER_LIMITS if limits is None else limits
+    out = {}
+    for tier, tier_limits in dict(source).items():
+        out[str(tier)] = dict(tier_limits or {})
+    return out
 
 
 # --- Public loader -----------------------------------------------------------
@@ -737,4 +795,47 @@ def as_dict(s):
     # R13: always surface the MCP sandbox acknowledgement so --print-config
     # tells the operator which plane their MCP tools actually run on.
     out["allow_unsandboxed_mcp"] = bool(s.allow_unsandboxed_mcp)
+    # Phase 8 (decision 0043): always include the effective container limits
+    # so --print-config answers "what ceiling is applied to each tier?".
+    out["container_limits"] = {tier: dict(limits) for tier, limits in s.container_limits.items()}
     return out
+
+
+# --- Phase 8 (decision 0043): no-cost-cap startup warning ------------------
+
+# One warning per process. The web server can restart the run loop many times
+# (and every CLI invocation is a fresh process), so this is a "did the operator
+# see it at all" flag, not a per-run rate limiter. Tests reset it via
+# `monkeypatch.setattr(config, "_COST_CAP_WARNING_EMITTED", False)`.
+_COST_CAP_WARNING_EMITTED = False
+
+
+def warn_if_no_cost_caps(settings, logger=None):
+    """Log exactly ONE warning when no per-provider spend cap is configured.
+
+    Decision 0032 added `SMOLCODE_COST_CAPS` + `PUT /api/cost-caps`, but an
+    unconfigured install still happily spends: the cap check is "if a cap
+    exists and is exceeded, stop", so `{}` means "no ceiling". A silent
+    default is the expensive kind of default, hence a startup warning.
+
+    This NEVER raises and never changes behavior - it is advisory only, and a
+    cap set later through the SPA cannot retroactively be "not configured".
+    Operators who intentionally run uncapped can ignore the line; it is logged
+    once, at WARNING, and mentions the exact env var + endpoint.
+
+    Returns True when this call actually emitted the warning.
+    """
+    global _COST_CAP_WARNING_EMITTED
+    if _COST_CAP_WARNING_EMITTED:
+        return False
+    caps = getattr(settings, "cost_caps", None) or {}
+    if caps:
+        return False
+    log = logger or logging.getLogger("smolcode.config")
+    log.warning(
+        "no per-provider cost cap configured (SMOLCODE_COST_CAPS is empty): "
+        "this session can spend without a ceiling. Set "
+        "SMOLCODE_COST_CAPS='{provider: usd}' or PUT /api/cost-caps to cap spend."
+    )
+    _COST_CAP_WARNING_EMITTED = True
+    return True

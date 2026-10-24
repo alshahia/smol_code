@@ -30,7 +30,7 @@ from .agents.orchestrator import build_orchestrator_agent
 from .agents.restricted import build_restricted_agent
 from .audit import AuditSink
 from .checkpoint import create_checkpoint, format_checkpoint_message
-from .config import ConfigError, load_settings
+from .config import ConfigError, load_settings, warn_if_no_cost_caps
 from .config import as_dict as settings_to_dict
 from .confirm import (
     ConfirmationDenied,
@@ -189,6 +189,13 @@ def main(argv=None):
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2
+
+    # Phase 8 (decision 0043): no per-provider cap configured means no
+    # ceiling on what this run can spend (decision 0032's caps are opt-in).
+    # Advisory only: one WARNING per process, never fatal, and skipped for
+    # --smoke because the stub model cannot spend money.
+    if not args.smoke:
+        warn_if_no_cost_caps(settings)
 
     # Phase 6 (6.3): the local executor is NOT a sandbox. smolagents
     # LocalPythonExecutor runs model-written Python directly in this

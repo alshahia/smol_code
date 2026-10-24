@@ -158,13 +158,18 @@ def _web_main(argv_list):
         elif tok in ("--log-level",) and i + 1 < len(argv_list):
             log_level = argv_list[i + 1]
 
-    from .config import ConfigError, load_settings
+    from .config import ConfigError, load_settings, warn_if_no_cost_caps
 
     try:
         settings = load_settings()
     except ConfigError as e:
         print("config error: " + str(e), file=sys.stderr)
         return 2
+
+    # Phase 8 (decision 0043): same no-cost-cap advisory as the CLI run path.
+    # Emitted before uvicorn configures logging, so it lands on logging's
+    # last-resort stderr handler -- visible, once per process, never fatal.
+    warn_if_no_cost_caps(settings)
 
     try:
         from .web import ALLOWED_BIND_HOSTS, run_server

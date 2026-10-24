@@ -6,7 +6,36 @@ build-backend = "setuptools.build_meta"
 name = "smolcode"
 version = "0.1.0"
 description = "Local/Docker multi-agent coding assistant built on smolagents."
+# Phase 8 (decision 0043): the README is the PyPI long description. It lives
+# at smolcode/README.md, alongside this file.
+readme = "README.md"
+# NOTE: no `license` and no `authors` on purpose - the project has not
+# declared either, and PEP 621 metadata must not be invented. Add them here
+# (and only here) once the owner decides.
 requires-python = ">=3.10"
+keywords = [
+    "ai",
+    "agent",
+    "llm",
+    "smolagents",
+    "coding-assistant",
+    "mcp",
+    "docker",
+    "sandbox",
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     # smolagents >=1.27 is on main (1.27.0.dev0) but never released on
     # PyPI. 1.26.0 is the last published tag and contains every API
@@ -42,6 +71,14 @@ web = [
 [project.scripts]
 smolcode = "smolcode.cli:main"
 
+# Phase 8 (decision 0043): canonical repository URLs. The GitHub owner/repo was
+# supplied by the operator task; update all four if the repo moves.
+[project.urls]
+Homepage = "https://github.com/alshahia/smol_code"
+Repository = "https://github.com/alshahia/smol_code"
+Issues = "https://github.com/alshahia/smol_code/issues"
+Documentation = "https://github.com/alshahia/smol_code/blob/main/docs/operations.md"
+
 [tool.uv]
 dev-dependencies = [
     "ruff>=0.9.0",
@@ -63,6 +100,7 @@ where = ["src"]
 # also work but an explicit list keeps the contract visible next to the code.
 [tool.setuptools.package-data]
 smolcode = [
+    "docker/Dockerfile.host",
     "docker/restricted.Dockerfile",
     "docker/elevated.Dockerfile",
     "docker/full_access.Dockerfile",

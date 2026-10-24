@@ -1,0 +1,89 @@
+# smolcode HOST image (Phase 8, decision 0043): the web server + CLI.
+#
+# This is the control plane, NOT a sandbox tier. Model-written code still runs
+# in the smolcode:restricted / :elevated / :full_access containers that THIS
+# process launches via the Docker socket. Mounting the socket therefore grants
+# this container host-root-equivalent power: it can start a privileged
+# container. Read docs/operations.md > "Docker deployment" before using it, and
+# prefer running the server directly on the host and keeping only the tier
+# sandboxes in Docker.
+#
+# Build (from the repository root; the wheel is built first on purpose so the
+# image is a pure install of the tested artifact, decision 0043 R1):
+#
+#   cd smolcode
+#   uv build --wheel
+#   cd ..
+#   docker build \
+#     -f smolcode/src/smolcode/docker/Dockerfile.host \
+#     --build-arg SMOLCODE_WHEEL=$(basename $(ls smolcode/dist/smolcode-*.whl | head -n1)) \
+#     -t smolcode:host \
+#     smolcode/dist
+#
+# The build context is smolcode/dist (wheel only), so .venv, node_modules and
+# the git history are never sent to the daemon. The wheel filename is a
+# required build arg so a stale wheel left in dist/ cannot be baked in by
+# accident.
+#
+# Run: see docs/operations.md for the full command (volume mounts for
+# workspace/uploads/audit + docker socket + Docker socket group). On Linux the
+# server binds loopback INSIDE the container (decision 0010 D1), so reach it
+# with --network host (or run the server on the host).
+
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+
+ARG SMOLCODE_WHEEL
+ARG SMOLCODE_VERSION=0.1.0
+
+# OCI labels: source/url point at the canonical repository (no license label -
+# the project has not declared one; see pyproject.toml and decision 0043).
+LABEL org.opencontainers.image.title="smolcode" \
+      org.opencontainers.image.description="smolcode web server and CLI (host control plane; agent code runs in Docker sandbox tiers)" \
+      org.opencontainers.image.source="https://github.com/alshahia/smol_code" \
+      org.opencontainers.image.url="https://github.com/alshahia/smol_code" \
+      org.opencontainers.image.documentation="https://github.com/alshahia/smol_code/blob/main/docs/operations.md" \
+      org.opencontainers.image.version="${SMOLCODE_VERSION}" \
+      org.opencontainers.image.base.name="docker.io/library/python:3.12-slim" \
+      org.opencontainers.image.base.digest="sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704"
+
+# Unbuffered stdout so uvicorn/audit log lines show up in `docker logs`.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    SMOLCODE_WORKSPACE=/data/workspace \
+    SMOLCODE_UPLOAD_DIR=/data/uploads \
+    SMOLCODE_AUDIT_LOG=/data/audit/audit.jsonl
+
+COPY ${SMOLCODE_WHEEL} /tmp/wheels/
+
+# [web] pulls FastAPI/uvicorn; the docker SDK comes with the base install
+# because the host process talks to the Docker socket.
+RUN pip install --no-cache-dir "/tmp/wheels/${SMOLCODE_WHEEL}[web]" \
+    && rm -rf /tmp/wheels
+
+# Dedicated uid/gid (NOT 1000: tier containers use 1000, and a bind-mounted
+# workspace must not let a sandbox uid own the server's data by accident).
+RUN groupadd --gid 10001 smolcode \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin smolcode \
+    && mkdir -p /data/workspace /data/uploads /data/audit \
+    && chown -R 10001:10001 /data
+
+USER 10001:10001
+WORKDIR /data
+
+EXPOSE 7860
+# uvicorn handles SIGTERM; the app's lifespan runs web/shutdown.graceful_shutdown
+# so an in-flight run is stopped and the audit sink is flushed before exit.
+STOPSIGNAL SIGTERM
+
+# stdlib-only probe (no curl/wget in this image: the process holding the
+# Docker socket gets the smallest possible attack surface). urllib raises on
+# any non-2xx, so the documented 503 ("executor=docker and daemon
+# unreachable") correctly reports unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/api/health', timeout=4).read(1)"
+
+# smolcode web binds loopback only (decision 0010 D1); --no-browser because
+# there is no browser in the container. Extra flags can be appended:
+#   docker run ... smolcode:host --port 7860 --log-level debug
+ENTRYPOINT ["smolcode", "web", "--no-browser"]

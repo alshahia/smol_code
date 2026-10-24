@@ -49,7 +49,10 @@ def test_source_hash_changes_when_input_changes(tmp_path):
     for name in ("restricted.Dockerfile",):
         (tmp_path / name).write_bytes((ctx / name).read_bytes())
     before = source_hash("restricted", context_dir=tmp_path)
-    (tmp_path / "restricted.Dockerfile").write_text("# touched\n", encoding="utf-8")
+    # Append rather than overwrite: the Dockerfile must keep its base-image
+    # digest pin (Phase 8), which source_hash reads as an independent input.
+    dockerfile = tmp_path / "restricted.Dockerfile"
+    dockerfile.write_text(dockerfile.read_text(encoding="utf-8") + "# touched\n", encoding="utf-8")
     after = source_hash("restricted", context_dir=tmp_path)
     assert before != after
 
