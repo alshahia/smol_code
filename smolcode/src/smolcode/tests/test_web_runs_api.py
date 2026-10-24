@@ -87,6 +87,91 @@ def _stub_build_agent(run, settings):
     return _StubCodeAgent()
 
 
+# ---- SSE helpers ---------------------------------------------------------
+
+
+def _collect_sse_lines(client, url, deadline_s=60.0):
+    """Read an SSE response to termination with a bounded overall deadline.
+
+    TestClient streaming iterator blocks until the server closes the
+    response, so a server-side stall would hang the whole test session.
+    The read therefore runs on a worker thread and the test thread enforces
+    a hard real-time deadline instead. Returns (status, headers, lines).
+    """
+    import queue as _queue
+
+    q: _queue.Queue = _queue.Queue()
+    state = {}
+
+    def _reader():
+        try:
+            with client.stream("GET", url) as resp:
+                state["status"] = resp.status_code
+                state["headers"] = dict(resp.headers)
+                for line in resp.iter_lines():
+                    q.put(("line", line))
+        except Exception as exc:  # noqa: BLE001 - surfaced on the test thread
+            q.put(("error", exc))
+        finally:
+            q.put(("closed", None))
+
+    thread = threading.Thread(target=_reader, daemon=True)
+    thread.start()
+    lines = []
+    deadline = time.monotonic() + deadline_s
+    while True:
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, (
+            "SSE stream did not terminate within " + str(deadline_s) + "s; last lines: " + repr(lines[-10:])
+        )
+        try:
+            kind, value = q.get(timeout=remaining)
+        except _queue.Empty:
+            raise AssertionError(
+                "SSE stream did not terminate within " + str(deadline_s) + "s; last lines: " + repr(lines[-10:])
+            )
+        if kind == "error":
+            raise AssertionError("SSE reader failed: " + repr(value))
+        if kind == "closed":
+            break
+        lines.append(value)
+    thread.join(5.0)
+    assert "status" in state, "SSE reader never opened the stream"
+    return state["status"], state["headers"], lines
+
+
+def _parse_sse_events(lines):
+    """Parse raw SSE lines into [(event_name, data_dict), ...].
+
+    Comment heartbeats (": keep-alive") and "id:" lines are ignored.
+    """
+    events = []
+    event = None
+    data = []
+    for line in lines:
+        if line == "":
+            if event is not None:
+                events.append((event, _parse_sse_data(data)))
+            event, data = None, []
+        elif line.startswith("event: "):
+            event = line[len("event: ") :]
+        elif line.startswith("data: "):
+            data.append(line[len("data: ") :])
+    if event is not None:
+        events.append((event, _parse_sse_data(data)))
+    return events
+
+
+def _parse_sse_data(data_lines):
+    raw = "\n".join(data_lines)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {"_raw": raw}
+
+
 # ---- TestRunsBasic -------------------------------------------------------
 
 
@@ -210,20 +295,22 @@ class TestRunsSSE:
     def test_events_stream_emits_run_started_and_ended(self, client):
         rr = client.post("/api/runs", json={"task": "hi", "tier": "restricted"})
         run_id = rr.json()["run_id"]
-        with client.stream("GET", "/api/runs/" + run_id + "/events") as resp:
-            assert resp.status_code == 200
-            assert resp.headers["content-type"].startswith("text/event-stream")
-            chunks = []
-            for line in resp.iter_lines():
-                chunks.append(line)
-                # Stop after we see run.ended + the end sentinel.
-                if "event: end" in line:
-                    break
-        body = "\n".join(chunks)
-        assert "event: run.started" in body
-        assert "event: step.action" in body
-        assert "event: run.ended" in body
-        assert "event: end" in body
+        status, headers, lines = _collect_sse_lines(client, "/api/runs/" + run_id + "/events")
+        assert status == 200
+        assert headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(lines)
+        names = [name for name, _payload in events]
+        # The stream must carry exactly one run.started, the step events,
+        # exactly one terminal run.ended and the trailing end frame.
+        assert names[0] == "run.started", names
+        assert names.count("run.started") == 1, names
+        assert "step.action" in names, names
+        assert names.count("run.ended") == 1, names
+        assert names[-1] == "end", names
+        assert names.index("run.started") < names.index("step.action") < names.index("run.ended"), names
+        payloads = dict(events)
+        assert payloads["run.started"]["run_id"] == run_id
+        assert payloads["run.ended"]["status"] == "done"
 
     def test_events_stream_404_for_unknown_run(self, client):
         r = client.get("/api/runs/no-such-run/events")
@@ -641,14 +728,15 @@ class TestRunsM11Overrides:
             },
         )
         run_id = r.json()["run_id"]
-        with client.stream("GET", "/api/runs/" + run_id + "/events") as resp:
-            chunks = []
-            for line in resp.iter_lines():
-                chunks.append(line)
-                if "event: end" in line:
-                    break
-        body = "\n".join(chunks)
-        assert "TESTKEYSHOULDNEVERAPPEAR" not in body
+        status, _headers, lines = _collect_sse_lines(client, "/api/runs/" + run_id + "/events")
+        assert status == 200
+        events = _parse_sse_events(lines)
+        names = [name for name, _payload in events]
+        assert "run.started" in names, names
+        assert names[-1] == "end", names
+        # No frame (raw or decoded JSON) may carry the key material.
+        assert "TESTKEYSHOULDNEVERAPPEAR" not in "\n".join(lines)
+        assert "TESTKEYSHOULDNEVERAPPEAR" not in json.dumps(events)
 
     def test_run_summary_does_not_carry_keys(self, client):
         r = client.post(

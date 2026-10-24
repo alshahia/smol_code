@@ -70,6 +70,30 @@ def _encode_event(event_type, data, event_id=None):
     return "\n".join(lines) + "\n\n"
 
 
+def _resolve_run_retention_s(override=None):
+    """Phase 7 (decision 0042): resolve the finished-run retention window.
+
+    ``override`` (``RunManager(retention_s=...)``) wins; otherwise
+    ``SMOLCODE_RUN_RETENTION_S``; otherwise 24 h. ``<= 0`` disables
+    eviction. A malformed env value logs and falls back to the default
+    instead of disabling retention silently.
+    """
+    if override is not None:
+        try:
+            return float(override)
+        except (TypeError, ValueError):
+            _log.warning("invalid RunManager retention_s=%r; using default", override)
+            return _DEFAULT_RUN_RETENTION_S
+    raw = os.environ.get(_RUN_RETENTION_ENV)
+    if raw is None or not raw.strip():
+        return _DEFAULT_RUN_RETENTION_S
+    try:
+        return float(raw)
+    except ValueError:
+        _log.warning("invalid %s=%r; using default", _RUN_RETENTION_ENV, raw)
+        return _DEFAULT_RUN_RETENTION_S
+
+
 @dataclass
 class PendingDecision:
     id: str
@@ -174,6 +198,28 @@ STATUS_PAUSED = "paused"
 STATUS_QUEUED = "queued"
 
 _TERMINAL_STATUSES = frozenset({STATUS_DONE, STATUS_ERROR, STATUS_STOPPED})
+# Phase 7 (decision 0042): statuses that occupy the single execution slot.
+# Mirrors ``RunManager.is_busy`` so the queue drain's slot check and the
+# submit-time check agree.
+_ACTIVE_STATUSES = frozenset({STATUS_RUNNING, STATUS_AWAITING_APPROVAL, STATUS_PAUSED})
+
+# Phase 7 (decision 0042): private in-band sentinel enqueued by
+# ``Run.end_stream()`` after the terminal frame. ``RunManager.subscribe``
+# breaks on it (identity check) instead of polling ``run.status``, so a
+# subscriber that observes ``status=done`` before the runner published
+# ``run.ended`` can no longer drop that terminal frame. A plain unique
+# string (identity-checked, never yielded) keeps the queue's contents
+# string-safe for helpers that drain ``run.events`` directly.
+_STREAM_END = "__smolcode_stream_end__"
+
+# Phase 7 (decision 0042): finished-run retention. The manager sweeps
+# terminal runs older than this window on the submit path and zeroes their
+# ``api_key_value``. <= 0 disables the sweep. Overridable per-manager
+# (``RunManager(retention_s=...)``) or via the environment -- deliberately
+# NOT a ``Settings`` field: this is a manager-lifetime knob, and Phase 8
+# owns ``config.py`` in this work stream.
+_DEFAULT_RUN_RETENTION_S = 86400.0
+_RUN_RETENTION_ENV = "SMOLCODE_RUN_RETENTION_S"
 
 
 @dataclass
@@ -191,6 +237,12 @@ class Run:
     pending: list = field(default_factory=list)
     pending_lock: threading.Lock = field(default_factory=threading.Lock)
     stop_flag: threading.Event = field(default_factory=threading.Event)
+    # Phase 7 (decision 0042): set by ``end_stream()`` once the runner has
+    # published its terminal frame. ``RunManager.subscribe`` uses it to
+    # decide when the event stream is genuinely finished, instead of
+    # guessing from ``status`` (which the runner sets before publishing
+    # ``run.ended``).
+    stream_finished: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
     result: str | None = None
     error: str | None = None
@@ -381,6 +433,27 @@ class Run:
             self.events.put_nowait(frame)
         except Exception as e:
             _log.warning("run %s: event put failed: %s", self.id, e)
+
+    def end_stream(self):
+        """Terminate any live SSE subscriber deterministically.
+
+        Phase 7 (decision 0042): the runner sets ``status`` to a terminal
+        value BEFORE publishing ``EVT_RUN_ENDED`` (the audit-sink ``end()``
+        write sits between them). ``RunManager.subscribe`` used to break as
+        soon as it saw "terminal status + empty queue", which under load
+        interleaved exactly in that window and dropped ``run.ended``.
+        Enqueuing a private sentinel AFTER the terminal frame removes the
+        ordering dependence: the subscriber exits only once it has drained
+        everything the runner produced. Idempotent.
+        """
+        with self.pending_lock:
+            if self.stream_finished.is_set():
+                return
+            self.stream_finished.set()
+        try:
+            self.events.put_nowait(_STREAM_END)
+        except Exception as e:
+            _log.warning("run %s: stream-end sentinel put failed: %s", self.id, e)
 
     def increment_tokens(self, input_delta, output_delta):
         """Add input_delta + output_delta to the running totals.
@@ -689,7 +762,7 @@ class Run:
 
 
 class RunManager:
-    def __init__(self, cost_cap_tracker=None, audit_sink=None, settings=None):
+    def __init__(self, cost_cap_tracker=None, audit_sink=None, settings=None, retention_s=None):
         # Decision 0032: optional cap tracker. When set, ``start_run`` /
         # ``start_or_enqueue_run`` consults ``tracker.check_reached``
         # against today's per-provider USD spend BEFORE spinning up the
@@ -717,11 +790,22 @@ class RunManager:
         self.queue_drain_error: str | None = None
         self._runs = {}
         self._lock = threading.Lock()
+        # Phase 7 (decision 0042): one re-entrant "dispatch" lock serialises
+        # the busy-check + slot claim (start_run) and the drain claim
+        # (queue -> running). Without it, two concurrent submits could both
+        # observe "not busy" and start; and a submit that slipped in after a
+        # finishing run's status flipped terminal could race the drain and
+        # start a second run alongside the queued one. Re-entrant because
+        # start_or_enqueue_run calls start_run while holding it.
+        self._dispatch_lock = threading.RLock()
         # Phase 2 (decision 0025 §6.4): FIFO queue + its lock. Previously added
         # by a module-level monkey-patch of __init__; folded in here (decision
         # 0039) so the real class is the single definition.
         self._queue = []
         self._queue_lock = threading.Lock()
+        # Phase 7 (decision 0042): finished-run retention window (seconds).
+        # <= 0 disables the opportunistic sweep.
+        self._run_retention_s = _resolve_run_retention_s(retention_s)
 
     def _effective_audit(self, audit):
         """Phase 2 (H5): per-call sink wins; else the manager default."""
@@ -786,7 +870,7 @@ class RunManager:
         if reached:
             raise ValueError("cost_cap_reached: " + reason)
 
-    def start_run(
+    def _build_run(
         self,
         *,
         task,
@@ -801,24 +885,15 @@ class RunManager:
         anchor_to_project_root=False,
         parent_retry_of=None,
         parent_rerun_of=None,
+        status=STATUS_PENDING,
     ):
-        """Start one agent run.
+        """Validate one run request and build its (unregistered) ``Run``.
 
-        M11 (decision 0014) extensions: ``provider_override``,
-        ``model_override`` and ``api_key_value`` are forwarded by
-        ``POST /api/runs``. ``run.provider`` and ``run.model`` reflect
-        the EFFECTIVE values (override wins over ``settings``). The
-        ``api_key_value`` is kept on the Run as a private field and
-        is consumed exactly once, in ``agent_runner.run_in_thread``,
-        when constructing the LiteLLM model. It is NEVER included in
-        any event payload or audit record.
-
-        Phase 1 (decision 0025 §6.3): ``session_id`` + ``project``
-        are optional; when supplied they tag the run so the SPA's
-        SessionsPane can filter history. ``project`` is resolved
-        against ``settings.projects`` -- an unknown name is silently
-        coerced to None (legacy mode) so a stale ``?project=foo``
-        from a previous config doesn't hard-fail new runs.
+        Phase 7 (decision 0042): shared by ``start_run`` and the enqueue
+        branch of ``start_or_enqueue_run``. Building the record is pure --
+        no lock held, no shared state mutated -- so callers can validate
+        before taking ``_dispatch_lock`` and the critical section stays
+        short. Registration/status/slot claiming is the caller's job.
         """
         if not isinstance(task, str) or not task.strip():
             raise ValueError("task must be a non-empty string")
@@ -911,18 +986,85 @@ class RunManager:
             # instead of silently losing it on resume.
             _cost_cap_tracker=self._cost_cap_tracker,
         )
-        with self._lock:
-            self._runs[run.id] = run
-        from .agent_runner import run_in_thread
+        run.status = status
+        return run
 
-        run.thread = threading.Thread(
-            target=run_in_thread,
-            args=(run, settings, self),
-            name="smolcode-run-" + run.id[:8],
-            daemon=True,
-            kwargs={"cost_cap_tracker": self._cost_cap_tracker},
+    def start_run(
+        self,
+        *,
+        task,
+        tier,
+        settings,
+        audit=None,
+        provider_override=None,
+        model_override=None,
+        api_key_value=None,
+        session_id=None,
+        project=None,
+        anchor_to_project_root=False,
+        parent_retry_of=None,
+        parent_rerun_of=None,
+    ):
+        """Start one agent run.
+
+        M11 (decision 0014) extensions: ``provider_override``,
+        ``model_override`` and ``api_key_value`` are forwarded by
+        ``POST /api/runs``. ``run.provider`` and ``run.model`` reflect
+        the EFFECTIVE values (override wins over ``settings``). The
+        ``api_key_value`` is kept on the Run as a private field and
+        is consumed exactly once, in ``agent_runner.run_in_thread``,
+        when constructing the LiteLLM model. It is NEVER included in
+        any event payload or audit record.
+
+        Phase 1 (decision 0025 §6.3): ``session_id`` + ``project``
+        are optional; when supplied they tag the run so the SPA's
+        SessionsPane can filter history. ``project`` is resolved
+        against ``settings.projects`` -- an unknown name is silently
+        coerced to None (legacy mode) so a stale ``?project=foo``
+        from a previous config doesn't hard-fail new runs.
+        """
+        run = self._build_run(
+            task=task,
+            tier=tier,
+            settings=settings,
+            audit=audit,
+            provider_override=provider_override,
+            model_override=model_override,
+            api_key_value=api_key_value,
+            session_id=session_id,
+            project=project,
+            anchor_to_project_root=anchor_to_project_root,
+            parent_retry_of=parent_retry_of,
+            parent_rerun_of=parent_rerun_of,
         )
-        run.thread.start()
+        with self._dispatch_lock:
+            # Phase 7 (decision 0042): sweep finished runs on the submit path.
+            # A sweep failure must never block a new run.
+            try:
+                self.evict_finished_runs()
+            except Exception as e:
+                _log.warning("run retention sweep failed: %s", e)
+            # Claim the slot BEFORE the runner thread exists: registering the
+            # run as "running" under the dispatch lock means a concurrent
+            # start_or_enqueue_run cannot observe this run as pending and
+            # start a second one. ``run_in_thread`` re-asserts the status.
+            run.status = STATUS_RUNNING
+            # Phase 7 (decision 0042): slot-claim timestamp used by
+            # ``_claim_next_queued`` to detect a submit that slipped in
+            # between a finishing run's terminal status and its drain.
+            run._registered_at = time.time()
+            with self._lock:
+                self._runs[run.id] = run
+            from .agent_runner import run_in_thread
+
+            run.thread = threading.Thread(
+                target=run_in_thread,
+                args=(run, settings, self),
+                name="smolcode-run-" + run.id[:8],
+                daemon=True,
+                kwargs={"cost_cap_tracker": self._cost_cap_tracker},
+            )
+            run.thread.start()
         return run.id
 
     def start_or_enqueue_run(
@@ -957,108 +1099,67 @@ class RunManager:
         # queue / threading setup so a cap rejection never allocates a
         # Run id or wakes the runner thread.
         self._check_cost_cap_or_raise(settings, provider_override)
-        if self.is_busy():
-            # Validate the inputs FIRST (start_run would also validate).
-            if not isinstance(task, str) or not task.strip():
-                raise ValueError("task must be a non-empty string")
-            if tier not in ("restricted", "elevated", "full_access", "orchestrator"):
-                raise ValueError("tier must be restricted|elevated|full_access|orchestrator")
-            if provider_override is not None:
-                from ..models import get_preset
-
+        # Phase 7 (decision 0042): the busy test and the slot claim are ONE
+        # critical section. Previously the check and the registration ran
+        # under separate locks, so two concurrent submits could both see an
+        # idle manager and start two runs. ``_dispatch_lock`` is re-entrant,
+        # so the immediate path below can call ``start_run`` (which takes the
+        # same lock) without deadlocking.
+        with self._dispatch_lock:
+            if self.is_busy():
+                run = self._build_run(
+                    task=task,
+                    tier=tier,
+                    settings=settings,
+                    audit=audit,
+                    provider_override=provider_override,
+                    model_override=model_override,
+                    api_key_value=api_key_value,
+                    session_id=session_id,
+                    project=project,
+                    anchor_to_project_root=anchor_to_project_root,
+                    parent_retry_of=parent_retry_of,
+                    parent_rerun_of=parent_rerun_of,
+                    status=STATUS_QUEUED,
+                )
                 try:
-                    get_preset(provider_override)
-                except ValueError as e:
-                    raise ValueError(str(e)) from e
-            # Resolve project / session_id the same way start_run does.
-            effective_project = None
-            if project is not None:
-                for p in getattr(settings, "projects", ()):
-                    if p.name == project:
-                        effective_project = p.name
-                        break
-            from ..session import safe_id
-
-            eff_sid = None
-            if session_id is not None:
-                try:
-                    eff_sid = safe_id(session_id)
-                except ValueError:
-                    eff_sid = None
-            ak = api_key_value if isinstance(api_key_value, str) and api_key_value.strip() else None
-            base_provider = getattr(settings, "provider", "") or ""
-            base_model = getattr(settings, "model", "") or ""
-            # Phase 3 F3: resolve effective_cwd the same way start_run
-            # does, so when the queued run drains and starts, the
-            # Q2 outside-root gate is armed correctly.
-            effective_cwd: Path | None = None
-            if bool(anchor_to_project_root) and effective_project:
-                from ..session import resolve_project_root
-
-                try:
-                    effective_cwd = resolve_project_root(settings, effective_project)
-                    ws_root = Path(str(getattr(settings, "workspace", "") or ""))
-                    if effective_cwd == ws_root:
-                        effective_cwd = None
-                except Exception:
-                    effective_cwd = None
-            if effective_cwd is None:
-                ws = getattr(settings, "workspace", "") or ""
-                effective_cwd = Path(ws) if ws else None
-
-            run = Run(
-                id=uuid.uuid4().hex,
-                task=task.strip(),
+                    self.evict_finished_runs()
+                except Exception as e:
+                    _log.warning("run retention sweep failed: %s", e)
+                run._registered_at = time.time()
+                with self._lock:
+                    self._runs[run.id] = run
+                self.enqueue(
+                    run.id,
+                    task=run.task,
+                    tier=run.tier,
+                    project=run.project,
+                    session_id=run.session_id,
+                    provider_override=run.provider_override,
+                    model_override=run.model_override,
+                    api_key_value=run.api_key_value,
+                    # Phase 4 (decision 0039): the entry mirrors the original call so
+                    # the drained run resolves effective_cwd the same way an
+                    # immediate start_run would. QueueEntry already has the field;
+                    # nothing was ever passing it.
+                    anchor_to_project_root=run.anchor_to_project_root,
+                )
+                return run.id, STATUS_QUEUED
+            run_id = self.start_run(
+                task=task,
                 tier=tier,
-                audit_sink=self._effective_audit(audit),
-                model=model_override or base_model,
-                provider=provider_override or base_provider,
-                workspace=str(getattr(settings, "workspace", "") or ""),
+                settings=settings,
+                audit=audit,
                 provider_override=provider_override,
                 model_override=model_override,
-                api_key_value=ak,
-                session_id=eff_sid,
-                project=effective_project,
-                effective_cwd=effective_cwd,
-                anchor_to_project_root=bool(anchor_to_project_root),
+                api_key_value=api_key_value,
+                session_id=session_id,
+                project=project,
+                anchor_to_project_root=anchor_to_project_root,
                 parent_retry_of=parent_retry_of,
                 parent_rerun_of=parent_rerun_of,
-                _cost_cap_tracker=self._cost_cap_tracker,
             )
-            run.status = STATUS_QUEUED
-            with self._lock:
-                self._runs[run.id] = run
-            self.enqueue(
-                run.id,
-                task=task.strip(),
-                tier=tier,
-                project=effective_project,
-                session_id=eff_sid,
-                provider_override=provider_override,
-                model_override=model_override,
-                api_key_value=ak,
-                # Phase 4 (decision 0039): the entry mirrors the original call so
-                # the drained run resolves effective_cwd the same way an
-                # immediate start_run would. QueueEntry already has the field;
-                # nothing was ever passing it.
-                anchor_to_project_root=bool(anchor_to_project_root),
-            )
-            return run.id, STATUS_QUEUED
-        run_id = self.start_run(
-            task=task,
-            tier=tier,
-            settings=settings,
-            audit=audit,
-            provider_override=provider_override,
-            model_override=model_override,
-            api_key_value=api_key_value,
-            session_id=session_id,
-            project=project,
-            anchor_to_project_root=anchor_to_project_root,
-            parent_retry_of=parent_retry_of,
-            parent_rerun_of=parent_rerun_of,
-        )
-        return run_id, STATUS_RUNNING
+            return run_id, STATUS_RUNNING
 
     def get(self, run_id):
         with self._lock:
@@ -1073,6 +1174,20 @@ class RunManager:
         with self._lock:
             return list(self._runs.values())
 
+    @staticmethod
+    def _stream_is_done(run):
+        """True when no further frames can arrive for ``run``.
+
+        Phase 7 (decision 0042): the producer marks the stream finished
+        explicitly (``Run.end_stream``). The ``ended_at is None`` fallback
+        keeps the legacy contract for tests and direct ``publish`` callers
+        that flip ``status`` terminal without a runner (no producer will
+        ever enqueue a sentinel for those).
+        """
+        if run.stream_finished.is_set():
+            return True
+        return run.status in _TERMINAL_STATUSES and run.ended_at is None
+
     def subscribe(self, run_id):
         run = self.get(run_id)
         if run is None:
@@ -1083,17 +1198,13 @@ class RunManager:
                 frame = run.events.get(timeout=HEARTBEAT_S)
             except queue.Empty:
                 yield ": heartbeat\n\n"
-                if run.status in _TERMINAL_STATUSES and run.events.empty():
+                if run.events.empty() and self._stream_is_done(run):
                     break
                 continue
+            if frame is _STREAM_END:
+                break
             yield frame
-            if run.status in _TERMINAL_STATUSES and run.events.empty():
-                try:
-                    frame = run.events.get_nowait()
-                except queue.Empty:
-                    break
-                else:
-                    yield frame
+            if run.events.empty() and self._stream_is_done(run):
                 break
         yield _encode_event("end", {"run_id": run.id, "status": run.status}, event_id=None)
 
@@ -1161,10 +1272,50 @@ class RunManager:
         return True
 
     def stop(self, run_id):
+        """Stop a run, resolving any human-approval wait as DENIED.
+
+        Phase 7 (decision 0042): setting ``stop_flag`` alone only stops the
+        agent at its next step boundary. A run blocked inside
+        ``confirm_callback`` / ``diff_callback`` is parked in
+        ``PendingDecision.event.wait(timeout_s)`` and would not notice the
+        flag until the human-decision timeout (default 300 s). Resolve every
+        pending decision fail-closed (DENIED, reason "stopped") so the agent
+        thread wakes immediately and takes its existing ``_StopRequested``
+        path. ``PendingDecision.resolve`` is idempotent and ``take_decision``
+        claims atomically, so a concurrent ``POST /approval`` cannot both
+        resolve and observe the same decision.
+        """
         run = self.get(run_id)
         if run is None:
             return False
         run.stop_flag.set()
+        with run.pending_lock:
+            pending = list(run.pending)
+            run.pending.clear()
+        for d in pending:
+            d.resolve(approved=False, edited_args=None, reason="stopped")
+            if d.kind == "diff":
+                run.publish(
+                    EVT_DIFF_RESOLVED,
+                    {
+                        "decision_id": d.id,
+                        "approved": False,
+                        "reason": "stopped",
+                        "edited": False,
+                        "path": d.path,
+                        "ts": _now_iso(),
+                    },
+                )
+            else:
+                run.publish(
+                    EVT_APPROVAL_DECIDED,
+                    {
+                        "decision_id": d.id,
+                        "approved": False,
+                        "reason": "stopped",
+                        "ts": _now_iso(),
+                    },
+                )
         return True
 
     # v1.9.x / decision 0027: server-side auto-approve OFF endpoint.
@@ -1321,6 +1472,108 @@ class RunManager:
         self._refresh_queue_positions()
         return entry
 
+    def evict_finished_runs(self, now=None):
+        """Phase 7 (decision 0042): drop finished runs past the retention window.
+
+        Only runs in a TERMINAL status with an ``ended_at`` older than
+        ``_run_retention_s`` are eligible: ``running``,
+        ``awaiting_approval``, ``paused`` and ``queued`` runs are never
+        touched. ``api_key_value`` is zeroed on eviction so a SPA-supplied
+        provider key does not outlive the run record in process memory.
+        Called opportunistically from the submit path (and safe to call
+        directly -- tests pass an explicit ``now``). Returns the evicted
+        run ids.
+
+        ``now`` is wall-clock epoch seconds, the same clock as
+        ``Run.ended_at``. ``retention_s <= 0`` disables eviction.
+        """
+        retention = self._run_retention_s
+        if retention is None or retention <= 0:
+            return []
+        current = time.time() if now is None else float(now)
+        cutoff = current - float(retention)
+        evicted = []
+        with self._dispatch_lock:
+            with self._lock:
+                for run_id, run in list(self._runs.items()):
+                    if run.status not in _TERMINAL_STATUSES:
+                        continue
+                    if run.ended_at is None or run.ended_at >= cutoff:
+                        continue
+                    run.api_key_value = None
+                    del self._runs[run_id]
+                    evicted.append(run_id)
+        if evicted:
+            _log.info("evicted %d finished run(s) older than %ss", len(evicted), retention)
+        return evicted
+
+    def _claim_next_queued(self, exclude_run_id=None):
+        """Claim the next FIFO entry for a run that is finishing.
+
+        Phase 7 (decision 0042): the drain used to pop the queue entry and
+        start its thread under a separate ``_queue_lock`` section. A submit
+        that slipped in after the finishing run's status flipped terminal
+        (but before its drain ran) could then start a second run, and the
+        drain would start the queued run right next to it. Claiming under
+        ``_dispatch_lock`` -- the same lock the submit path uses -- makes
+        the two paths serialised.
+
+        Returns ``(run, entry, settings, cost_cap_tracker)`` on success, or
+        ``None`` when the queue is empty or another active run owns the
+        slot. Raises ``RuntimeError`` when an entry exists but the manager
+        has no ``Settings`` (``RunManager._drain_queue`` records that in
+        ``queue_drain_error`` instead of losing it).
+        """
+        with self._dispatch_lock:
+            finishing_registered_at = None
+            if exclude_run_id is not None:
+                finisher = self.get(exclude_run_id)
+                if finisher is not None:
+                    finishing_registered_at = getattr(finisher, "_registered_at", None)
+            if finishing_registered_at is not None:
+                # Did a submit claim the slot after this run registered?
+                # Then the drain must leave the queue to that run's own
+                # drain; starting here would run two agents at once.
+                with self._lock:
+                    for r in self._runs.values():
+                        if r.id == exclude_run_id or r.status not in _ACTIVE_STATUSES:
+                            continue
+                        other_registered = getattr(r, "_registered_at", None)
+                        if other_registered is not None and other_registered > finishing_registered_at:
+                            return None
+            with self._queue_lock:
+                if not self._queue:
+                    return None
+                entry = self._queue.pop(0)
+            # Phase 4 (decision 0039): settings come from the manager, which
+            # owns the instance create_app handed it -- not from a
+            # request-scoped FastAPI dependency.
+            settings = getattr(self, "_settings", None)
+            if settings is None:
+                # Put the entry back: a later drain (after create_app fixes
+                # the wiring) must still be able to run it.
+                with self._queue_lock:
+                    self._queue.insert(0, entry)
+                self._refresh_queue_positions()
+                raise RuntimeError(
+                    "RunManager has no Settings attached; cannot start queued run "
+                    + entry.id
+                    + ". create_app() must construct the manager with settings=."
+                )
+            target = self.get(entry.id)
+            if target is None:
+                self._refresh_queue_positions()
+                return None
+            target.status = STATUS_RUNNING
+            target.queue_position = None
+            target._registered_at = time.time()
+            # Decision 0032: pull the cost-cap tracker off the run manager so
+            # queued runs get the same per-step cap enforcement as the
+            # initial start_or_enqueue_run call.
+            cost_cap_tracker = getattr(self, "_cost_cap_tracker", None)
+        self._refresh_queue_positions()
+        return target, entry, settings, cost_cap_tracker
+
     def _drain_queue(self, run):
         """Phase 4 (decision 0039): drain the queue, RECORDING failures.
 
@@ -1370,6 +1623,10 @@ class RunManager:
             run.status = STATUS_STOPPED
             run.ended_at = time.time()
             run.publish(EVT_RUN_ENDED, {"run_id": run.id, "status": STATUS_STOPPED, "ts": _now_iso()})
+            # Phase 7 (decision 0042): wake any SSE subscriber on the
+            # cancelled run so it drains run.ended + the end frame instead
+            # of waiting for the 15 s heartbeat.
+            run.end_stream()
         self._refresh_queue_positions()
         return True
 

@@ -16,9 +16,10 @@ import traceback
 from pathlib import Path
 
 from ..confirm import resolve_destructive_timeout_s
-from ..session import DestructiveDecision, DiffDecision, SessionState, set_session
+from ..session import DestructiveDecision, DiffDecision, SessionState, clear_session_for_run, set_session
 from .diffs import summarize, unified_hunks, unified_text
 from .runs import (
+    _TERMINAL_STATUSES,
     EVT_APPROVAL_DECIDED,
     EVT_APPROVAL_REQUESTED,
     EVT_DIFF_PROPOSED,
@@ -1177,8 +1178,12 @@ def run_in_thread(run, settings, manager=None, cost_cap_tracker=None):
             pass
         run.ended_at = time.time()
         run.status = final_status
+        # Phase 7 (decision 0042): run-scoped teardown. ``set_session(None)``
+        # used to clear whatever session was installed -- so a finishing run A
+        # could clear a newer run B's session, silently disabling B's
+        # confirm/diff callbacks and resetting its auto-approve flag.
         try:
-            set_session(None)
+            clear_session_for_run(run.id)
         except Exception:
             pass
         if run.audit_sink is not None:
@@ -1198,6 +1203,12 @@ def run_in_thread(run, settings, manager=None, cost_cap_tracker=None):
                 "ts": _time_now_iso(),
             },
         )
+        # Phase 7 (decision 0042): the terminal frame is queued; signal end
+        # of stream so subscribe() cannot terminate on the (earlier) status
+        # flip and drop run.ended. A paused run is resumable, so its stream
+        # stays open.
+        if final_status in _TERMINAL_STATUSES:
+            run.end_stream()
         # Phase 2 (M-item): delete the auto-created smolcode-snap-*
         # snapshot temp file. A TERMINAL run can never resume, and
         # skipping this leaked one transcript JSON per web run into
@@ -1342,38 +1353,19 @@ def _drain_queue_after_run(run, mgr):
     REQUEST-scoped FastAPI dependencies, invoked from a runner thread
     that outlives the request. They raised, the caller swallowed the
     error with a bare ``except``, and the queue silently never drained.
+
+    Phase 7 (decision 0042): the claim (slot check + queue pop +
+    ``status=running``) is delegated to ``RunManager._claim_next_queued``
+    so it is serialised with concurrent submits through the manager's
+    dispatch lock. Only the thread start happens here, after the claim.
     """
-    with mgr._queue_lock:
-        if not mgr._queue:
-            return None
-        entry = mgr._queue.pop(0)
-    # Update queue positions on remaining entries.
-    mgr._refresh_queue_positions()
-    # Look up the pre-allocated Run record (already in mgr._runs from
-    # the original start_or_enqueue_run call) and start its runner thread.
-    target = mgr.get(entry.id)
-    if target is None:
+    claimed = mgr._claim_next_queued(exclude_run_id=run.id)
+    if claimed is None:
         return None
-    # Phase 4 (decision 0039): settings come from the manager, which owns
-    # the instance create_app handed it -- not from a request dependency.
-    settings = getattr(mgr, "_settings", None)
-    if settings is None:
-        raise RuntimeError(
-            "RunManager has no Settings attached; cannot start queued run " + entry.id + ". "
-            "create_app() must construct the manager with settings=."
-        )
-    # Decision 0032: pull the cost-cap tracker off the run manager so
-    # queued runs (dequeued after the active run ends) get the same
-    # per-step cap enforcement as the initial start_or_enqueue_run call.
-    # ``RunManager._cost_cap_tracker`` is set at construction time by
-    # ``create_app`` and is the SAME instance the API endpoint mutates
-    # via PUT /api/cost-caps -- so a PUT that lowers the cap during
-    # the active run takes effect on the next queued run too.
-    cost_cap_tracker = getattr(mgr, "_cost_cap_tracker", None)
-    # Start the runner thread for the dequeued run.
+    target, _entry, settings, cost_cap_tracker = claimed
+    # Start the runner thread for the claimed run.
     import threading as _threading
 
-    target.status = STATUS_RUNNING
     target.thread = _threading.Thread(
         target=run_in_thread,
         args=(target, settings, mgr),

@@ -203,15 +203,25 @@ def set_auto_approve(run_id, enabled):
     clicks "Approve + auto-approve" in the ApprovalModal, the FE
     mirrors that flip here so the BE's destructive gate sees it.
 
-    Validation: the caller MUST pass the run id that owns the
-    current session. Returns ``(ok, error)``:
+    Phase 7 (decision 0042): the flip is scoped to the session that
+    belongs to ``run_id``. Returns ``(ok, error)``:
 
     - ``(False, "no active session")`` when ``set_session(None)`` was
       called (run already ended) or no session was ever installed.
+    - ``(False, "session is not scoped to a run")`` when the caller
+      supplied a concrete ``run_id`` but the installed session has
+      ``run_id=None``. Such a session is the CLI's or an
+      orchestrator child session (agents/orchestrator.py builds those
+      with ``run_id=None``); a web request must not flip process-global
+      state through it.
     - ``(False, "session is for a different run")`` when the active
-      session's ``run_id`` does not match ``run_id`` (the FE called
+      session's ``run_id`` is a different run id (the FE called
       against a stale run id).
     - ``(True, None)`` on success.
+
+    ``run_id is None`` is the CLI's own in-process toggle: the CLI
+    installs its session with ``run_id=None`` and owns the process, so
+    the flip is allowed. That path is unchanged from decision 0027.
 
     The flag flip is atomic under ``_session_lock`` so a concurrent
     tool forward() reading ``current_session().auto_approve_destructive``
@@ -222,11 +232,15 @@ def set_auto_approve(run_id, enabled):
         s = _session
         if s is None:
             return False, "no active session"
-        if s.run_id is not None and s.run_id != run_id:
+        if run_id is None:
+            # CLI path (decision 0027): no run-scoped caller; the
+            # installed session is the CLI's own.
+            s.auto_approve_destructive = bool(enabled)
+            return True, None
+        if s.run_id is None:
+            return False, "session is not scoped to a run"
+        if s.run_id != run_id:
             return False, "session is for a different run"
-        # When the session has no run_id (CLI), trust the caller and
-        # flip unconditionally. CLI tests install SessionState() with
-        # run_id=None.
         s.auto_approve_destructive = bool(enabled)
     return True, None
 
@@ -235,18 +249,45 @@ def get_auto_approve(run_id):
     """Return the active session's ``auto_approve_destructive`` flag.
 
     Returns ``None`` when no active session is installed OR when the
-    active session's ``run_id`` does not match ``run_id``. Returns
-    the boolean flag value on a match (or on a session with no
-    run_id, e.g. CLI). Used by the FE to refresh the banner state
+    active session is not the one that belongs to ``run_id`` (decision
+    0042). ``run_id is None`` reads the installed session unconditionally
+    — the CLI's own path — while a run-scoped read against a session
+    with ``run_id=None`` (child/CLI session) returns ``None`` instead of
+    reporting foreign state. Used by the FE to refresh the banner state
     on page reload / cross-run navigation.
     """
     with _session_lock:
         s = _session
         if s is None:
             return None
-        if s.run_id is not None and s.run_id != run_id:
+        if run_id is None:
+            return bool(s.auto_approve_destructive)
+        if s.run_id is None:
+            return None
+        if s.run_id != run_id:
             return None
         return bool(s.auto_approve_destructive)
+
+
+def clear_session_for_run(run_id):
+    """Clear the installed session only when it belongs to ``run_id``.
+
+    Phase 7 (decision 0042): ``agent_runner.run_in_thread`` used to call
+    ``set_session(None)`` in its ``finally`` block. That is a lost-update
+    bug: a finishing run A could clear the session of a newer run B,
+    silently disabling B's confirm/diff callbacks and resetting B's
+    auto-approve flag. Matching on ``run_id`` makes teardown run-scoped.
+
+    Returns True when the session was cleared, False when no session is
+    installed or it belongs to a different run (left untouched).
+    """
+    global _session
+    with _session_lock:
+        s = _session
+        if s is None or s.run_id != run_id:
+            return False
+        _session = None
+    return True
 
 
 __all__ = [
@@ -262,6 +303,9 @@ __all__ = [
     # used by POST /api/runs/{id}/auto-approve.
     "set_auto_approve",
     "get_auto_approve",
+    # Phase 7 (decision 0042): run-scoped session teardown, so a finishing
+    # run cannot clobber a newer run's session.
+    "clear_session_for_run",
     # Phase 3 F3 (decision 0036): outside-root allowlist helpers
     # used by the Q2 outside-root gate.
     "add_outside_root_allow",
