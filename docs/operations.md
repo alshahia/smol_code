@@ -253,8 +253,11 @@ re-check command.
 
 Status codes:
 
-- **200** — healthy, or `degraded` (reachable daemon but an image is stale/missing;
-  serving still works and boot already guards the first run).
+- **200** — healthy, or `degraded`. `degraded` applies **only when
+  `SMOLCODE_EXECUTOR=docker`**: the daemon is reachable but a tier image is
+  stale/missing. Under `local` the images are not used, so their state is
+  reported in `images` but never changes the roll-up (serving still works and
+  boot already guards the first run either way).
 - **503** — only when `SMOLCODE_EXECUTOR=docker` **and** the daemon is unreachable.
   Under `local` a dead daemon is informational and the historical 200/`ok`
   contract holds.

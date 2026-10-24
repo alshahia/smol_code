@@ -421,7 +421,7 @@ wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
 |---|---|---|
 | Step 0 | push branch; track pnpm-workspace; dist freshness gate; doc truth; SSE flake | **done** — `7ba1705` (A2), `230e811` (freshness/A4); doc truth in Phase 9; SSE in Phase 7 |
 | Phase 7 | web/session robustness + A4 (ADR 0042) | **done** — `3fc65ba` |
-| Phase 8 | ops/release plumbing (ADR 0043) | **shipped** — `d117b88`, license/authors `3c2d4d6`; live-Docker evidence open |
+| Phase 8 | ops/release plumbing (ADR 0043) | **shipped** — `d117b88`, license/authors `3c2d4d6`, **CI-verified 2026-10-24** (all 9 jobs green, incl. tier-image builds); live-Docker local evidence still open |
 | Phase 9 | docs alignment (ADR 0044) | **done** — `09646cd` |
 | Phase 6 leftover | docker-marked real in-container tool-call test; host-side approval broker for A3 | test **done** (`d7fa62d`, skips without daemon); broker **open** (design, A3) |
 
@@ -437,6 +437,7 @@ wheel carries all tier build inputs, CLI ok, frontend **tsc 0 / 139 vitest /
 | `d117b88` | Phase 8: real `/api/health`, graceful shutdown wired into the web lifespan, `Dockerfile.host` + `docs/operations.md`, digest-pinned tier bases + source hash, container limits, cost-cap warning, packaging metadata, OS-aware Makefile/`install.ps1` |
 | `09646cd` | Phase 9: README/environment/security/.env.example/SPA README current-state alignment, superseded note, CI docs-guard job |
 | `3c2d4d6` | license/authors decided (MIT + repository account name), PEP 639 metadata, `smolcode/LICENSE` + root mirror, `test_packaging` assertions, ADR 0043 updated |
+| `27fd74e` | CI triage (first PR run exposed runner coupling, not product regressions): `/api/health` status is now executor-scoped (a local-executor app no longer reports `degraded` just because the runner has a daemon and no images) + regression test; `_spa_dist_dir()` makes the SPA boot-warning test independent of a built `web/dist`; `test_container_gate_phase6` skips unless the tier image is present; packaging job forces an absent `DOCKER_HOST` so "no daemon → exit 6" is deterministic; audit job drops setup-node's pnpm cache (never populated there, and its post step failed the job) |
 
 **Validation of this batch (2026-10-24, venv Python 3.13.1):** full pytest
 **1567 passed / 18 skipped / 0 failed** (195 s; the previously flaky SSE test
@@ -445,6 +446,21 @@ passed under full-suite load); `ruff check` + `ruff format --check` clean
 wheel **153 entries** including `web/health.py`, `web/shutdown.py` and all
 four Dockerfiles.
 
+**CI verification (2026-10-24):** PR https://github.com/alshahia/smol_code/pull/2
+(run [`40112926660`](https://github.com/alshahia/smol_code/actions/runs/40112926660),
+head `27fd74e`) — **all 9 jobs pass**: lint ubuntu/windows, tests
+ubuntu/windows, coverage (80% gate), web (tsc/oxlint/139 vitest/Playwright),
+sandbox-contract (shellcheck + iptables contract + firewall e2e on a real
+daemon), **tier images (restricted, elevated and full_access all build)**, packaging
+(wheel installs in a clean venv; deterministic dead-daemon exit 6), audit
+(advisory) and docs-guard. This is the first green CI on this branch and it
+replaces the "CI has never run" gap (A1); it also **unblocks the full_access
+build** (A5's upstream-404 blocker did not reproduce in CI). The first run
+(`40112092143`) failed only on runner-environment coupling; those were fixed in
+`27fd74e`, not by weakening product behaviour. Local re-run at `27fd74e`:
+**1568 passed / 18 skipped / 0 failed** (139 s), ruff check + format clean
+(143 files); the extra test is the local-executor health regression.
+
 **Operational hazard during this batch:** an external host tool
 (`smolcode-checkpoint`) ran `git stash push --include-untracked` and reset the
 worktree mid-execution, wiping ~40 uncommitted files. Everything was recovered
@@ -452,10 +468,17 @@ from the resulting stash and verified; mitigation adopted = commit validated
 increments immediately, keep uncommitted windows short (see
 `docs/reviews/2026-08-26-full-app-review/INCIDENT-2026-08-26-tree-revert.md`).
 
-**Still open after this batch:** live-Docker + provider-key release evidence;
-A3 host-side approval-broker design; `full_access` upstream 404; host-image
-binding-model decision (loopback-only server vs container port publishing,
-ADR 0043); PyPI publish action now that metadata is complete.
+**Still open after this batch:** one live hosted-provider e2e run with audit-chain
+verification (no provider key in this environment); `pytest -m docker` on *this*
+host (Docker daemon down here — the docker-marked suite and the three tier
+builds have now run in CI, see above); A3 host-side approval-broker design
+(still fail-closed and documented); PyPI publish action now that metadata is
+complete.
+
+**Resolved by decision (2026-10-24):** binding model **A — host-run server;
+loopback bind stays the only supported mode** (no `--network host` requirement,
+no opt-in container bind widening). ADR 0043 records the decision; the
+run-book already documents host-run as the default.
 
 ---
 

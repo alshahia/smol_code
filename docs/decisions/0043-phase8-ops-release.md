@@ -62,6 +62,12 @@ loopback *is* the host's. Widening the bind policy would be a security-model
 change and is not part of this phase; the run-book says so instead of shipping a
 container that cannot be reached.
 
+**Owner decision (2026-10-24): option A — host-run only.** The binding-model
+question is settled in favour of running the server on the host: the loopback
+bind policy is not widened, no `--network host` requirement is introduced, and
+there is no opt-in container port publishing. That keeps decision 0010 D1
+intact and avoids mounting the Docker socket into a network-reachable server.
+
 **The run-book's default deployment is the host**: the web server runs on the
 host and only tier sandboxes run in Docker. Mounting `/var/run/docker.sock`
 into the web-server container gives it the same power as host root (any
@@ -275,6 +281,18 @@ after the external auto-checkpoint wipe was recovered (safety commit
   `gosu-checksums.txt` asset does not exist — 404).
 - `scripts/install.ps1` parsed with the PowerShell language parser → 0 parse
   errors.
+- **CI verification (PR #2, run `40112926660`, head `27fd74e`) — all 9 jobs
+  pass**: lint ×2, tests ×2, coverage (80% gate), web
+  (tsc/oxlint/vitest/Playwright), sandbox-contract (shellcheck + iptables
+  contract + firewall e2e on a real daemon), tier-images (**restricted,
+  elevated and full_access all build on a real daemon**), packaging (wheel in a
+  clean venv + deterministic dead-daemon exit 6), audit (advisory) and
+  docs-guard. CI also caught one defect in this ADR's health contract: a
+  *local-executor* app reported `degraded` when the runner's daemon had no
+  smolcode images even though local runs never touch those images. Fixed in
+  `27fd74e`: `status` degrades on image state only when
+  `SMOLCODE_EXECUTOR=docker` (the `images` map is still reported), with a
+  regression test; `docs/operations.md` §8 states the same rule.
 
 The Dockerfile properties in §1/§4/§8 are additionally asserted by
 `test_packaging.py` (digest pin, non-root user, `EXPOSE`, `STOPSIGNAL`,
@@ -283,8 +301,9 @@ data), so a regression fails in CI even where no daemon is available.
 
 Not runnable on this host and therefore **NOT verified**:
 
-- `docker build` of `Dockerfile.host` or any tier image (daemon down) — static
-  review only, plus the tests above.
+- `docker build` of `Dockerfile.host` on this host (daemon down) — the tier
+  images themselves are now built in CI (see the CI bullet above), but no CI job
+  builds the host image, so it stays static-review-only.
 - `make` targets (`make` not installed) and `install.ps1` end-to-end (it would
   create a new venv) — parser check only.
 - A live `/api/health` 503 against a real unreachable daemon: the unit tests

@@ -126,7 +126,11 @@ Phases 7 (web/session robustness, 2–3 d), 8 (ops/release, 2–3 d), 9 (docs, 1
 
 **Phase 6 leftovers:** docker-marked real in-container tool-call test (written now, runs when a daemon is available); host-side approval broker design for A3; `full_access` retry when the upstream repo returns.
 
-**Release evidence still missing (environment-dependent):** `pytest -m docker` + tier-image contract tests on a live daemon; one live hosted-provider e2e run with audit-chain verification; CI green on the pushed branch.
+**Release evidence (updated 2026-10-24):** CI is **green on the PR** — run
+[`40112926660`](https://github.com/alshahia/smol_code/actions/runs/40112926660)
+passes all 9 jobs, including the tier-image builds on a real daemon and the
+sandbox firewall e2e. Still missing: one live hosted-provider e2e with
+audit-chain verification, and `pytest -m docker` on this host (daemon down).
 
 ---
 
@@ -138,10 +142,10 @@ Phases 7 (web/session robustness, 2–3 d), 8 (ops/release, 2–3 d), 9 (docs, 1
 | A2 pnpm-workspace untracked | **resolved** — tracked; fresh-clone `pnpm install --frozen-lockfile` verified from a `git archive` extract | `7ba1705` |
 | A3 approval inert under Docker | open (design) — still fail-closed, documented; host-side broker not built | ADR 0041/0043, Phase 6 leftover |
 | A4 R7 internal network | **resolved** — web boot provisions the bridge, fail-closed | `230e811` |
-| A5 sandbox unverified | **blocked on environment** — daemon down, no provider key; docker-marked e2e test now exists and skips cleanly | `d7fa62d` |
+| A5 sandbox unverified | **partially resolved via CI** — all three tier images build on a real daemon (run `40112926660`), tier/network-posture tests and the firewall e2e pass, so the `full_access` upstream 404 did not reproduce; live hosted-provider e2e still needs a key, and this host's daemon is down | `d7fa62d`, `27fd74e` |
 | A6 documentation drift | **resolved** — current-state docs + docs-guard CI job | `09646cd` |
 | A7 hygiene items | **resolved** — SPA freshness gate, SSE flake root-caused/fixed, packaging metadata, OS-aware Makefile, MIT license + author declared with a shipped LICENSE | `230e811`, `3fc65ba`, `d117b88`, `3c2d4d6` |
-| A8 planned phases | Phases 7–9 **shipped**; release evidence (live daemon + key, CI green) outstanding | this log |
+| A8 planned phases | Phases 7–9 **shipped and CI-verified** (PR #2, all 9 jobs green); only the live provider-key e2e remains | this log |
 
 **Batch validation (2026-10-24, after all commits):** full pytest **1567 passed /
 18 skipped / 0 failed** (195 s; includes the SSE test that was flaky at baseline),
@@ -150,10 +154,24 @@ wheel 153 entries (+ `License-Expression: MIT`, `Author: ahmadmhmdsy` and a
 shipped LICENSE after `3c2d4d6`). Baseline for comparison: 1484 passed /
 17 skipped / 1 flaky.
 
-**Remaining release evidence:** `pytest -m docker` + tier-image contract on a
-live daemon; one live hosted-provider e2e with audit-chain verification; CI green
-on the pushed branch. Note: `ci.yml` triggers only on `push: branches: [main]`
-and `pull_request` (no `workflow_dispatch`), so pushing the feature branch did
-not schedule a run — CI evidence requires opening a PR (or merging to `main`).
-The last runs on `main` (2026-08-27..09-02) all failed, so that workflow also
-needs a fresh green run before release.
+**CI verification (2026-10-24):** PR #2, run
+[`40112926660`](https://github.com/alshahia/smol_code/actions/runs/40112926660)
+(head `27fd74e`) — **all 9 jobs pass**: lint ubuntu/windows, tests
+ubuntu/windows, coverage (80% gate), web (tsc/oxlint/vitest/Playwright),
+sandbox-contract (shellcheck + iptables + firewall e2e on a real daemon),
+tier-images (all three tiers build), packaging (wheel into a clean venv;
+deterministic dead-daemon exit 6), audit (advisory) and docs-guard. The first
+run `40112092143` exposed six CI-only couplings — a local-executor app reporting
+`degraded` health on runners whose daemon had no smolcode images, a SPA-warning
+test that assumed `web/dist` exists, container gate tests running without the
+tier image, a packaging job asserting "no daemon" on a runner that has one,
+and (Windows) one test that failed only on that runner and passed on the
+re-run. All were fixed in `27fd74e`; the product's security posture was not
+weakened.
+
+**Remaining release evidence:** one live hosted-provider e2e with audit-chain
+verification (no provider key here) and `pytest -m docker` on this host (local
+daemon down; CI covers the tier builds and firewall e2e). Note: `ci.yml`
+triggers only on `push: branches: [main]` and `pull_request` (no
+`workflow_dispatch`), so CI evidence requires the PR — which now exists and is
+green.
