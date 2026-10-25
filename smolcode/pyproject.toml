@@ -72,7 +72,7 @@ web = [
     # under FastAPI 0.137+. Pin to <0.137 (last known-good release).
     # Decision 0026 reproduced this on 0.137.0 / 0.138.0 / 0.139.x and
     # verified 0.115.x / 0.116.x / 0.136.x register routes correctly.
-    "fastapi>=0.115,<0.137",
+    "fastapi>=0.115,<0.160",
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.9",
 ]
