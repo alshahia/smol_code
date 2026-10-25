@@ -210,7 +210,7 @@ Borders do the structural work. A change is enclosed by a 1px hairline with a 2p
 - **Focus:** 2px ultramarine outline with 2px offset. Never remove it.
 
 ### Chips and Tags
-- **Style:** tier tags and file counts use 6px radius, 22px height, mono 11–12px, a hairline border and paper ground. Status is carried by a 6px dot plus a word, never by fill alone.
+- **Style:** tier tags and file counts use 6px radius, 22px height, mono 12px, a hairline border and paper ground. Status is carried by a 6px dot plus a word, never by fill alone.
 - **State:** selected tier is marked by a radio and an ultramarine-wash row, not by a solid blue fill.
 
 ### Inputs and Fields
