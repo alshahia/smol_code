@@ -62,6 +62,13 @@ describe('installKeyboardRouter', () => {
     cleanup()
   })
 
+  it('dispatches help on ? without a modifier', () => {
+    const cleanup = installKeyboardRouter(handlers)
+    fireKey('?', { shift: true })
+    expect(handlers.help).toHaveBeenCalledTimes(1)
+    cleanup()
+  })
+
   it('does NOT dispatch when Cmd is not pressed', () => {
     const cleanup = installKeyboardRouter(handlers)
     fireKey('Enter')

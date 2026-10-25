@@ -37,8 +37,14 @@ export function installKeyboardRouter(handlers: ShortcutHandlers): () => void {
   function onKey(e: KeyboardEvent): void {
     const mac = isMac()
     const meta = mac ? e.metaKey : e.ctrlKey
-    if (!meta) return
     const editable = isEditableTarget(e.target)
+    // Help is the one unmodified shortcut: `?` is what every console teaches.
+    if (!meta && !editable && e.key === '?') {
+      handlers.help()
+      e.preventDefault()
+      return
+    }
+    if (!meta) return
     if (e.key === 'Enter' && !e.shiftKey) {
       // Cmd+Enter / Ctrl+Enter from anywhere submits.
       handlers.submit()

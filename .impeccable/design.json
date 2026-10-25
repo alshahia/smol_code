@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T11:55:00Z",
+  "title": "Design System: smolcode",
+  "extensions": {
+    "colorMeta": {
+      "ultramarine": {
+        "role": "primary",
+        "displayName": "Ultramarine Action",
+        "canonical": "#2d4bcc",
+        "tonalRamp": [
+          "#0f1c5e",
+          "#16277e",
+          "#1f35a5",
+          "#2d4bcc",
+          "#4f69db",
+          "#7a8fe6",
+          "#aab7f1",
+          "#d9e0fa"
+        ]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Deep Ink Rail",
+        "canonical": "#0f1719",
+        "tonalRamp": [
+          "#05090a",
+          "#0f1719",
+          "#182426",
+          "#253537",
+          "#3a4d4e",
+          "#5a6c6b",
+          "#8b9995",
+          "#c4cdc8"
+        ]
+      },
+      "vellum-ground": {
+        "role": "neutral",
+        "displayName": "Vellum Ground",
+        "canonical": "#e8eae2",
+        "tonalRamp": [
+          "#2b302c",
+          "#454c45",
+          "#626a61",
+          "#848c82",
+          "#a8b0a5",
+          "#c5ccbf",
+          "#dde2d6",
+          "#f3f5ec"
+        ]
+      },
+      "amber-ink": {
+        "role": "secondary",
+        "displayName": "Revision Amber Ink",
+        "canonical": "#a75f0b",
+        "tonalRamp": [
+          "#3a2105",
+          "#5c3306",
+          "#7a4408",
+          "#a75f0b",
+          "#d99a2a",
+          "#e7b85f",
+          "#f0d59b",
+          "#f8ecd5"
+        ]
+      },
+      "refusal-red": {
+        "role": "tertiary",
+        "displayName": "Refusal Red",
+        "canonical": "#a93831",
+        "tonalRamp": [
+          "#3b1210",
+          "#5b1c18",
+          "#7d2721",
+          "#a93831",
+          "#c65a52",
+          "#d98a83",
+          "#ecc0bc",
+          "#f7e4e1"
+        ]
+      },
+      "verified-green": {
+        "role": "tertiary",
+        "displayName": "Verified Green",
+        "canonical": "#23674d",
+        "tonalRamp": [
+          "#0c241a",
+          "#123a29",
+          "#1a4f39",
+          "#23674d",
+          "#34856a",
+          "#5fa98e",
+          "#99cbb8",
+          "#d7eade"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#171c19",
+        "tonalRamp": [
+          "#0a0d0b",
+          "#171c19",
+          "#2c342f",
+          "#454f48",
+          "#626e66",
+          "#89938c",
+          "#b8beb7",
+          "#e2e5df"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#59645c",
+        "tonalRamp": [
+          "#1f2420",
+          "#303732",
+          "#464e48",
+          "#59645c",
+          "#707c73",
+          "#8c978e",
+          "#b3bbb4",
+          "#dfe3dd"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "objective": {
+        "displayName": "Objective",
+        "purpose": "The run task statement; Source Serif 4."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Sheet titles and the held-change heading."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Brand and compact section titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "UI copy and explanations."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Metadata, tabs, chips, timestamps; Courier Prime."
+      },
+      "evidence": {
+        "displayName": "Evidence",
+        "purpose": "Trace details, console frames, diffs, hashes."
+      }
+    },
+    "shadows": [
+      {
+        "name": "paper-card",
+        "value": "0 1px 2px rgba(15,23,25,.05), 0 7px 18px rgba(15,23,25,.06)",
+        "purpose": "Quiet lift for flat paper cards."
+      },
+      {
+        "name": "sheet",
+        "value": "0 18px 50px rgba(8,13,13,.26)",
+        "purpose": "Side sheets and drawers floating over the stage."
+      },
+      {
+        "name": "launch",
+        "value": "0 -12px 42px rgba(8,13,13,.24)",
+        "purpose": "The launch sheet rising from the composer."
+      }
+    ],
+    "motion": [
+      {
+        "name": "fast",
+        "value": "120ms ease",
+        "purpose": "Colour and border state changes."
+      },
+      {
+        "name": "standard",
+        "value": "160ms ease",
+        "purpose": "Small opacity and transform transitions."
+      },
+      {
+        "name": "reduced",
+        "value": "0ms",
+        "purpose": "Everything under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tight",
+        "value": "1120px"
+      },
+      {
+        "name": "rail-collapse",
+        "value": "900px"
+      },
+      {
+        "name": "phone",
+        "value": "560px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one decisive action: Run or Approve.",
+      "html": "<button class=\"ds-btn ds-btn-primary\" type=\"button\">Run</button>",
+      "css": ".ds-btn { height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border-radius: 5px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }\n.ds-btn-primary { background: #2d4bcc; color: #f7f7f1; border: 1px solid #2d4bcc; }\n.ds-btn-primary:hover { background: #213ba8; border-color: #213ba8; }\n.ds-btn-primary:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-btn-deny { background: #f4f4ee; color: #a93831; border: 1px solid #c9b5ae; }\n.ds-btn-deny:hover { background: #fff; border-color: #a93831; }\n.ds-btn-deny:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }"
+    },
+    {
+      "name": "Deny Action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Refuses a held change; quiet, never competing with Approve.",
+      "html": "<button class=\"ds-btn ds-btn-deny\" type=\"button\">Deny</button>",
+      "css": ".ds-btn { height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border-radius: 5px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }\n.ds-btn-primary { background: #2d4bcc; color: #f7f7f1; border: 1px solid #2d4bcc; }\n.ds-btn-primary:hover { background: #213ba8; border-color: #213ba8; }\n.ds-btn-primary:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-btn-deny { background: #f4f4ee; color: #a93831; border: 1px solid #c9b5ae; }\n.ds-btn-deny:hover { background: #fff; border-color: #a93831; }\n.ds-btn-deny:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "description": "Task entry at the foot of the stage, on the deep-ink edge.",
+      "html": "<div class=\"ds-composer\"><input class=\"ds-composer-input\" placeholder=\"Describe the task, or @a file\" aria-label=\"Task\" /><button class=\"ds-btn ds-btn-primary\" type=\"button\">Run</button></div>",
+      "css": ".ds-btn { height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border-radius: 5px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }\n.ds-btn-primary { background: #2d4bcc; color: #f7f7f1; border: 1px solid #2d4bcc; }\n.ds-btn-primary:hover { background: #213ba8; border-color: #213ba8; }\n.ds-btn-primary:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-btn-deny { background: #f4f4ee; color: #a93831; border: 1px solid #c9b5ae; }\n.ds-btn-deny:hover { background: #fff; border-color: #a93831; }\n.ds-btn-deny:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-composer { display: flex; align-items: flex-end; gap: 12px; padding: 10px 16px; background: #0f1719; border-top: 1px solid #2b3733; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; }\n.ds-composer-input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid #2b3733; border-radius: 4px; background: #11191b; color: #f7f7f1; font: 13px/1.4 Archivo, ui-sans-serif, system-ui, sans-serif; }\n.ds-composer-input::placeholder { color: #87958c; }\n.ds-composer-input:focus-visible { outline: 2px solid #d99a2a; outline-offset: 1px; border-color: #6b5a37; }\n.ds-composer .ds-btn-primary { height: 44px; padding: 0 16px; }"
+    },
+    {
+      "name": "Tier Option",
+      "kind": "custom",
+      "description": "A blast-radius choice, not a badge; selected row uses the ultramarine wash.",
+      "html": "<button class=\"ds-tier is-on\" type=\"button\"><span class=\"ds-tier-radio\" aria-hidden=\"true\"></span><span><span class=\"ds-tier-name\">restricted</span><span class=\"ds-tier-desc\">Workspace only. The safe default. 24 steps - 900s - none network.</span></span><span class=\"ds-tier-flag\">default</span></button>",
+      "css": ".ds-tier { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 9px; align-items: start; width: 100%; padding: 9px 11px; border: 1px solid #c9cec4; border-radius: 4px; background: #f4f4ee; color: #171c19; text-align: left; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; cursor: pointer; }\n.ds-tier + .ds-tier { margin-top: 6px; }\n.ds-tier.is-on { border-color: #2d4bcc; background: #dfe5ff; }\n.ds-tier:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-tier-radio { width: 13px; height: 13px; margin-top: 2px; border: 1px solid #59645c; border-radius: 50%; background: transparent; }\n.ds-tier.is-on .ds-tier-radio { border: 4px solid #2d4bcc; background: #f4f4ee; }\n.ds-tier-name { display: block; font-size: 13px; font-weight: 600; line-height: 1.3; }\n.ds-tier-desc { display: block; margin-top: 2px; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 11px; line-height: 1.45; color: #59645c; }\n.ds-tier-flag { font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 10px; color: #59645c; }"
+    },
+    {
+      "name": "Gate Dock",
+      "kind": "custom",
+      "description": "The inline release gate: one diff, one decision, one audit entry.",
+      "html": "<section class=\"ds-gate\"><span class=\"ds-gate-mark\" aria-hidden=\"true\">!</span><div><div class=\"ds-gate-title\">Change held for release</div><div class=\"ds-gate-file\">src/billing/webhook.py - +2 -0</div></div><div class=\"ds-gate-actions\"><button class=\"ds-btn ds-btn-primary\" type=\"button\">Approve</button><button class=\"ds-btn ds-btn-deny\" type=\"button\">Deny</button><button class=\"ds-btn\" type=\"button\">No more prompts this run</button></div></section>",
+      "css": ".ds-btn { height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border-radius: 5px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }\n.ds-btn-primary { background: #2d4bcc; color: #f7f7f1; border: 1px solid #2d4bcc; }\n.ds-btn-primary:hover { background: #213ba8; border-color: #213ba8; }\n.ds-btn-primary:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-btn-deny { background: #f4f4ee; color: #a93831; border: 1px solid #c9b5ae; }\n.ds-btn-deny:hover { background: #fff; border-color: #a93831; }\n.ds-btn-deny:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-gate { position: relative; display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 11px 14px; background: #f2e7d1; border: 1px solid #d8bc83; border-top: 2px solid #d99a2a; border-radius: 4px; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; color: #171c19; }\n.ds-gate-mark { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #d8bc83; border-radius: 4px; background: #f4f4ee; color: #7a4408; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 14px; }\n.ds-gate-title { font-size: 13px; font-weight: 600; }\n.ds-gate-file { margin-top: 2px; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 11px; color: #59645c; }\n.ds-gate-actions { display: flex; align-items: center; gap: 6px; }\n.ds-gate-actions .ds-btn { height: 29px; }"
+    },
+    {
+      "name": "Run Spine Row",
+      "kind": "custom",
+      "description": "One evidence line in the continuous run trace.",
+      "html": "<ol class=\"ds-spine\"><li class=\"ds-spine-row is-current\"><span class=\"ds-spine-time\">04:40:06</span><span class=\"ds-spine-node\" aria-hidden=\"true\"><i></i></span><div class=\"ds-spine-body\"><div class=\"ds-spine-label\">plan Approach</div><div class=\"ds-spine-text\">Read the webhook handler and its tests. Verify the signature before any state change.</div></div></li></ol>",
+      "css": ".ds-spine { list-style: none; margin: 0; padding: 0; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; color: #171c19; }\n.ds-spine-row { display: grid; grid-template-columns: 63px 24px minmax(0,1fr); position: relative; }\n.ds-spine-time { padding: 15px 12px 0 0; text-align: right; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 12px; color: #59645c; }\n.ds-spine-node { position: relative; display: flex; justify-content: center; padding-top: 17px; }\n.ds-spine-node::before { content: \"\"; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #9ea79d; transform: translateX(-.5px); }\n.ds-spine-node i { position: relative; z-index: 1; width: 9px; height: 9px; border: 1px solid #59645c; border-radius: 50%; background: #e8eae2; }\n.ds-spine-row.is-current .ds-spine-node i { border-color: #7a4408; background: #d99a2a; box-shadow: 0 0 0 3px #f2e7d1; }\n.ds-spine-body { padding: 13px 0 15px; border-bottom: 1px solid #c9cec4; }\n.ds-spine-label { font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 11px; color: #59645c; }\n.ds-spine-text { margin-top: 3px; font-size: 13px; line-height: 1.5; }"
+    },
+    {
+      "name": "Paper Card",
+      "kind": "card",
+      "description": "A flat evidence container on the vellum stage.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-title\">A change is held for release.</div><div class=\"ds-card-meta\">src/billing/webhook.py - patch_file - +2 -0</div></article>",
+      "css": ".ds-card { padding: 12px 13px; border: 1px solid #c9cec4; border-radius: 4px; background: #f4f4ee; color: #171c19; font-family: Archivo, ui-sans-serif, system-ui, sans-serif; }\n.ds-card-title { font-family: \"Source Serif 4\", Georgia, serif; font-size: 19px; font-weight: 600; line-height: 1.2; letter-spacing: -0.015em; }\n.ds-card-meta { margin-top: 5px; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 11px; color: #59645c; }"
+    },
+    {
+      "name": "Run Rail Chip",
+      "kind": "nav",
+      "description": "A run selected from the left rail; the active chip uses the ultramarine edge.",
+      "html": "<button class=\"ds-runchip is-active\" type=\"button\" aria-label=\"Open run run_7f3a\">7f3a<span class=\"ds-dot\" aria-hidden=\"true\"></span></button>",
+      "css": ".ds-runchip { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #34423e; border-radius: 4px; background: #131f20; color: #d7ded7; font-family: \"Courier Prime\", ui-monospace, monospace; font-size: 11px; cursor: pointer; }\n.ds-runchip:hover { border-color: #5a6c65; background: #172526; }\n.ds-runchip:focus-visible { outline: 2px solid #2d4bcc; outline-offset: 2px; }\n.ds-runchip.is-active { border-color: #f4f4ee; box-shadow: inset 3px 0 0 #2d4bcc; }\n.ds-dot { position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: #d99a2a; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Revision Desk",
+    "overview": "smolcode is a desk for proofing agent work, not a dashboard for watching agents. A run arrives as a manuscript: an objective set in serif, evidence set in monospace, and a continuous spine running down the margin from start, through actions and diffs, to the moment a human signs a release. The change is held on the desk until that signature. The audit chain is the margin record that survives the session.\n\nThe world is built from two materials. Deep ink is the rail, topbar and composer — the desk edge, where work is selected and started. Vellum is the stage — one run at a time, full-bleed, with generous air around the objective. The interface must feel like a working document that happens to be software, never like a terminal emulator, a control panel, or a metrics grid.\n\nEvery screen earns its place by helping a person decide. There is no table home, no permanent three-pane console, no right-hand inspector that stays open for context. Runs, changes, console, files, audit, sessions and usage arrive as deliberate sheets over the stage. The empty stage is a real state: a blank sheet with a single invitation, not an empty dashboard.",
+    "keyCharacteristics": [
+      "One run is the unit of work; the stage shows one run at a time.",
+      "A continuous run spine connects trace rows, time notches, the gate cut and the audit chain.",
+      "The approval gate is inline at the foot of the stage, not a modal interruption.",
+      "Three type registers: serif for human theses, sans for controls, mono for evidence.",
+      "A deep-ink rail and composer keep instrument controls at the edge of the paper.",
+      "Restraint is structural, not decorative: no gradients, glass, grain, emoji or costume."
+    ],
+    "rules": [
+      {
+        "name": "The Signature Line Rule",
+        "body": "Ultramarine marks what a person can do or has selected. It is never used for decoration, status or a section label. If a blue element cannot be clicked or is not selected, it is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Held Change Rule",
+        "body": "Amber means a decision is outstanding, red means it was refused or stopped, green means it was verified. These three colours never trade roles, and green never appears before a decision is recorded.",
+        "section": "colors"
+      },
+      {
+        "name": "The Paper Is the Stage Rule",
+        "body": "The dark rail is an instrument edge, not a content background. Never place a second dashboard or document surface inside the rail.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Voices Rule",
+        "body": "Serif is for what the human decided or asked; sans is for what the interface offers; mono is for what the machine recorded. Never set a code path, timestamp or diff in serif, and never set a paragraph in mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Depth System Rule",
+        "body": "A surface either sits flat on its tonal ground or floats as a sheet with Shadow 2. Do not invent intermediate elevations, coloured glows or outlines that pretend to be depth.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep one run on the stage and make the empty stage a deliberate blank sheet.",
+      "Do keep the approval gate inline, visible, and bound to one diff and one run.",
+      "Do use ultramarine only for actions and selection, amber only for held/live, red only for refusal/error, green only for verified outcomes.",
+      "Do set objectives in Source Serif 4 and evidence in Courier Prime; keep every UI label at 12px or larger.",
+      "Do keep the composer at the bottom and reachable at every breakpoint, with a 44px minimum touch target for icon controls.",
+      "Do respect prefers-reduced-motion: transitions are short opacity/colour changes, never staged movement.",
+      "Do keep the product truth visible: tier, provider, model, loopback host, and audit chain are readable without opening a settings maze."
+    ],
+    "donts": [
+      "Don't build a dashboard home, a permanent three-pane layout, or a right-hand inspector that never closes.",
+      "Don't dress the app as a terminal: no scanlines, blinking cursors as decoration, ASCII ornaments, or all-mono body copy.",
+      "Don't use gradient text, glass panels, decorative grain, hard offset shadows, emoji icons, or invented glyphs.",
+      "Don't use a coloured left border thicker than 1px as a status device; use a dot, a word, or a wash.",
+      "Don't show design-direction names, seed metadata or internal vocabulary in the product UI.",
+      "Don't allow a sheet to leave the composer visually live while the sheet is modal; the scrim covers the whole viewport.",
+      "Don't trade WCAG AA contrast, keyboard reachability or reduced-motion support for atmosphere."
+    ]
+  }
+}

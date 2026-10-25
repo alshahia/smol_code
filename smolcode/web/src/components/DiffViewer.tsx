@@ -158,7 +158,7 @@ export function DiffViewer({ before, after, rawDiff, hunks, stats, editable, onE
           aria-label="Edit proposed file content"
         />
       ) : (
-        <pre className="diff-body" role="region" aria-label="Diff content">
+        <pre className="diff-body" role="region" aria-label="Diff content" tabIndex={0}>
           {viewLines.map((ln, i) => (
             <div key={i} className={`diff-line diff-${ln.tag === ' ' ? 'ctx' : ln.tag === '-' ? 'del' : 'add'}`}>
               <span className="diff-gutter">{ln.oldLine ?? ''}</span>

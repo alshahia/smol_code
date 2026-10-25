@@ -104,7 +104,7 @@ export function RunComposer({
         </label>
       ) : null}
       <div className="run-composer-row">
-        <button className="btn btn-primary" onClick={handle} disabled={submitting}>
+        <button type="button" className="btn btn-primary" data-run-submit onClick={handle} disabled={submitting}>
           {submitting ? 'Starting...' : 'Run'}
         </button>
         <span className="small muted via-hint">{viaHint}</span>

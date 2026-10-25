@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './workbench.css'
 import App from './App.tsx'
 
 // v1.9.x (FE-9): mount @axe-core/react in dev only so the developer

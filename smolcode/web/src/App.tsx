@@ -1,255 +1,166 @@
-// Main App: 3-pane layout (M9 + M11).
-// Header: brand + tier badge + tier switcher + provider selector + api-key panel + workspace
-// Left pane (Plan): RunComposer + upload zone + uploads + allowlist + run history
-// Center pane (Stream): live event stream for the active run + stop button
-// Right pane (Inspector): active run summary + tier policy cards
+// smolcode Workbench: a run-first shell.
 //
-// v1.9.x (decision 0025 FE-5/6/7/8/9 + PW-4):
-//   - Mounts the Phase-3 keyboard router (lib/keyboard.ts) on mount.
-//   - Renders <Dashboard> as a modal overlay triggered by a header
-//     button (FE-1 + FE-8).
-//   - Tracks auto-approve-active flag client-side (Set<runId>) and
-//     renders <AutoApproveBanner> when active for the current run
-//     (FE-6 / B10).
-//   - Renders <RunActions> (Retry / Re-run / Export) in the stream
-//     header when the active run is terminal (FE-7 / B4 + B5 + B7).
-//   - Forwards onAutoApproveToggle to <ApprovalModal> so the modal can
-//     report auto-approve flips to the parent.
+// The run is the unit of work. A 72px rail holds every run; the stage
+// belongs to one run at a time; the composer stays docked so the next task
+// is always one keystroke away. Everything that used to be a permanent
+// pane (runs, queue, sessions, audit, context, usage) opens as a deliberate
+// sheet or drawer, leaving the trace the room it needs.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { TierBadge } from './components/TierBadge'
-import { TierSwitcher } from './components/TierSwitcher'
-import { UploadDropZone } from './components/UploadDropZone'
-import { UploadList } from './components/UploadList'
-import { AllowlistSimulator } from './components/AllowlistSimulator'
-import { EventStream } from './components/EventStream'
-import { ApprovalModal, type PendingApproval } from './components/ApprovalModal'
-import { StopButton } from './components/StopButton'
+import { Icon, IconSprite } from './components/workbench/Icon'
+import type { PendingApproval } from './components/ApprovalModal'
+import { Sheet } from './components/workbench/Sheet'
+import { TraceView } from './components/workbench/TraceView'
+import { ChangesView } from './components/workbench/ChangesView'
+import { ConsoleView } from './components/workbench/ConsoleView'
+import { FilesView } from './components/workbench/FilesView'
+import { ApprovalGate } from './components/workbench/ApprovalGate'
+import { RunsPanel } from './components/workbench/RunsPanel'
+import { ContextPanel } from './components/workbench/ContextPanel'
+import { CommandPalette, type PaletteAction } from './components/workbench/CommandPalette'
 import { RunComposer } from './components/RunComposer'
-import { RunHistory } from './components/RunHistory'
-import { Inspector } from './components/Inspector'
-import { ProviderSelector } from './components/ProviderSelector'
-import { ApiKeyPanel } from './components/ApiKeyPanel'
-import { SessionsPane } from './components/SessionsPane'
-import { ProjectSwitcher } from './components/ProjectSwitcher'
+import { FileMentionInput } from './components/FileMentionInput'
+import { StopButton } from './components/StopButton'
+import { PauseButton } from './components/PauseButton'
+import { RunActions } from './components/RunActions'
+import { AutoApproveBanner } from './components/AutoApproveBanner'
 import { QueuePane } from './components/QueuePane'
-import { FilePreview } from './components/FilePreview'
-// v1.9.x: new components
+import { SessionsPane } from './components/SessionsPane'
+import { AuditPanel } from './components/AuditPanel'
 import { Dashboard } from './components/Dashboard'
 import { UsageLimitsPanel } from './components/UsageLimitsPanel'
-import { AutoApproveBanner } from './components/AutoApproveBanner'
-import { RunActions } from './components/RunActions'
+import { FilePreview } from './components/FilePreview'
 import { installKeyboardRouter } from './lib/keyboard'
-import { useMediaQuery } from './lib/useMediaQuery'
 import { loadLast, saveLast } from './lib/lastSelection'
+import { useRunStream } from './hooks/useRunStream'
 import {
   getConfig,
-  listProjects,
   listProviders,
-  listUploads,
   listRuns,
+  listUploads,
   postApproval,
   postAutoApprove,
   postOpenPath,
   postStop,
+  startRun,
   type ConfigResponse,
-  type ProjectInfo,
   type ProviderInfo,
   type UploadMetadata,
   type RunSummary,
 } from './api'
 import { getKey } from './lib/keysStore'
 
+type ViewName = 'trace' | 'changes' | 'console' | 'files'
+type SheetName = 'runs' | 'launch' | 'queue' | 'sessions' | 'audit' | 'context' | 'usage' | 'help'
+
+const TERMINAL = new Set(['done', 'error', 'stopped'])
+// Mac gets the glyph it knows; everything else gets Ctrl. This is used only
+// for visible key hints, never for dispatch (the router decides that).
+const MOD =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+    ? '⌘'
+    : 'Ctrl'
+
 function App() {
   const [config, setConfig] = useState<ConfigResponse | null>(null)
   const [uploads, setUploads] = useState<UploadMetadata[]>([])
   const [tier, setTier] = useState<string>('restricted')
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
-  // Decision 0033: ref mirror of activeRunId so the global keyboard
-  // router (installed once, never re-installed) reads the live value at
-  // fire-time. Closes a webkit-only race where Ctrl+. fired in the
-  // window between setActiveRunId and the next useEffect commit.
   const activeRunIdRef = useRef<string | null>(null)
   useEffect(() => {
     activeRunIdRef.current = activeRunId
   }, [activeRunId])
+
   const [activeRun, setActiveRun] = useState<RunSummary | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [pending, setPending] = useState<PendingApproval | null>(null)
-  // Phase 5 (ADR 0040 §2): ONE error state served four different
-  // failures, and any of them replaced the entire application with
-  // "Cannot reach the smolcode web server". A failed thumbnail fetch told
-  // the user the server was down.
-  //
-  //   fatalError    -- set ONLY when getConfig() fails. The app cannot
-  //                    render without a config, so this is the only
-  //                    full-screen case.
-  //   transientError -- every other background failure (uploads, the
-  //                    provider list, open-path, post-approval). Shown as
-  //                    a dismissible inline banner with a Retry button;
-  //                    the app stays mounted underneath.
-  //
-  // There is deliberately no `setError` alias. Aliasing a setState
-  // function made react-hooks/exhaustive-deps demand it as an effect
-  // dependency, which it cannot know is stable. Every former caller now
-  // says setTransientError explicitly, which is also clearer at the call
-  // site about which channel a failure lands in.
+  const [lastDiff, setLastDiff] = useState<PendingApproval | null>(null)
+  const [editedAfter, setEditedAfter] = useState<string | null>(null)
+
   const [fatalError, setFatalError] = useState<string | null>(null)
   const [transientError, setTransientError] = useState<string | null>(null)
-  // Phase 0 (decision 0025, B11): bumped on every diff.proposed /
-  // diff.resolved event so the Inspector's WorkspaceTree refreshes
-  // immediately instead of waiting for its 10s poll.
   const [treeRefreshTrigger, setTreeRefreshTrigger] = useState<number>(0)
 
-  // M11: provider + model + key state, hoisted to App so RunComposer can read them.
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>('')
   const [storedKeyValue, setStoredKeyValue] = useState<string | null>(null)
 
-  // M12.5 (mobile): inspector pane visibility toggle.
-  const [inspectorOpen, setInspectorOpen] = useState<boolean>(() => {
-    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-      return false
-    }
-    try {
-      return window.localStorage.getItem('smolcode.inspectorOpen.v1') === 'true'
-    } catch {
-      return false
-    }
-  })
-
-  // Phase 1 (decision 0025 §6.3): active project + chat session.
   const [activeProject, setActiveProjectRaw] = useState<string | null>(() => {
-    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-      return null
-    }
+    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return null
     try {
       return window.localStorage.getItem('smolcode.activeProject.v1') || null
     } catch {
       return null
     }
   })
-  // Phase 2 (decision 0025 §6.4): the path of the file currently shown
-  // in the <FilePreview> pane.
-  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null)
-  // Phase 2: bump to force the QueuePane to re-fetch after a new run
-  // starts.
-  const [queueRefreshTrigger, setQueueRefreshTrigger] = useState<number>(0)
-  const setActiveProject = (p: string | null) => {
-    setActiveProjectRaw(p)
+  const setActiveProject = (next: string | null) => {
+    setActiveProjectRaw(next)
     if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
       try {
-        if (p) window.localStorage.setItem('smolcode.activeProject.v1', p)
+        if (next) window.localStorage.setItem('smolcode.activeProject.v1', next)
         else window.localStorage.removeItem('smolcode.activeProject.v1')
       } catch {
         // ignore
       }
     }
   }
+
+  const [filePreviewPath, setFilePreviewPath] = useState<string | null>(null)
+  const [queueRefreshTrigger, setQueueRefreshTrigger] = useState<number>(0)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [projectRefreshTrigger, setProjectRefreshTrigger] = useState<number>(0)
-  // Phase 3 F3 (decision 0036): cached project list so the Inspector
-  // can render the "files landed outside the project root" notice
-  // without re-fetching on every render. Refreshed alongside the
-  // project switcher so create / rename events invalidate it.
-  const [projects, setProjects] = useState<ProjectInfo[]>([])
-  // Fetch inline rather than via a refreshProjects useCallback: calling a
-  // useCallback from a fetch effect routes setState through a function the
-  // set-state-in-effect rule cannot see past. Inlining also adds the
-  // cancellation guard this effect was missing.
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const r = await listProjects()
-        if (!cancelled) setProjects(r.projects || [])
-      } catch {
-        // best-effort: a stale list is harmless
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [projectRefreshTrigger])
+  const [autoApproveRunIds, setAutoApproveRunIds] = useState<Set<string>>(() => new Set<string>())
 
-  // v1.9.x (FE-8): Dashboard overlay open/close.
-  const [dashboardOpen, setDashboardOpen] = useState<boolean>(false)
-  // v1.9.x (FE-6 / B10): track which run has auto-approve active
-  // client-side so the AutoApproveBanner can show. We use a Set keyed
-  // by runId so a rerun/retry on the same id resets cleanly when
-  // activeRunId changes.
-  const [autoApproveRunIds, setAutoApproveRunIds] = useState<Set<string>>(
-    () => new Set<string>(),
-  )
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
-      return
-    }
-    try {
-      window.localStorage.setItem('smolcode.inspectorOpen.v1', inspectorOpen ? 'true' : 'false')
-    } catch {
-      // ignore quota / sandbox errors
-    }
-  }, [inspectorOpen])
-
-  const isMobile = useMediaQuery('(max-width: 900px)')
+  const [view, setView] = useState<ViewName>('trace')
+  const [sheet, setSheet] = useState<SheetName | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [dockTask, setDockTask] = useState('')
+  const [dockAnchor, setDockAnchor] = useState(false)
+  const [dockError, setDockError] = useState<string | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   const refreshUploads = useCallback(async () => {
     try {
-      const r = await listUploads(activeProject)
-      setUploads(r.uploads)
-      // Phase 5 (ADR 0040 §2): a success clears the channel it could
-      // have set. The old shared error state was never cleared on
-      // success, so one transient blip left the app permanently broken
-      // until a reload.
+      const result = await listUploads(activeProject)
+      setUploads(result.uploads)
       setTransientError(null)
-    } catch (e) {
-      setTransientError((e as Error).message)
+    } catch (error) {
+      setTransientError((error as Error).message)
     }
   }, [activeProject])
 
   const refreshRuns = useCallback(async () => {
     try {
-      const r = await listRuns()
-      setRuns(r.runs)
-      const active = r.runs.find((x) => x.id === activeRunId) ?? null
-      setActiveRun(active)
+      const result = await listRuns()
+      setRuns(result.runs)
+      setActiveRun(result.runs.find((run) => run.id === activeRunId) ?? null)
     } catch {
-      /* ignore transient */
+      // background poll: the stream owns the visible failure
     }
   }, [activeRunId])
 
-  // Phase 5 (ADR 0040 §1): this effect is the BOOT sequence and must
-  // run exactly once. It used to depend on refreshRuns, which closes over
-  // activeRunId -- so every run selection re-ran getConfig() and
-  // re-applied c.provider / c.model, silently resetting the user's
-  // composer selection to the server default. A ref guard is used rather
-  // than useState because the flag must not itself trigger a render.
   const bootstrappedRef = useRef(false)
   useEffect(() => {
     if (bootstrappedRef.current) return
     bootstrappedRef.current = true
     void (async () => {
       try {
-        const c = await getConfig()
-        setConfig(c)
+        const nextConfig = await getConfig()
+        setConfig(nextConfig)
         const last = loadLast()
-        const restoredProvider = c.provider
+        const restoredProvider = nextConfig.provider
         const restoredModel =
-          last && last.providerId === c.provider && last.model.length > 0
+          last && last.providerId === nextConfig.provider && last.model.length > 0
             ? last.model
-            : c.model
+            : nextConfig.model
         setSelectedProviderId(restoredProvider)
         setSelectedModel(restoredModel)
         await refreshUploads()
         await refreshRuns()
-      } catch (e) {
-        // Only getConfig() failing is fatal. refreshUploads/refreshRuns
-        // route their own errors to the transient banner, so reaching
-        // here means the app has no config and cannot render.
-        setFatalError((e as Error).message)
+      } catch (error) {
+        setFatalError((error as Error).message)
       }
     })()
   }, [refreshUploads, refreshRuns])
@@ -258,25 +169,20 @@ function App() {
     let cancelled = false
     void (async () => {
       try {
-        const r = await listProviders()
+        const result = await listProviders()
         if (cancelled) return
-        setProviders(r.providers)
-        setTransientError(null)
+        setProviders(result.providers)
         const last = loadLast()
         if (last && last.providerId.length > 0) {
-          const info = r.providers.find((p) => p.id === last.providerId)
+          const info = result.providers.find((provider) => provider.id === last.providerId)
           if (info) {
-            const m =
-              last.model.length > 0 ? last.model : info.default_model
             setSelectedProviderId(info.id)
-            setSelectedModel(m)
+            setSelectedModel(last.model.length > 0 ? last.model : info.default_model)
           }
         }
-      } catch (e) {
-        if (!cancelled) {
-          setProviders([])
-        }
-        setTransientError((e as Error).message)
+      } catch (error) {
+        if (!cancelled) setProviders([])
+        setTransientError((error as Error).message)
       }
     })()
     return () => {
@@ -284,106 +190,50 @@ function App() {
     }
   }, [])
 
-  // Re-read the stored key from localStorage when the selected provider
-  // changes, during render rather than in an effect. The effect form ran
-  // after the paint that still showed the previous provider's key, so a
-  // key could briefly render against the wrong provider. L355 writes the
-  // value directly, and that write is deliberately preserved: it is a
-  // real state update, not a re-derivation.
   const [lastKeyProviderId, setLastKeyProviderId] = useState(selectedProviderId)
   if (selectedProviderId !== lastKeyProviderId) {
     setLastKeyProviderId(selectedProviderId)
     setStoredKeyValue(selectedProviderId ? getKey(selectedProviderId) : null)
   }
 
-  // Phase 5 (ADR 0040): selecting a run from history changed activeRunId,
-  // which changes refreshRuns' identity, but nothing actually CALLED it.
-  // The run detail behind the Inspector therefore stayed null until the
-  // next 5s poll tick -- up to five seconds of an empty Inspector after
-  // every click. The fetch is inlined rather than routed through the
-  // refreshRuns callback for the same reason as the projects fetch above,
-  // and so the run detail is resolved once per selection, immediately.
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const r = await listRuns()
+        const result = await listRuns()
         if (cancelled) return
-        setRuns(r.runs)
-        const active = r.runs.find((x) => x.id === activeRunId) ?? null
-        setActiveRun(active)
+        setRuns(result.runs)
+        setActiveRun(result.runs.find((run) => run.id === activeRunId) ?? null)
       } catch {
-        /* ignore transient */
+        // poll owns retry
       }
     })()
     return () => {
       cancelled = true
     }
-    // refreshRuns is deliberately not in the deps: its identity changes
-    // exactly when activeRunId does, which is the point of this effect.
+    // refreshRuns changes exactly when activeRunId does; that is the trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshRuns])
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      void refreshRuns()
-    }, 5000)
+    const id = window.setInterval(() => void refreshRuns(), 5000)
     return () => window.clearInterval(id)
   }, [refreshRuns])
 
   useEffect(() => {
     void refreshUploads()
-    // Deliberate setState-in-effect, not a lint oversight. The counter is
-    // a cross-component invalidation signal: ProjectSwitcher and the
-    // workspace tree take it as a refreshTrigger prop and re-fetch on
-    // change. There is no prop to derive from -- a project switch is an
-    // event, not a value -- so a render-time compare has nothing to
-    // compare. Replacing this plumbing with context or explicit data
-    // passing is a larger change than this phase, and the bump is
-    // idempotent and cheap.
-    setProjectRefreshTrigger((n) => n + 1)
-    // oxlint-disable-next-line react/set-state-in-effect
+    setProjectRefreshTrigger((value) => value + 1)
   }, [activeProject, refreshUploads])
 
-  // v1.9.x (FE-8): mount the Phase-3 keyboard router on app startup.
-  // Handlers wire the global shortcuts (Cmd/Ctrl+Enter submit, Cmd/Ctrl+.
-  // stop, Cmd/Ctrl+K palette, Cmd/Ctrl+/ help) to actual UI actions.
-  // The submit handler clicks the first non-disabled composer submit
-  // button; the stop handler POSTs /api/runs/{id}/stop directly.
-  // palette + help open the Dashboard modal in v1.9.x (full palette UI
-  // is a future feature).
   useEffect(() => {
-    return installKeyboardRouter({
-      submit: () => {
-        const btn = document.querySelector<HTMLButtonElement>(
-          '.plan-task .btn-primary:not([disabled])',
-        )
-        btn?.click()
-      },
-      stop: () => {
-        // Read the ref so we always use the latest activeRunId, not the
-        // one captured when the router was installed (decision 0033).
-        const id = activeRunIdRef.current
-        if (id) {
-          void postStop(id).catch(() => {
-            /* surfaced via the stream */
-          })
-        }
-      },
-      palette: () => {
-        setDashboardOpen(true)
-      },
-      help: () => {
-        setDashboardOpen(true)
-      },
-    })
-    // No deps: the stop handler reads activeRunId via the ref (decision
-    // 0033) so re-installing on every activeRunId change is wasted work.
-  }, [])
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 2600)
+    return () => window.clearTimeout(id)
+  }, [toast])
 
   const selectedProvider: ProviderInfo | null = useMemo(() => {
     if (!selectedProviderId) return null
-    return providers.find((p) => p.id === selectedProviderId) ?? null
+    return providers.find((provider) => provider.id === selectedProviderId) ?? null
   }, [providers, selectedProviderId])
 
   const handleProviderChange = (providerId: string, defaultModel: string) => {
@@ -396,33 +246,47 @@ function App() {
     setStoredKeyValue(value)
   }
 
-  const onSubmitted = (runId: string) => {
-    setActiveRunId(runId)
-    setActiveRun(null)
-    void refreshRuns()
-    setQueueRefreshTrigger((n) => n + 1)
+  const openSheet = (next: SheetName) => {
+    setPaletteOpen(false)
+    setSheet(next)
   }
 
-  // Phase 3 F3 (decision 0036, Q3): invoked when the user clicks
-  // [Open] next to the Working root row in the Inspector. Calls
-  // /api/open-path with the active run id so the BE can resolve
-  // the whitelist base from run.effective_cwd (rather than the
-  // default workspace). Failure surfaces as a transient error
-  // banner -- a 403 here means the path escaped the run's
-  // effective_cwd between the snapshot and the click, which is
-  // an honest race we surface instead of silently failing.
-  const onOpenPath = async (path: string) => {
+  const openPalette = () => {
+    setSheet(null)
+    setPaletteOpen(true)
+  }
+
+  const copyText = async (text: string, label: string) => {
     try {
-      await postOpenPath(path, activeRunId)
-    } catch (e) {
-      setTransientError('Open failed: ' + (e as Error).message)
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(text)
+      setToast(label)
+    } catch {
+      setToast('Could not copy to the clipboard')
     }
   }
 
-  // Phase 3 F3 (decision 0036): branch on kind. outside_root events
-  // carry absoluteTarget / effectiveCwd / allowedActions hints for
-  // the Q2 modal. Backward-compat: callers that omit kind/default
-  // to destructive still work.
+  const onSubmitted = (runId: string) => {
+    setActiveRunId(runId)
+    setActiveRun(null)
+    setPending(null)
+    setEditedAfter(null)
+    setLastDiff(null)
+    setView('trace')
+    setSheet(null)
+    setDockError(null)
+    void refreshRuns()
+    setQueueRefreshTrigger((value) => value + 1)
+  }
+
+  const onOpenPath = async (path: string) => {
+    try {
+      await postOpenPath(path, activeRunId)
+    } catch (error) {
+      setTransientError('Open failed: ' + (error as Error).message)
+    }
+  }
+
   const onApprovalRequest = (
     decisionId: string,
     tool: string,
@@ -433,6 +297,9 @@ function App() {
     effectiveCwd?: string | null,
     allowedActions?: string[] | null,
   ) => {
+    setEditedAfter(null)
+    setView('changes')
+    setSheet(null)
     if (kind === 'outside_root') {
       setPending({
         decisionId,
@@ -462,7 +329,7 @@ function App() {
     hunks: unknown,
     stats: unknown,
   ) => {
-    setPending({
+    const next: PendingApproval = {
       decisionId,
       tool,
       args,
@@ -474,9 +341,14 @@ function App() {
       after,
       rawDiff,
       hunks: Array.isArray(hunks) ? (hunks as PendingApproval['hunks']) : undefined,
-      stats: (stats && typeof stats === 'object') ? (stats as PendingApproval['stats']) : undefined,
-    })
-    setTreeRefreshTrigger((n) => n + 1)
+      stats: stats && typeof stats === 'object' ? (stats as PendingApproval['stats']) : undefined,
+    }
+    setEditedAfter(null)
+    setPending(next)
+    setLastDiff(next)
+    setView('changes')
+    setSheet(null)
+    setTreeRefreshTrigger((value) => value + 1)
     void refreshRuns()
   }
 
@@ -484,64 +356,109 @@ function App() {
     void refreshRuns()
   }
 
-  const onDecide = async (approved: boolean, reason: string, editedAfter: string | null) => {
+  const { events, rows, connection } = useRunStream({
+    runId: activeRunId,
+    status: activeRun?.status ?? null,
+    onApprovalRequest,
+    onDiffProposed,
+    onFinal,
+  })
+
+  const onDecide = async (approved: boolean, reason: string, edited: string | null) => {
     if (!pending || !activeRunId) return
-    const dId = pending.decisionId
+    const decisionId = pending.decisionId
     setPending(null)
+    setEditedAfter(null)
     try {
-      await postApproval(activeRunId, dId, approved, reason, editedAfter)
-    } catch (e) {
-      setTransientError((e as Error).message)
+      await postApproval(activeRunId, decisionId, approved, reason, edited)
+      setToast(approved ? 'Released · decision appended to audit' : 'Denied · run stays paused')
+      void refreshRuns()
+    } catch (error) {
+      setTransientError((error as Error).message)
     }
   }
 
-  // v1.9.x (FE-6 / B10) + decision 0027: ApprovalModal reports
-  // auto-approve flips; the FE clears/sets the client-side flag AND
-  // POSTs to /api/runs/{id}/auto-approve so the BE's destructive gate
-  // sees the same state on the next tool call. We best-effort the
-  // POST: a stale run id (run already ended) returns 404/409, which
-  // we silently swallow since the client-side state is the source
-  // of truth for the banner. The next page reload will resync via
-  // the session's actual flag.
   const onAutoApproveToggle = (active: boolean) => {
     if (!activeRunId) return
-    setAutoApproveRunIds((prev) => {
-      const next = new Set(prev)
+    setAutoApproveRunIds((previous) => {
+      const next = new Set(previous)
       if (active) next.add(activeRunId)
       else next.delete(activeRunId)
       return next
     })
     void postAutoApprove(activeRunId, active).catch(() => {
-      /* surfaced via the stream on the next destructive prompt */
+      // the next prompt surfaces a failed flip honestly
     })
   }
 
-  // v1.9.x (FE-6): banner Disable also clears the flag (delegates to
-  // the toggle above so the BE POST happens through one code path).
-  const onAutoApproveDisable = () => {
-    onAutoApproveToggle(false)
+  const onAutoApprove = () => {
+    void onDecide(true, 'auto-approve', editedAfter)
+    onAutoApproveToggle(true)
   }
 
-  // v1.9.x (FE-6): clear the flag when the active run reaches a terminal
-  // state, so a stale flag cannot survive a rerun / retry / new run.
-  // Done during render rather than in an effect for the same reason as the
-  // other prop-derived resets: the effect ran after the paint that still
-  // had the flag set, and it was the set-state-in-effect the linter
-  // flagged. Keyed on id AND status, not the object, so an unrelated
-  // field change on the run summary does not clear the flag.
-  const activeRunIsTerminal =
-    activeRun !== null && (activeRun.status === 'done' || activeRun.status === 'error' || activeRun.status === 'stopped')
+  const activeRunIsTerminal = activeRun !== null && TERMINAL.has(activeRun.status)
   const [lastAutoApproveKey, setLastAutoApproveKey] = useState<string | null>(null)
   const autoApproveKey = activeRun ? activeRun.id + ':' + activeRun.status : null
   if (autoApproveKey !== lastAutoApproveKey) {
     setLastAutoApproveKey(autoApproveKey)
     if (activeRun && activeRunIsTerminal) {
-      setAutoApproveRunIds((prev) => {
-        if (!prev.has(activeRun.id)) return prev
-        const next = new Set(prev)
+      setAutoApproveRunIds((previous) => {
+        if (!previous.has(activeRun.id)) return previous
+        const next = new Set(previous)
         next.delete(activeRun.id)
         return next
       })
+    }
+  }
+
+  useEffect(() => {
+    return installKeyboardRouter({
+      submit: () => {
+        const sheetButton = document.querySelector<HTMLButtonElement>(
+          '[data-run-submit]:not([disabled])',
+        )
+        const dockButton = document.querySelector<HTMLButtonElement>(
+          '[data-composer-submit]:not([disabled])',
+        )
+        ;(sheetButton ?? dockButton)?.click()
+      },
+      stop: () => {
+        const id = activeRunIdRef.current
+        if (id) void postStop(id).catch(() => undefined)
+      },
+      palette: openPalette,
+      help: () => openSheet('help'),
+    })
+  }, [])
+
+  const startDockRun = async () => {
+    const task = dockTask.trim()
+    if (!task) {
+      setDockError('Write a task first.')
+      return
+    }
+    setStarting(true)
+    setDockError(null)
+    try {
+      const env = selectedProvider?.env_vars[0] ?? null
+      const keys =
+        env && storedKeyValue && storedKeyValue.length > 0
+          ? { [env]: storedKeyValue }
+          : undefined
+      const response = await startRun(task, tier, {
+        provider: selectedProviderId ?? undefined,
+        model: selectedModel || undefined,
+        keys,
+        session_id: activeSessionId,
+        project: activeProject,
+        anchor_to_project_root: dockAnchor || undefined,
+      })
+      setDockTask('')
+      onSubmitted(response.run_id)
+    } catch (error) {
+      setDockError((error as Error).message)
+    } finally {
+      setStarting(false)
     }
   }
 
@@ -561,18 +478,44 @@ function App() {
     return <div className="loading">Loading...</div>
   }
 
-  const tierNames = config.tiers.map((t) => t.name)
-  const switcherTiers = tierNames.filter((t) => t !== 'full_access')
-  const runTerminal =
-    activeRun !== null &&
-    (activeRun.status === 'done' || activeRun.status === 'error' || activeRun.status === 'stopped')
+  const needsCount = runs.filter((run) => run.has_pending_approval || run.status === 'awaiting_approval').length
+  const queuedCount = runs.filter((run) => run.status === 'queued').length
+  const activeStatus = activeRun?.status ?? (activeRunId ? 'pending' : '')
+  const terminal = activeRun !== null && TERMINAL.has(activeRun.status)
+  const pendingCount = pending ? 1 : 0
+  const stageProject = activeRun?.project || activeProject || 'workspace'
+  const workspaceLabel = config.workspace.split(/[\\/]/).slice(-2).join('/')
+
+  const tabs: { id: ViewName; label: string; count?: number; alert?: boolean }[] = [
+    { id: 'trace', label: 'Trace', count: events.length || undefined },
+    { id: 'changes', label: 'Changes', count: pendingCount || (lastDiff ? 1 : undefined), alert: pendingCount > 0 },
+    { id: 'console', label: 'Console' },
+    { id: 'files', label: 'Files' },
+  ]
+
+  const paletteActions: PaletteAction[] = [
+    { id: 'new-run', label: 'Start a new run', hint: 'New run sheet', run: () => openSheet('launch') },
+    { id: 'runs', label: 'Open runs', hint: 'All runs', run: () => openSheet('runs') },
+    { id: 'queue', label: 'Open queue', hint: queuedCount + ' queued', run: () => openSheet('queue') },
+    { id: 'sessions', label: 'Open sessions', hint: activeSessionId ? activeSessionId.slice(0, 8) : 'none attached', run: () => openSheet('sessions') },
+    { id: 'audit', label: 'Open audit chain', hint: 'append-only', run: () => openSheet('audit') },
+    { id: 'context', label: 'Open context', hint: 'provider, policy, uploads', run: () => openSheet('context') },
+    { id: 'usage', label: 'Open usage', hint: 'dashboard + caps', run: () => openSheet('usage') },
+    { id: 'help', label: 'Open help', hint: 'shortcuts', shortcut: '?', run: () => openSheet('help') },
+  ]
+  if (activeRunId) {
+    paletteActions.unshift(
+      { id: 'trace', label: 'Go to trace', hint: activeRunId, run: () => setView('trace') },
+      { id: 'changes', label: 'Go to changes', hint: pendingCount ? 'gate waiting' : 'review', run: () => setView('changes') },
+      { id: 'console', label: 'Go to console', hint: 'raw events', run: () => setView('console') },
+      { id: 'files', label: 'Go to files', hint: 'workspace', run: () => setView('files') },
+    )
+  }
 
   return (
     <div className="app">
-      {/* Phase 5 (ADR 0040 §2): transient failures render HERE, as a
-          dismissible banner with a Retry, instead of replacing the whole
-          application. role="alert" so assistive tech announces it; the
-          Retry re-runs the two background fetches that can set it. */}
+      <IconSprite />
+
       {transientError && (
         <div className="error-banner app-transient-error" role="alert">
           <span>{transientError}</span>
@@ -596,227 +539,636 @@ function App() {
           </button>
         </div>
       )}
-      <header className="header">
-        <div className="brand">smolcode</div>
-        <TierBadge tier={tier} />
-        <TierSwitcher value={tier} tiers={switcherTiers} onChange={setTier} />
-        <button
-          type="button"
-          className="inspector-toggle btn btn-secondary"
-          aria-expanded={inspectorOpen}
-          aria-controls="inspector-pane"
-          style={{ display: isMobile ? 'inline-flex' : 'none' }}
-          onClick={() => setInspectorOpen((v) => !v)}
-        >
-          {inspectorOpen ? 'Inspector ▴' : 'Inspector ▾'}
-        </button>
-        {/* v1.9.x (FE-8): Dashboard launcher */}
-        <button
-          type="button"
-          className="btn btn-secondary dashboard-open"
-          aria-expanded={dashboardOpen}
-          aria-controls="dashboard-overlay"
-          onClick={() => setDashboardOpen((v) => !v)}
-        >
-          {dashboardOpen ? 'Dashboard ▴' : 'Dashboard ▾'}
-        </button>
-        <div className="ws" title={config.workspace}>
-          {config.workspace.split(/[\\/]/).slice(-2).join('/')}
+
+      <header className="topbar">
+        <div className="brand">
+          <b>smolcode</b>
+          <small>workbench</small>
         </div>
-        <ProjectSwitcher
-          value={activeProject}
-          onChange={setActiveProject}
-          refreshTrigger={projectRefreshTrigger}
-          workspace={config?.workspace ?? ''}
-        />
+        <button
+          type="button"
+          className="project-btn"
+          onClick={() => openSheet('context')}
+          aria-label="Project and workspace context"
+        >
+          <Icon name="folder" size={14} />
+          <span className="pname">{activeProject || 'workspace'}</span>
+          <span className="path">{workspaceLabel}</span>
+          <Icon name="chevron" size={13} />
+        </button>
+        <span className="daemon">
+          <span className="dot" />
+          127.0.0.1
+          <span className="local-tag">local</span>
+        </span>
+        <div className="top-actions">
+          {needsCount > 0 ? (
+            <button type="button" className="needs" onClick={() => openSheet('runs')}>
+              <span className="dot" />
+              <b>{needsCount}</b> {needsCount === 1 ? 'needs' : 'need'} you
+            </button>
+          ) : (
+            <button type="button" className="needs is-clear" onClick={() => openSheet('runs')}>
+              <span className="dot" />
+              clear
+            </button>
+          )}
+          <button type="button" className="kbd" onClick={openPalette} aria-label="Open command palette">
+            {MOD} K
+          </button>
+          <button type="button" className="icon-top" onClick={() => openSheet('audit')} aria-label="Open audit chain">
+            <Icon name="chain" size={15} />
+          </button>
+          <button type="button" className="icon-top" onClick={() => openSheet('help')} aria-label="Help">
+            <Icon name="help" size={15} />
+          </button>
+        </div>
       </header>
 
-      <div className="header-row-m11">
-        <ProviderSelector
-          value={selectedProviderId}
-          onChange={handleProviderChange}
-        />
-        <div className="model-row">
-          <label className="small muted" htmlFor="model-input">
-            Model
-          </label>
-          <input
-            id="model-input"
-            type="text"
-            className="model-input"
-            value={selectedModel}
-            onChange={(e) => {
-              const v = e.target.value
-              setSelectedModel(v)
-              if (selectedProviderId) saveLast(selectedProviderId, v)
-            }}
-            placeholder="model-id"
-            spellCheck={false}
-          />
-        </div>
-        {selectedProvider && (
-          <ApiKeyPanel
-            provider={selectedProvider}
-            hasStoredKey={storedKeyValue !== null}
-            onKeyChange={handleKeyChange}
-          />
-        )}
-      </div>
-
-      <div className="three-pane">
-        <aside className="pane plan">
-          <section className="plan-task">
-            <h3>Task</h3>
-            <RunComposer
-              tier={tier}
-              provider={selectedProviderId}
-              model={selectedModel || null}
-              keyValue={storedKeyValue}
-              apiKeyEnv={selectedProvider?.env_vars[0] ?? null}
-              sessionId={activeSessionId}
-              project={activeProject}
-              onSubmitted={onSubmitted}
-            />
-          </section>
-
-          <section className="plan-queue">
-            <h3>Active & queue</h3>
-            <QueuePane
-              refreshTrigger={queueRefreshTrigger}
-              activeRunId={activeRunId}
-              onSelectActive={(id) => setActiveRunId(id)}
-            />
-          </section>
-
-          <section className="plan-sessions">
-            <h3>Sessions</h3>
-            <SessionsPane
-              project={activeProject}
-              activeSessionId={activeSessionId}
-              onSelect={setActiveSessionId}
-              refreshTrigger={projectRefreshTrigger}
-            />
-          </section>
-
-          <section className="plan-runs">
-            <h3>History</h3>
-            <RunHistory
-              runs={runs}
-              activeRunId={activeRunId}
-              onSelect={(id) => setActiveRunId(id)}
-            />
-          </section>
-
-          <section className="plan-uploads">
-            <h3>Uploads ({uploads.length})</h3>
-            <UploadDropZone
-            tier="restricted"
-            maxBytes={config?.upload_max_bytes}
-            onUploaded={() => void refreshUploads()}
-          />
-            <UploadList uploads={uploads} onDeleted={() => void refreshUploads()} />
-          </section>
-
-          <section className="plan-allowlist">
-            <AllowlistSimulator tiers={tierNames} defaultTier="restricted" />
-          </section>
+      <div className="frame">
+        <aside className="rail" aria-label="Runs">
+          <button type="button" className="rail-menu" onClick={() => openSheet('runs')} aria-label="Open all runs">
+            <Icon name="menu" size={17} />
+          </button>
+          <div className="rail-runs">
+            {runs.slice(0, 9).map((run) => (
+              <button
+                key={run.id}
+                type="button"
+                className={'run-chip' + (run.id === activeRunId ? ' is-active' : '')}
+                data-status={run.status}
+                data-tip={run.task}
+                aria-label={'Open run ' + run.id}
+                aria-pressed={run.id === activeRunId}
+                onClick={() => {
+                  setActiveRunId(run.id)
+                  setView('trace')
+                  setSheet(null)
+                }}
+              >
+                <span className="chip-id">{shortId(run.id)}</span>
+                <span className="chip-dot" aria-hidden="true" />
+                {run.has_pending_approval || run.status === 'awaiting_approval' ? (
+                  <span className="rail-alert" aria-hidden="true">!</span>
+                ) : null}
+                <span className="sr-only">{run.task}</span>
+              </button>
+            ))}
+          </div>
+          <div className="rail-sep" />
+          <button
+            type="button"
+            className="rail-tool"
+            onClick={() => openSheet('queue')}
+            aria-label={'Open queue, ' + queuedCount + ' queued'}
+            title="Active and queued runs"
+          >
+            <Icon name="queue" size={17} />
+            {queuedCount > 0 ? <span className="badge">{queuedCount}</span> : null}
+          </button>
+          <div className="rail-foot">
+            <button
+              type="button"
+              className="rail-tool"
+              onClick={() => openSheet('audit')}
+              aria-label="Open audit chain"
+              title="Append-only audit chain"
+            >
+              <Icon name="chain" size={17} />
+              <span className="chain-count">audit</span>
+            </button>
+            <button
+              type="button"
+              className="rail-tool"
+              onClick={() => openSheet('help')}
+              aria-label="Help and shortcuts"
+              title="Help"
+            >
+              <Icon name="help" size={17} />
+            </button>
+          </div>
         </aside>
 
-        <main className="pane stream">
-          <div className="stream-header">
-            <h3>Execution stream</h3>
-            {/* v1.9.x (FE-7): in-flight StopButton OR terminal RunActions */}
-            {activeRunId && !runTerminal && <StopButton runId={activeRunId} onStopped={() => void refreshRuns()} />}
-            {activeRunId && runTerminal && (
-              <RunActions
-                runId={activeRunId}
-                onRestart={(resp) => onSubmitted(resp.run_id)}
-              />
-            )}
-          </div>
-          {/* v1.9.x (FE-6): mid-run banner above the event stream */}
-          {activeRunId && autoApproveRunIds.has(activeRunId) && (
-            <AutoApproveBanner runId={activeRunId} onDisable={onAutoApproveDisable} />
-          )}
+        <main className="stage">
           {activeRunId ? (
-            <EventStream
-              runId={activeRunId}
-              status={activeRun?.status ?? null}
-              onApprovalRequest={onApprovalRequest}
-              onDiffProposed={onDiffProposed}
-              onFinal={onFinal}
-            />
+            <div className="run-shell">
+              <header className="stage-head">
+                <div className="stage-crumb">
+                  <code>{activeRunId}</code>
+                  <span className="slash">/</span>
+                  <span>{stageProject}</span>
+                  <span className="slash">/</span>
+                  <span>{activeRun?.tier || tier}</span>
+                  {activeRun?.queue_position != null ? (
+                    <>
+                      <span className="slash">/</span>
+                      <span className="warn">queue #{activeRun.queue_position}</span>
+                    </>
+                  ) : null}
+                </div>
+                <h1 className="objective">{activeRun?.task || 'Resolving run…'}</h1>
+                <div className="meta-row">
+                  <span className={'status-pill ' + activeStatus}>
+                    <i aria-hidden="true" />
+                    {statusLabel(activeStatus)}
+                  </span>
+                  <span className="tier-tag">tier · {activeRun?.tier || tier}</span>
+                  <span>{activeRun?.model || selectedModel || 'server model'}</span>
+                  <span>{runDuration(activeRun)}</span>
+                  {activeRun?.tokens?.total != null ? (
+                    <span>{activeRun.tokens.total.toLocaleString()} tokens</span>
+                  ) : null}
+                  {activeRun?.tokens?.cost_usd != null ? (
+                    <span>{'$' + activeRun.tokens.cost_usd.toFixed(4)}</span>
+                  ) : null}
+                </div>
+                <div className="stage-actions">
+                  {activeRun && (activeRun.status === 'running' || activeRun.status === 'paused' || activeRun.status === 'awaiting_approval') ? (
+                    <PauseButton runId={activeRun.id} status={activeRun.status} onChanged={() => void refreshRuns()} />
+                  ) : null}
+                  {activeRun && !terminal ? (
+                    <StopButton runId={activeRun.id} onStopped={() => void refreshRuns()} />
+                  ) : null}
+                  {activeRun && terminal ? (
+                    <RunActions runId={activeRun.id} onRestart={(response) => onSubmitted(response.run_id)} />
+                  ) : null}
+                  <button
+                    type="button"
+                    className="icon-top"
+                    aria-label="Open run context"
+                    onClick={() => openSheet('context')}
+                  >
+                    <Icon name="dots" size={16} />
+                  </button>
+                </div>
+              </header>
+
+              <div className="stage-modes">
+                <div className="stage-tabs" role="tablist" aria-label="Run views">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      id={'wb-tab-' + tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={view === tab.id}
+                      aria-controls="wb-stage-panel"
+                      className={view === tab.id ? 'on' : ''}
+                      onClick={() => setView(tab.id)}
+                    >
+                    {tab.label}
+                      {tab.count != null ? (
+                        <span className={'count' + (tab.alert ? ' alert' : '')}>{tab.count}</span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+                <span className="grow" />
+                <button
+                  type="button"
+                  className="mode-context"
+                  onClick={() => openSheet('context')}
+                  aria-label="Open context drawer"
+                >
+                  <Icon name="panel" size={14} /> Context
+                </button>
+              </div>
+
+              {activeRunId && autoApproveRunIds.has(activeRunId) && (
+                <AutoApproveBanner runId={activeRunId} onDisable={() => onAutoApproveToggle(false)} />
+              )}
+
+              <div
+                className="stage-body"
+                id="wb-stage-panel"
+                role="tabpanel"
+                aria-labelledby={'wb-tab-' + view}
+              >
+                {!activeRun ? (
+                  <div className="run-loading">
+                    <span className="mono">{activeRunId}</span>
+                    <p>Resolving this run…</p>
+                  </div>
+                ) : view === 'trace' ? (
+                  <TraceView
+                    rows={rows}
+                    events={events}
+                    run={activeRun}
+                    pending={pending}
+                    connection={connection}
+                    onOpenChanges={() => setView('changes')}
+                  />
+                ) : view === 'changes' ? (
+                  <ChangesView
+                    pending={pending}
+                    lastDiff={lastDiff}
+                    editedAfter={editedAfter}
+                    onEdit={(next) => setEditedAfter(next)}
+                    onOpenFile={(path) => setFilePreviewPath(path)}
+                    onCopy={(text, label) => void copyText(text, label)}
+                  />
+                ) : view === 'console' ? (
+                  <ConsoleView
+                    events={events}
+                    run={activeRun}
+                    onCopy={(text, label) => void copyText(text, label)}
+                  />
+                ) : (
+                  <FilesView
+                    workspaceRoot={config.workspace}
+                    project={activeProject}
+                    touchedPaths={activeRun.touched_paths || []}
+                    refreshTrigger={treeRefreshTrigger}
+                    onFileClick={(path) => setFilePreviewPath(path)}
+                    onOpenPath={(path) => void onOpenPath(path)}
+                  />
+                )}
+              </div>
+
+              {pending ? (
+                <ApprovalGate
+                  pending={pending}
+                  editedAfter={editedAfter}
+                  onDecide={(approved, reason, edited) => void onDecide(approved, reason, edited)}
+                  onAutoApprove={onAutoApprove}
+                  onOpenChanges={() => setView('changes')}
+                />
+              ) : null}
+            </div>
           ) : (
-            <div className="placeholder">Start a task to see the live stream.</div>
+            <div className="empty-stage">
+              <div className="empty-stage-card">
+                <h1>The run is the unit of work.</h1>
+                <p>
+                  A run carries its own tier, evidence, change, and audit trail. Pick one from the
+                  rail, or start the next one below.
+                </p>
+                <div className="actions">
+                  <button type="button" className="btn btn-primary" onClick={() => openSheet('launch')}>
+                    <Icon name="play" size={14} /> Start a run
+                  </button>
+                  <button type="button" className="btn" onClick={() => openSheet('runs')}>
+                    <Icon name="menu" size={14} /> Open a run
+                  </button>
+                </div>
+                {runs.length > 0 ? (
+                  <div className="recent">
+                    <h2>Recent runs</h2>
+                    {runs.slice(0, 3).map((run) => (
+                      <button
+                        key={run.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveRunId(run.id)
+                          setView('trace')
+                        }}
+                      >
+                        <code>{run.id}</code>
+                        <span>
+                          {run.tier} · {statusLabel(run.status)}
+                        </span>
+                        <Icon name="arrow" size={13} />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           )}
         </main>
-
-        <aside
-          id="inspector-pane"
-          className="pane inspector"
-          style={{ display: isMobile && !inspectorOpen ? 'none' : 'block' }}
-        >
-          <h3>Inspector</h3>
-          <Inspector
-            activeRun={activeRun}
-            config={config}
-            treeRefreshTrigger={treeRefreshTrigger}
-            project={activeProject}
-            projectInfo={projects.find((p) => p.name === activeProject) || null}
-            onFileClick={(p) => setFilePreviewPath(p)}
-            onOpenPath={onOpenPath}
-          />
-        </aside>
       </div>
 
-      {filePreviewPath && (
+      <footer className="composer wb-composer">
+        <div className="composer-main">
+          <div className="composer-top">
+            <span className="composer-label">New run</span>
+            <span className="composer-kbd">{MOD}+Enter start · {MOD}+K commands</span>
+          </div>
+          <div className="composer-inputrow">
+            <FileMentionInput
+              value={dockTask}
+              onChange={setDockTask}
+              project={activeProject}
+              rows={1}
+              placeholder="Describe the task, or @ a file"
+              disabled={starting}
+            />
+            {activeProject ? (
+              <label className="checkline composer-anchor" title="Resolve writes against this project root; escapes require the outside-root gate.">
+                <input
+                  type="checkbox"
+                  checked={dockAnchor}
+                  onChange={(event) => setDockAnchor(event.target.checked)}
+                  disabled={starting}
+                />
+                Anchor
+              </label>
+            ) : null}
+            <button
+              type="button"
+              className="composer-run"
+              data-composer-submit
+              onClick={() => void startDockRun()}
+              disabled={starting}
+            >
+              {starting ? 'Starting…' : 'Run'} <Icon name="arrow" size={13} />
+            </button>
+          </div>
+          {dockError ? <div className="composer-error" role="alert">{dockError}</div> : null}
+        </div>
+        <div className="composer-side">
+          <span className="composer-provider">
+            <label className="sr-only" htmlFor="dock-provider">Model provider</label>
+            <select
+              id="dock-provider"
+              aria-label="Model provider"
+              value={selectedProviderId ?? ''}
+              onChange={(event) => {
+                const id = event.target.value
+                const info = providers.find((provider) => provider.id === id)
+                handleProviderChange(id, info?.default_model || '')
+              }}
+            >
+              {!selectedProviderId ? <option value="">Server default</option> : null}
+              {selectedProviderId && !providers.some((provider) => provider.id === selectedProviderId) ? (
+                <option value={selectedProviderId}>{selectedProviderId}</option>
+              ) : null}
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.name}</option>
+              ))}
+            </select>
+          </span>
+          <button
+            type="button"
+            className="composer-chip"
+            onClick={() => openSheet('launch')}
+            aria-label={'Tier: ' + tier + '. Open new run'}
+          >
+            <span className="tier-dot" /> {tier}
+          </button>
+          <button
+            type="button"
+            className="composer-chip"
+            onClick={() => openSheet('context')}
+            aria-label="Model: open context"
+          >
+            {selectedModel || 'server model'}
+          </button>
+        </div>
+      </footer>
+
+      <Sheet
+        open={sheet === 'runs'}
+        title="Runs"
+        subtitle={needsCount > 0 ? needsCount + (needsCount === 1 ? ' needs' : ' need') + ' you · ' + runs.length + ' total' : runs.length + ' total'}
+        variant="side"
+        onClose={() => setSheet(null)}
+        className="runs-sheet"
+      >
+        <RunsPanel
+          runs={runs}
+          activeRunId={activeRunId}
+          onSelect={(runId) => {
+            setActiveRunId(runId)
+            setView('trace')
+            setSheet(null)
+          }}
+          onNewRun={() => openSheet('launch')}
+        />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'launch'}
+        title="New run"
+        subtitle="One task. One tier. One auditable run."
+        variant="launch"
+        onClose={() => setSheet(null)}
+      >
+        <div className="tier-ladder">
+          <h3>Release tier</h3>
+          {config.tiers.filter((entry) => entry.name !== 'full_access').map((entry) => (
+            <button
+              key={entry.name}
+              type="button"
+              className={'tier-option' + (tier === entry.name ? ' on' : '')}
+              onClick={() => setTier(entry.name)}
+              aria-pressed={tier === entry.name}
+            >
+              <span className="radio" aria-hidden="true" />
+              <span>
+                <span className="tname">{entry.name}</span>
+                <span className="tdesc">
+                  {tierDescription(entry.name)} {entry.max_steps} steps · {entry.timeout_s}s · {entry.network} network.
+                </span>
+              </span>
+              <span className="tflag">{entry.name === 'restricted' ? 'default' : 'opt-in'}</span>
+            </button>
+          ))}
+        </div>
+        <RunComposer
+          tier={tier}
+          provider={selectedProviderId}
+          model={selectedModel || null}
+          keyValue={storedKeyValue}
+          apiKeyEnv={selectedProvider?.env_vars[0] ?? null}
+          sessionId={activeSessionId}
+          project={activeProject}
+          onSubmitted={onSubmitted}
+        />
+        <div className="launch-foot">
+          <span className="launch-cost">
+            runs on <b>{selectedProvider?.name || 'server defaults'}</b>
+            {selectedModel ? ' · ' + selectedModel : ''}
+          </span>
+          <button type="button" className="btn launch-context" onClick={() => setSheet('context')}>
+            Context
+          </button>
+        </div>
+        <p className="launch-note muted small">
+          full_access is not offered from the composer; it requires an explicit CLI decision.
+          Every run still executes model-written code in Docker.
+        </p>
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'queue'}
+        title="Queue"
+        subtitle="Active and waiting runs, FIFO with reordering."
+        variant="drawer"
+        wide
+        onClose={() => setSheet(null)}
+      >
+        <QueuePane
+          refreshTrigger={queueRefreshTrigger}
+          activeRunId={activeRunId}
+          onSelectActive={(runId) => {
+            setActiveRunId(runId)
+            setView('trace')
+            setSheet(null)
+          }}
+        />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'sessions'}
+        title="Sessions"
+        subtitle={activeProject ? 'Project · ' + activeProject : 'Workspace-wide'}
+        variant="drawer"
+        onClose={() => setSheet(null)}
+      >
+        <SessionsPane
+          project={activeProject}
+          activeSessionId={activeSessionId}
+          onSelect={(sessionId) => {
+            setActiveSessionId(sessionId)
+            setToast(sessionId ? 'Session attached to new runs' : 'No session attached')
+          }}
+          refreshTrigger={projectRefreshTrigger}
+        />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'audit'}
+        title="Audit chain"
+        subtitle="Append-only. Every decision carries its reason."
+        variant="drawer"
+        wide
+        onClose={() => setSheet(null)}
+      >
+        <AuditPanel />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'context'}
+        title="Context"
+        subtitle="Run, project, provider, policy and uploads."
+        variant="drawer"
+        wide
+        onClose={() => setSheet(null)}
+      >
+        <ContextPanel
+          config={config}
+          activeRun={activeRun}
+          activeProject={activeProject}
+          activeSessionId={activeSessionId}
+          projectsRefreshTrigger={projectRefreshTrigger}
+          providers={providers}
+          selectedProviderId={selectedProviderId}
+          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
+          storedKeyValue={storedKeyValue}
+          uploads={uploads}
+          onProjectChange={setActiveProject}
+          onProviderChange={handleProviderChange}
+          onModelChange={(model) => {
+            setSelectedModel(model)
+            if (selectedProviderId) saveLast(selectedProviderId, model)
+          }}
+          onKeyChange={handleKeyChange}
+          onUploaded={() => void refreshUploads()}
+          onOpenPath={(path) => void onOpenPath(path)}
+          onOpenRuns={() => openSheet('runs')}
+          onOpenSessions={() => openSheet('sessions')}
+        />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'usage'}
+        title="Usage"
+        subtitle="Today, per provider, and configured caps."
+        variant="drawer"
+        wide
+        onClose={() => setSheet(null)}
+      >
+        <Dashboard />
+        <UsageLimitsPanel />
+      </Sheet>
+
+      <Sheet
+        open={sheet === 'help'}
+        title="Help"
+        subtitle="Keyboard first; the pointer is optional."
+        variant="drawer"
+        onClose={() => setSheet(null)}
+      >
+        <div className="help-list">
+          <div className="help-row"><kbd>{MOD} + Enter</kbd><span>Start the task in the composer.</span></div>
+          <div className="help-row"><kbd>{MOD} + K</kbd><span>Command palette: runs, sheets, views.</span></div>
+          <div className="help-row"><kbd>{MOD} + .</kbd><span>Stop the active run.</span></div>
+          <div className="help-row"><kbd>?</kbd><span>This sheet.</span></div>
+          <div className="help-row"><kbd>Esc</kbd><span>Close a sheet or the palette.</span></div>
+          <div className="help-row"><kbd>Tab</kbd><span>Every control, including the gate, is reachable.</span></div>
+        </div>
+        <div className="drawer-section" style={{ marginTop: 16 }}>
+          <h3>What the shell believes</h3>
+          <p className="help">
+            The run is the unit of work. A tier is a blast-radius choice, not a badge. A diff is held
+            until a human releases it, and the release is written to an append-only chain. The server
+            binds to loopback; nothing here calls a third-party service.
+          </p>
+        </div>
+      </Sheet>
+
+      <CommandPalette
+        open={paletteOpen}
+        actions={paletteActions}
+        runs={runs}
+        onClose={() => setPaletteOpen(false)}
+        onSelectRun={(runId) => {
+          setActiveRunId(runId)
+          setView('trace')
+          setSheet(null)
+        }}
+      />
+
+      {filePreviewPath ? (
         <FilePreview
           path={filePreviewPath}
           project={activeProject}
           onClose={() => setFilePreviewPath(null)}
         />
-      )}
+      ) : null}
 
-      {/* Phase 5 (ADR 0040 §3): key on the decision id so React
-          remounts the modal per decision. ApprovalModal also resets its
-          own editedAfter in an effect keyed on decisionId, so it is
-          correct standalone; the key is defence in depth and makes the
-          per-decision remount unconditional. */}
-      <ApprovalModal
-        key={pending?.decisionId ?? 'none'}
-        pending={pending}
-        onDecide={onDecide}
-        onAutoApproveToggle={onAutoApproveToggle}
-      />
-
-      {/* v1.9.x (FE-8): Dashboard modal overlay */}
-      {dashboardOpen && (
-        <div
-          id="dashboard-overlay"
-          className="dashboard-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Dashboard"
-        >
-          <div className="dashboard-overlay-card">
-            <div className="dashboard-overlay-head">
-              <h2>Dashboard</h2>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setDashboardOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-            <Dashboard />
-            {/* decision 0032: per-provider usage caps */}
-            <UsageLimitsPanel />
-          </div>
-        </div>
-      )}
+      {toast ? <div className="toast show" role="status">{toast}</div> : null}
     </div>
   )
+}
+
+function shortId(id: string) {
+  return id.length > 5 ? id.slice(-4) : id
+}
+
+function statusLabel(status: string) {
+  if (status === 'awaiting_approval') return 'awaiting you'
+  if (status === 'running') return 'running'
+  if (status === 'paused') return 'paused'
+  if (status === 'queued') return 'queued'
+  if (status === 'done') return 'verified'
+  if (status === 'error') return 'error'
+  if (status === 'stopped') return 'stopped'
+  return status || 'pending'
+}
+
+function runDuration(run: RunSummary | null) {
+  if (!run) return '—'
+  if (run.duration_s != null) return formatSeconds(run.duration_s)
+  if (run.started_at && !run.ended_at) {
+    return formatSeconds(Math.max(0, Date.now() / 1000 - run.started_at))
+  }
+  return '—'
+}
+
+function formatSeconds(seconds: number) {
+  if (seconds < 60) return seconds.toFixed(1) + 's'
+  const mins = Math.floor(seconds / 60)
+  return mins + 'm ' + Math.round(seconds % 60) + 's'
+}
+
+function tierDescription(name: string) {
+  if (name === 'restricted') return 'Workspace only. The safe default.'
+  if (name === 'elevated') return 'More commands and paths. Opt-in.'
+  if (name === 'full_access') return 'Broad access. Only by an explicit CLI decision.'
+  return 'Configured tier.'
 }
 
 export default App

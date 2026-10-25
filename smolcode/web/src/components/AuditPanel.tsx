@@ -253,6 +253,11 @@ export function AuditPanel({ limit = 25, pollIntervalMs = 5000 }: Props) {
               <div className="audit-row-body" title={entrySummary(e)}>
                 {truncate(entrySummary(e), 100)}
               </div>
+              {typeof e.hash === 'string' && e.hash.length > 0 ? (
+                <div className="audit-hash" title={String(e.hash)}>
+                  hash {String(e.hash).slice(0, 16)}…
+                </div>
+              ) : null}
             </div>
           ))}
           {truncated && (

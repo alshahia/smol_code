@@ -96,16 +96,19 @@ function NodeRow({
     )
   }
   return (
-    <div className={'tree-row tree-dir' + (isTouched ? ' tree-touched' : '')} style={pad}>
-      <span
-        className="tree-toggle"
-        onClick={() => setOpen(!open)}
-        role="button"
-        aria-label={open ? 'Collapse' : 'Expand'}
-      >
-        {open ? '▾' : '▸'}
-      </span>
-      <span className="tree-name">{node.name}/</span>
+    <div className={'tree-row tree-dir' + (isTouched ? ' tree-touched' : '')}>
+      <div className="tree-dir-line" style={pad}>
+        <button
+          type="button"
+          className="tree-toggle"
+          onClick={() => setOpen(!open)}
+          aria-label={open ? 'Collapse ' + node.name : 'Expand ' + node.name}
+          aria-expanded={open}
+        >
+          {open ? '▾' : '▸'}
+        </button>
+        <span className="tree-name">{node.name}/</span>
+      </div>
       {open && node.children.map((c) => (
         <NodeRow
           key={c.relPath}
