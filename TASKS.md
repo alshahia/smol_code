@@ -1,6 +1,6 @@
 # smolcode - cross-session task tracker
 
-**Date:** 2026-09-24 (full-app review #2 + remediation plan #2 added - see section 0b; sections 0 and 0a preserved as the 2026-08-27 snapshot)
+**Date:** 2026-10-25 (Google Gemini provider + browser e2e findings added - see section 0d; 2026-09-24 full-app review #2 + remediation plan #2 in section 0b; sections 0 and 0a preserved as the 2026-08-27 snapshot)
 **Purpose:** Track ongoing + deferred + blocked work across sessions. This
 file is the canonical "where am I?" snapshot for the next session.
 **Source of truth:** git log + decision docs (`docs/decisions/*.md`) +
@@ -479,6 +479,70 @@ complete.
 loopback bind stays the only supported mode** (no `--network host` requirement,
 no opt-in container bind widening). ADR 0043 records the decision; the
 run-book already documents host-run as the default.
+
+---
+
+## 0d. Google Gemini provider + cost cap + browser e2e (2026-10-25)
+
+**Provider shipped (commit `b38c543`, branch `design/frontend-directions`):**
+
+- `google` is a first-class provider. Default model is
+  `gemini/gemini-3.6-flash`, authenticated with `GOOGLE_API_KEY`; LiteLLM's
+  `gemini/` prefix routes to Google AI Studio.
+- Covered by the provider preset, model catalog/fetcher/cost/context tables,
+  `GET /api/providers`, `--provider google`, and the LiteLLM proxy config.
+- Validation at the commit: focused Google/model tests **106 passed**; full
+  non-Docker suite **1577 passed / 1 skipped / 14 deselected**; ruff clean;
+  frontend **140 passed** + typecheck clean.
+- Direct probe `.tmp/ping_model.py` returned `PING` from
+  `gemini/gemini-3.6-flash` (key present; value never printed).
+
+**Cost cap (local operator config, deliberately not committed):**
+
+- Root `.env` now sets `SMOLCODE_PROVIDER=google`,
+  `SMOLCODE_MODEL=gemini/gemini-3.6-flash`, and
+  `SMOLCODE_COST_CAPS={"google": 5}`.
+- The web test server read this back as `{'google': 5.0}`.
+- `.env.example` already documents the `SMOLCODE_COST_CAPS` JSON shape and
+  the decision-0032 enforcement path; no code change was needed for the cap.
+
+**Browser end-to-end attempt (agent-browser 0.34.0, Docker engine live):**
+
+- Because the normal web boot checks every tier image, and
+  `smolcode:full_access` cannot be built on this Windows host (upstream
+  HashiCorp apt repo 404: `wget ... exit 2`), the test used a test-only
+  launch shim that narrows the boot check to `restricted`. No image was
+  faked, tagged, or weakened; `full_access` remains fail-closed.
+- The UI loaded at `http://127.0.0.1:7860`, Google was selected, and the
+  composer submitted runs. **No run completed successfully**, so this is
+  not recorded as a passing e2e.
+- `restricted` run `36e1bf34a227430babe33744562077de` failed after 45.16 s:
+  `DockerExecutor` could not reach Jupyter on `127.0.0.1:8888`
+  (`WinError 10061`). Root cause: the executor attaches the container to
+  `smolcode-internal` (`internal=true`) and publishes a port; Docker does
+  not publish ports on an internal network (`NetworkSettings.Ports` is
+  empty). A normal bridge container publishes the same mapping.
+- `elevated` run `a49683ddcfe84229834e446a83f039b7` reached the container
+  but ended `error` after 400.34 s. Logs show an attempted `pillow` install
+  timing out on PyPI (source not yet identified), then tool-definition
+  serialization raised
+  `IndentationError: expected an indented block after 'try' statement on line 602`
+  because stripping host-only `smolcode` imports leaves empty `try` blocks.
+- These are the pre-existing Docker-executor gaps already tracked as A3/A5
+  (host-side approval broker, container tool path), not Google-provider
+  regressions. The direct provider probe and the UI provider selection are
+  green; the sandbox execution path is still blocked.
+
+**Next actions (in order):**
+
+1. Fix restricted Jupyter transport without enabling container egress
+   (host-side bridge/proxy, or a network design that permits the control
+   channel while keeping the data plane isolated).
+2. Make tool-definition sanitization syntax-safe and stop auto-installing
+   host-only requirements inside the sandbox; then implement the A3
+   host-side approval broker.
+3. Re-run the browser e2e with a read-only task first, then a gated write,
+   and record the run id + screenshot.
 
 ---
 
@@ -1039,11 +1103,22 @@ runs). Touch support is deferred (see §7 of the decision doc).
 
 ## 8. Next-session entrypoint
 
+> **Current entrypoint (2026-10-25):** the 2026-08-26 block below is
+> historical. Current state is section **0d**; the Google provider commit is
+> `b38c543` on `design/frontend-directions`, fast-forwarded to `main`.
+
 If this file is the only thing the next session reads, do this:
 
-1. `git log --oneline -10` - confirm HEAD is `130ca5c` or later (decision 0034 code+tests+doc + this TASKS.md update on `main`).
-2. `git status -sb` - expect `main` clean; `feat/decision-0034` retained on origin (`130ca5c`) for history.
-3. **RECOMMENDED FIRST ACTION:** commit this TASKS.md update as `docs: TASKS.md update for decision 0034 - log 0033 ship + 0034 status`. The code+tests+doc half already lives at `feat/decision-0034 @ 130ca5c` (FF'd into `main`).
+1. `git log --oneline -10` - confirm HEAD includes `b38c543` (Google Gemini
+   provider) and the tracker commit that added section 0d.
+2. `git status -sb` - expect a clean tree; `.tmp/` is ignored test scratch.
+3. **RECOMMENDED FIRST ACTION:** the browser e2e is blocked on the Docker
+   executor, not on Google. Fix the two items in section 0d first: restricted
+   Jupyter transport (internal-network port publishing) and the A3 host-side
+   approval broker / tool-definition sanitizer. Then rerun the browser e2e.
+   Google is verified only by the direct probe + UI provider selection so far.
+
+**Deferred list (2026-08-26 snapshot; check git for current status):**
 4. **Or: work on remaining DEFERRED items** in §4. Recommended priority order:
    - ~~Per-subagent cost aggregation~~ DONE (decision 0028, commits `240b25d` + `e72a07b`)
    - ~~Full Playwright e2e suite~~ DONE (decision 0029, commits `1c75cb4` + `4121b30`)

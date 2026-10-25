@@ -76,6 +76,9 @@ research_doc/
 workspace/
 data/
 
+# ---- Local scratch / agent test artefacts (never commit) -----------------
+.tmp/
+
 # ---- Build scratch (untracked logs from earlier dev sessions) ------------
 tmp_*.txt
 tmp_*.log
