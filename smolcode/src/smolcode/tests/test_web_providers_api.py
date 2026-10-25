@@ -1,6 +1,6 @@
 """M11 (decision 0014) -- tests for GET /api/providers.
 
-The endpoint returns the static 5-provider catalog along with
+The endpoint returns the static 6-provider catalog along with
 per-provider ``key_state`` reflecting in-process env state, and the
 ``model_count`` from the per-process cache (None until the first
 fetch). It does NOT take any user-supplied keys (those go via
@@ -25,6 +25,7 @@ def client(tmp_path, monkeypatch):
             "MINIMAX_HOST",
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
+            "GOOGLE_API_KEY",
             "CUSTOM_BASE_URL",
             "CUSTOM_API_KEY",
             "HF_TOKEN",
@@ -47,13 +48,13 @@ def client(tmp_path, monkeypatch):
 
 
 class TestProvidersList:
-    def test_providers_returns_five(self, client):
+    def test_providers_returns_six(self, client):
         r = client.get("/api/providers")
         assert r.status_code == 200
         body = r.json()
         assert "providers" in body
         ids = [p["id"] for p in body["providers"]]
-        assert ids == ["opencode-go", "MiniMax", "openai", "anthropic", "custom"]
+        assert ids == ["opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"]
 
     def test_providers_shape_per_row(self, client):
         r = client.get("/api/providers")

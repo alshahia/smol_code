@@ -94,10 +94,10 @@ def test_is_api_key_env_rejects_non_key_vars():
 # ---- ProviderSpec + PROVIDERS tuple ----------------------------------------
 
 
-def test_providers_tuple_has_five_entries():
-    assert len(PROVIDERS) == 5
+def test_providers_tuple_has_six_entries():
+    assert len(PROVIDERS) == 6
     ids = [p.id for p in PROVIDERS]
-    assert ids == ["opencode-go", "MiniMax", "openai", "anthropic", "custom"]
+    assert ids == ["opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"]
 
 
 def test_minimax_provider_uses_capital_x_id():
@@ -117,13 +117,41 @@ def test_opencode_go_provider_has_host_env_var():
     assert spec.default_model == "deepseek-v4-flash"
 
 
+def test_google_provider_uses_google_api_key():
+    spec = get_provider("google")
+    assert spec is not None
+    assert spec.id == "google"
+    assert spec.env_vars == ("GOOGLE_API_KEY",)
+    assert spec.default_model == "gemini/gemini-3.6-flash"
+    assert spec.host_env_var is None
+
+
+def test_google_fetcher_returns_litellm_prefixed_models():
+    body = {
+        "models": [
+            {
+                "name": "models/gemini-3.6-flash",
+                "supportedGenerationMethods": ["generateContent"],
+            },
+            {
+                "name": "models/text-embedding-004",
+                "supportedGenerationMethods": ["embedContent"],
+            },
+        ]
+    }
+    with _patch_client(json_body=body):
+        result = fetch_models("google", keys={"GOOGLE_API_KEY": "k"})
+    assert result["error"] is None
+    assert result["models"] == ["gemini/gemini-3.6-flash"]
+
+
 def test_get_provider_unknown_returns_none():
     assert get_provider("nope") is None
 
 
 def test_get_providers_shape_includes_required_keys():
     rows = get_providers(keys={"OPENCODE_GO_APIKEY": "k", "MINIMAX_API_KEY": "k"})
-    assert len(rows) == 5
+    assert len(rows) == 6
     row_opencode = next(r for r in rows if r["id"] == "opencode-go")
     for k in ("id", "name", "env_vars", "default_model", "key_state", "model_count", "host_env_var"):
         assert k in row_opencode
@@ -143,6 +171,12 @@ def test_key_state_missing_when_opencode_key_absent():
     rows = get_providers(keys={})
     row = next(r for r in rows if r["id"] == "opencode-go")
     assert row["key_state"] == "missing"
+
+
+def test_key_state_set_when_google_key_present():
+    rows = get_providers(keys={"GOOGLE_API_KEY": "k"})
+    row = next(r for r in rows if r["id"] == "google")
+    assert row["key_state"] == "set"
 
 
 def test_key_state_missing_when_minimax_key_absent():

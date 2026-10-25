@@ -84,7 +84,7 @@ after each milestone.
 7. `.gitignore` covering `.venv`, `.env`, `__pycache__`,
    `*.pyc`, `dist/`, `build/`, `.pytest_cache`, `.ruff_cache`,
    `logs/audit.jsonl`.
-8. `.env.example` with placeholders for the five provider presets.
+8. `.env.example` with placeholders for the six provider presets.
 
 ### Validation
 
@@ -606,13 +606,13 @@ Deliverables in this commit:
 
 - `smolcode/docker-compose.litellm.yml` runs `ghcr.io/berriai/litellm:main-latest`
   on `127.0.0.1:4000` with `litellm_config.yaml` bind-mounted read-only.
-  All five provider presets are wired (opencode-go, MiniMax, openai,
-  anthropic, custom); every key is read via `os.environ/<NAME>` from
+  All six provider presets are wired (opencode-go, MiniMax, openai,
+  anthropic, google, custom); every key is read via `os.environ/<NAME>` from
   env vars forwarded from the host shell.
 - `smolcode/litellm_config.yaml` — starter config with `model_list`
   + per-model `model_group_settings` rate limits (`rpm` / `tpm`) +
   `litellm_settings` (`disable_spend_logs`, `stream_timeout: 60`).
-- `smolcode/src/smolcode/model_catalog.py` — 5-provider catalog
+- `smolcode/src/smolcode/model_catalog.py` — 6-provider catalog
   (sync `httpx.Client`, lifted from `smolagents-ui` with attribution).
   `fetch_models(provider, keys, refresh=False)` returns
   `{models, cached, fetched_at, error}`; 1-hour in-memory TTL;

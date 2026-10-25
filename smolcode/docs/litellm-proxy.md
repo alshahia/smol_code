@@ -83,7 +83,7 @@ curl http://127.0.0.1:4000/health/liveliness
 ```python
 from smolcode.model_catalog import fetch_models, get_providers
 
-# All five providers + their key state.
+# All six providers + their key state.
 print(get_providers({"OPENCODE_GO_APIKEY": "..."}))
 
 # Live fetch from opencode-go (1-hour cache).
@@ -97,7 +97,7 @@ is consumed by host-side helpers (and tests).
 
 ## 3. What is in `litellm_config.yaml`?
 
-The starter config declares the **five provider presets** that
+The starter config declares the **six provider presets** that
 `smolcode/src/smolcode/models.py` already knows about:
 
 | Provider id | Default model | Key env var | Host env var |
@@ -106,6 +106,7 @@ The starter config declares the **five provider presets** that
 | `MiniMax` | `MiniMax-M3` | `MINIMAX_API_KEY` | `MINIMAX_HOST` |
 | `openai` | `gpt-4o-mini`, `gpt-4o` | `OPENAI_API_KEY` | — |
 | `anthropic` | `claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest` | `ANTHROPIC_API_KEY` | — |
+| `google` | `gemini/gemini-3.6-flash` | `GOOGLE_API_KEY` | — (AI Studio; keep the `gemini/` prefix) |
 | `custom` | `custom-model` | `CUSTOM_API_KEY` (optional) | `CUSTOM_BASE_URL` (required) |
 
 **No secrets are inlined.** Every key is read via `os.environ/<NAME>`

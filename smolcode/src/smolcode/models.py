@@ -1,4 +1,4 @@
-"""LLM model factory with five provider presets.
+"""LLM model factory with six provider presets.
 
 Lifted pattern from smolagents-hybrid-search/src/smolagents_hybrid/providers.py
 (MiniMaxProvider at lines 85-118, OpencodeGoProvider at lines 121-151).
@@ -69,6 +69,18 @@ PROVIDER_PRESETS: dict[str, ProviderPreset] = {
         api_base_env=None,
         api_base_default=None,
         default_model="claude-3-5-sonnet-latest",
+        custom_llm_provider=None,
+        required_for_key=True,
+        tier="secondary",
+    ),
+    "google": ProviderPreset(
+        name="google",
+        api_key_env="GOOGLE_API_KEY",
+        # Native LiteLLM Gemini client: the model id carries the `gemini/`
+        # prefix, so no OpenAI-compatible api_base is needed.
+        api_base_env=None,
+        api_base_default=None,
+        default_model="gemini/gemini-3.6-flash",
         custom_llm_provider=None,
         required_for_key=True,
         tier="secondary",

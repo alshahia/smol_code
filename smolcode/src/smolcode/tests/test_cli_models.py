@@ -61,8 +61,8 @@ def test_models_list_renders_table_header(_isolate_env, capsys):
     assert "MODELS" in out
     assert "CACHE_AGE" in out
     assert "DEFAULT_MODEL" in out
-    # All 5 known providers are listed
-    for pid in ("opencode-go", "MiniMax", "openai", "anthropic", "custom"):
+    # All 6 known providers are listed
+    for pid in ("opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"):
         assert pid in out
     # And the trailing tip
     assert "tip:" in out
@@ -76,9 +76,9 @@ def test_models_list_cached_age_dash_when_empty(_isolate_env, capsys):
     data_lines = [
         ln
         for ln in captured.out.splitlines()
-        if any(pid in ln for pid in ("opencode-go", "MiniMax", "openai", "anthropic", "custom"))
+        if any(pid in ln for pid in ("opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"))
     ]
-    assert len(data_lines) == 5
+    assert len(data_lines) == 6
     for line in data_lines:
         # CACHE_AGE is rendered via `_models_format_age(None)` which
         # returns the literal string "-". The cell is `ljust(14)`-padded

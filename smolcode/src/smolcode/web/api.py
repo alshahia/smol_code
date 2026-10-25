@@ -1597,6 +1597,7 @@ _PROVIDER_ENV_VARS = (
     "MINIMAX_HOST",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
     "CUSTOM_API_KEY",
     "CUSTOM_BASE_URL",
     "HF_TOKEN",
@@ -1632,7 +1633,7 @@ def _known_providers() -> list[str]:
     ids = sorted({p.id for p in PROVIDERS})
     # Ensure the canonical defaults from Settings.provider are included
     # even when model_catalog wasn't initialised yet (test fixtures).
-    for fallback in ("opencode-go", "MiniMax", "openai", "anthropic", "custom"):
+    for fallback in ("opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"):
         if fallback not in ids:
             ids.append(fallback)
     return ids

@@ -742,7 +742,7 @@ def load_settings(cli_overrides=None, dotenv_paths=None):
 
     if settings.executor not in ("docker", "local"):
         raise ConfigError(f"executor must be docker or local, got {settings.executor!r}")
-    if settings.provider not in ("opencode-go", "MiniMax", "openai", "anthropic", "custom"):
+    if settings.provider not in ("opencode-go", "MiniMax", "openai", "anthropic", "google", "custom"):
         raise ConfigError(f"unknown provider {settings.provider!r}")
     if settings.log_level.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         raise ConfigError(f"unknown log level {settings.log_level!r}")

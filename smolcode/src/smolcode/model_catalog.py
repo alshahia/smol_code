@@ -1,4 +1,4 @@
-"""`model_catalog` — 5-provider catalog for smolcode (M6).
+"""`model_catalog` — 6-provider catalog for smolcode (M6).
 
 Lifted from smolagents-ui/smolagents_ui/services/model_catalog.py
 (PB-5.7..5.13) with the following adjustments:
@@ -6,10 +6,10 @@ Lifted from smolagents-ui/smolagents_ui/services/model_catalog.py
   * SYNC instead of async (smolcode is a CLI; there is no event loop
     to coordinate against). The public function signatures are
     otherwise unchanged.
-  * Providers trimmed to the FIVE presets that are wired in
+  * Providers trimmed to the SIX presets that are wired in
     smolcode/src/smolcode/models.py:PROVIDER_PRESETS — opencode-go,
-    MiniMax, openai, anthropic, custom. (smolagents-ui ships 9; the
-    smolcode CLI does not yet have hf / gemini / mistral / groq /
+    MiniMax, openai, anthropic, google, custom. (smolagents-ui ships 9;
+    the smolcode CLI still does not have hf / mistral / groq /
     openrouter presets. Adding a new preset here requires ALSO adding
     it to PROVIDER_PRESETS in models.py — keep both in sync.)
   * `set_verbose` field removed from the ProviderSpec dataclass
@@ -20,7 +20,8 @@ Lifted from smolagents-ui/smolagents_ui/services/model_catalog.py
     natural place to wire it.
   * `host_env_var` retained: opencode-go and MiniMax each allow the
     base URL to be overridden via OPENCODE_HOST / MINIMAX_HOST.
-    Other providers use litellm defaults.
+    Google uses its public Generative Language base URL; other providers
+    use litellm defaults.
 
 This module owns the list of providers smolcode knows about and the
 per-provider model-fetching logic. Conventions:
@@ -87,6 +88,7 @@ _DEFAULT_BASE_URLS: dict[str, str] = {
     "MiniMax": "https://api.minimax.io/v1",
     "openai": "https://api.openai.com",
     "anthropic": "https://api.anthropic.com",
+    "google": "https://generativelanguage.googleapis.com",
     "custom": "",  # required (no default); resolved at fetch time
 }
 
@@ -154,9 +156,46 @@ def _anthropic_fetcher(keys: dict[str, str], base_url: str) -> list[str]:
     ]
 
 
+def _google_fetcher(keys: dict[str, str], base_url: str) -> list[str]:
+    """List Gemini models that can generate content.
+
+    Google's model list is not OpenAI-compatible: the key travels as a
+    query parameter and ids are returned as ``models/<name>``. We return
+    the LiteLLM-qualified ``gemini/<name>`` form so the catalogue values
+    are directly usable as ``SMOLCODE_MODEL`` / ``--model``.
+    """
+    key = keys.get("GOOGLE_API_KEY", "").strip()
+    if not key:
+        raise PermissionError("auth failed for google: GOOGLE_API_KEY is missing")
+    timeout = httpx.Timeout(5.0, connect=3.0)
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.get(
+            f"{base_url}/v1beta/models",
+            params={"key": key, "pageSize": 100},
+        )
+        if resp.status_code in (401, 403):
+            raise PermissionError(f"auth failed for google: {resp.status_code}")
+        resp.raise_for_status()
+        body = resp.json()
+    raw_models = body.get("models", []) if isinstance(body, dict) else []
+    out: list[str] = []
+    for item in raw_models:
+        if not isinstance(item, dict):
+            continue
+        methods = item.get("supportedGenerationMethods") or []
+        if methods and "generateContent" not in methods:
+            continue
+        name = str(item.get("name", "")).removeprefix("models/")
+        if name:
+            out.append(f"gemini/{name}")
+    return out
+
+
 def _make_fetcher(provider_id: str, list_path: str, auth_style: str) -> Fetcher:
     if provider_id == "anthropic":
         return _anthropic_fetcher
+    if provider_id == "google":
+        return _google_fetcher
 
     def _fetcher(keys: dict[str, str], base_url: str) -> list[str]:
         return _openai_compatible_fetcher(provider_id, list_path, auth_style, keys, base_url)
@@ -191,6 +230,12 @@ def _build_providers() -> tuple[ProviderSpec, ...]:
             auth_style = "bearer"
             default_model = "MiniMax-M3"
             host_env_var = "MINIMAX_HOST"
+        elif provider_id == "google":
+            env_vars = ("GOOGLE_API_KEY",)
+            list_path = "/v1beta/models"
+            auth_style = "query"
+            default_model = "gemini/gemini-3.6-flash"
+            host_env_var = None
         elif provider_id == "custom":
             env_vars = ("CUSTOM_API_KEY", "CUSTOM_BASE_URL")
             list_path = "/v1/models"
@@ -209,6 +254,7 @@ def _build_providers() -> tuple[ProviderSpec, ...]:
                     "MiniMax": "MiniMax",
                     "openai": "OpenAI",
                     "anthropic": "Anthropic",
+                    "google": "Google",
                     "custom": "Custom (OpenAI-compatible)",
                 }[provider_id],
                 env_vars=env_vars,
@@ -250,6 +296,13 @@ DEFAULT_COST_RATES: dict[str, dict[str, tuple[float, float, float]]] = {
         "claude-3-5-haiku-latest": (0.0008, 0.004, 0.0),
         "claude-3-opus-latest": (0.015, 0.075, 0.0),
     },
+    # Google AI Studio list prices per 1M tokens (input/output/cached),
+    # converted to per-1K. Gemini 3.6 Flash is $0.75 / $3.75 through
+    # 2026-12-31 (then $1.50 / $7.50). Override via SMOLCODE_COST_RATES
+    # when your contract differs.
+    "google": {
+        "gemini/gemini-3.6-flash": (0.00075, 0.00375, 0.000075),
+    },
     "MiniMax": {
         "MiniMax-M3": (0.001, 0.002, 0.0),
     },
@@ -281,6 +334,9 @@ DEFAULT_CONTEXT_WINDOWS: dict[str, dict[str, int]] = {
         "claude-3-5-sonnet-latest": 200000,
         "claude-3-5-haiku-latest": 200000,
         "claude-3-opus-latest": 200000,
+    },
+    "google": {
+        "gemini/gemini-3.6-flash": 1_048_576,
     },
 }
 

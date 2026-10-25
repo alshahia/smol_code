@@ -1,4 +1,4 @@
-"""M1.3 - model factory tests (5 tests)."""
+"""M1.3 - model factory tests (6 tests)."""
 
 import pytest
 from smolagents.models import ChatMessage
@@ -18,6 +18,7 @@ KEY_PROVIDERS = [
     ("MiniMax", "MINIMAX_API_KEY"),
     ("openai", "OPENAI_API_KEY"),
     ("anthropic", "ANTHROPIC_API_KEY"),
+    ("google", "GOOGLE_API_KEY"),
 ]
 
 
@@ -52,6 +53,15 @@ def test_stub_model_returns_fixed_string(_isolate_env):
 def test_get_preset_unknown_raises(_isolate_env):
     with pytest.raises(ValueError):
         get_preset("nope")
+
+
+def test_google_default_model_and_key(_isolate_env, monkeypatch):
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake-google-key-for-test-only")
+    s = load_settings()
+    m = build_model(s, preset_name="google", model_override="gemini/gemini-3.6-flash")
+    assert m.model_id == "gemini/gemini-3.6-flash"
+    assert m.api_key == "fake-google-key-for-test-only"
+    assert m.api_base is None
 
 
 def test_opencode_go_default_model_and_base(_isolate_env, monkeypatch):

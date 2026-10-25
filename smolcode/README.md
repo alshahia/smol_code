@@ -81,9 +81,12 @@ working directory), `<repo>/smolcode/.env`, `<repo>/.env`, then `~/.env`
 `.env` > built-in default. `.env.example` in this directory lists every
 supported key (decision 0044).
 
-The minimum required for M1 is `OPENCODE_GO_APIKEY`. Other providers
-(`MINIMAX_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are wired but
-not exercised in M1.
+The default is `OPENCODE_GO_APIKEY`. Other providers
+(`MINIMAX_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`GOOGLE_API_KEY`) are wired. For Google Gemini, set
+`SMOLCODE_PROVIDER=google` and a model such as
+`SMOLCODE_MODEL=gemini/gemini-3.6-flash`; the `gemini/` prefix is what
+routes LiteLLM to Google AI Studio rather than Vertex AI.
 
 ## Trust tiers (M4 status)
 
@@ -478,11 +481,11 @@ Verify with `smolcode --print-config`: the `litellm_proxy:` field is non-null.
 
 ### What's in `litellm_config.yaml`
 
-The starter config declares the **same five provider presets** that `models.py` knows about (`opencode-go`, `MiniMax`, `openai`, `anthropic`, `custom`) — keys are read from env vars via `os.environ/<NAME>`, no secrets in the file. Per-model rate limits (`rpm` / `tpm`) are set under `model_group_settings`; defaults are generous (60 rpm on first-class providers, 20-30 rpm on paid OpenAI/Anthropic). Edit the file to add new providers; restart with `docker compose -f docker-compose.litellm.yml restart litellm`.
+The starter config declares the **same six provider presets** that `models.py` knows about (`opencode-go`, `MiniMax`, `openai`, `anthropic`, `google`, `custom`) — keys are read from env vars via `os.environ/<NAME>`, no secrets in the file. Per-model rate limits (`rpm` / `tpm`) are set under `model_group_settings`; defaults are generous (60 rpm on first-class providers, 20-30 rpm on paid OpenAI/Anthropic). Edit the file to add new providers; restart with `docker compose -f docker-compose.litellm.yml restart litellm`.
 
 ### Model catalog (`smolcode.model_catalog`)
 
-A 5-provider catalog (lifted from `smolagents-ui`'s `services/model_catalog.py` with attribution) is now a first-class module. It exposes `fetch_models(provider, keys, refresh=False)` + `get_providers(keys)` + `clear_cache()`. Cache TTL is **1 hour** per provider; auth failures / network errors do not evict good cache entries.
+A 6-provider catalog (lifted from `smolagents-ui`'s `services/model_catalog.py` with attribution) is now a first-class module. It exposes `fetch_models(provider, keys, refresh=False)` + `get_providers(keys)` + `clear_cache()`. Cache TTL is **1 hour** per provider; auth failures / network errors do not evict good cache entries.
 
 ```python
 from smolcode.model_catalog import fetch_models, get_providers
@@ -816,8 +819,8 @@ log and `../docs/architecture.md` §14 for the component map.
 
 ## M11: Provider / model / API-key selector in the SPA (v1.3)
 
-M11 exposes the existing **5-provider catalog** (opencode-go, MiniMax,
-openai, anthropic, custom) directly inside the running web GUI. A new
+M11 exposes the existing **6-provider catalog** (opencode-go, MiniMax,
+openai, anthropic, google, custom) directly inside the running web GUI. A new
 header bar sits above the existing Task / Execution Stream / Inspector
 layout with:
 

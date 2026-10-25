@@ -16,7 +16,7 @@
 
 ## 1. What is this?
 
-M11 exposes the existing **5-provider catalog** (opencode-go, MiniMax,
+M11 exposes the existing **6-provider catalog** (opencode-go, MiniMax,
 openai, anthropic, custom) directly inside the running web GUI. Three
 new affordances live in a new header bar above the existing Task /
 Execution Stream / Inspector layout:
@@ -65,7 +65,7 @@ Open <http://127.0.0.1:7860/> (production build) or
 ### 2.2 Pick a provider + model
 
 1. Look at the **new header row** under the main header bar.
-2. The **provider dropdown** lists all 5 presets with a per-row
+2. The **provider dropdown** lists all 6 presets with a per-row
    `🔑 set` / `∅ missing` badge that reflects the **server-side env**
    (the SPA never reveals a key value, only its presence).
 3. The **model input** is pre-filled with the provider's
@@ -112,7 +112,7 @@ the user sees what they're about to dispatch.
 ## 3. Environment variables (no new ones)
 
 M11 introduces **no new env vars**. The catalog reads the existing
-5-provider preset table from `os.environ`:
+6-provider preset table from `os.environ`:
 
 | Provider | Key env var(s) | Host env var (optional override) |
 |---|---|---|
@@ -120,6 +120,7 @@ M11 introduces **no new env vars**. The catalog reads the existing
 | `MiniMax` | `MINIMAX_API_KEY` | `MINIMAX_HOST` |
 | `openai` | `OPENAI_API_KEY` | — |
 | `anthropic` | `ANTHROPIC_API_KEY` | — |
+| `google` | `GOOGLE_API_KEY` | — (Google AI Studio; model ids use `gemini/`) |
 | `custom` | `CUSTOM_API_KEY` | `CUSTOM_BASE_URL` (required, no default) |
 
 The SPA only ever **reads the names** of these env vars (via
@@ -138,7 +139,7 @@ enter one in the SPA's API-key panel. It travels only inside the next
 
 | Endpoint | Method | Body | Notes |
 |---|---|---|---|
-| `/api/providers` | GET | — | Returns the 5 presets with `key_state` and the cached `model_count` |
+| `/api/providers` | GET | — | Returns the 6 presets with `key_state` and the cached `model_count` |
 | `/api/providers/{provider_id}/models` | GET | `?refresh=1` (optional) | Returns `{provider, models, cached, fetched_at, error}` |
 | `/api/runs` | POST | extends with `provider`, `model`, `keys` (all optional) | Existing callers continue to work without changes |
 
@@ -215,7 +216,7 @@ release (out of M11 scope).
 - `../research_doc/m11-provider-model-key-ui.md` — full M11 plan with
   F1–F6 findings + per-file LOC budget.
 - `smolcode/src/smolcode/model_catalog.py` — the canonical
-  5-provider catalog (single source of truth for both CLI + SPA).
+  6-provider catalog (single source of truth for both CLI + SPA).
 - `smolcode/src/smolcode/web/api.py` — the two new endpoints +
   extended `POST /api/runs`.
 - `smolcode/web/src/lib/keysStore.ts` — the browser-local key store

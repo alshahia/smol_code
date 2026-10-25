@@ -35,6 +35,10 @@ class TestExtractKeysWhitelist:
         out = extract_keys({"OPENCODE_GO_APIKEY": "k12345"})
         assert out == {"OPENCODE_GO_APIKEY": "k12345"}
 
+    def test_google_key_kept(self):
+        out = extract_keys({"GOOGLE_API_KEY": "AIzaSyTestOnly"})
+        assert out == {"GOOGLE_API_KEY": "AIzaSyTestOnly"}
+
     def test_hf_token_kept(self):
         out = extract_keys({"HF_TOKEN": "hf_abcdef12345"})
         assert out == {"HF_TOKEN": "hf_abcdef12345"}

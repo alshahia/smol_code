@@ -120,7 +120,7 @@ keyboard-only users hear "Confirm forget to remove the stored key".
 ## 3. Environment variables (no new ones)
 
 M12 introduces **no new env vars**. The new `smolcode models`
-subcommand reads the existing 5-provider preset table from
+subcommand reads the existing 6-provider preset table from
 `os.environ`, exactly like `GET /api/providers` does. The
 `cached_at` field is computed at response time from
 `model_catalog._CacheEntry.fetched_at`.
@@ -511,8 +511,8 @@ suite was clean (760 passed).
 
 ### 11.6 Known limitations (M12.5)
 
-- **Doctor makes N outbound calls.** With the default 5-provider
-  catalog and all 5 keys set, a single `doctor` invocation is 5
+- **Doctor makes N outbound calls.** With the default 6-provider
+  catalog and all 6 keys set, a single `doctor` invocation is 6
   HTTP calls. Acceptable for a manual diagnostic; not intended
   for tight CI loops. Mitigation: `--no-fetch` mode.
 - **The 900px breakpoint is a heuristic.** Tablets in landscape

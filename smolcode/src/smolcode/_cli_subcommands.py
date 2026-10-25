@@ -221,6 +221,7 @@ def _models_collect_env_keys():
         "MINIMAX_HOST",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
         "CUSTOM_API_KEY",
         "CUSTOM_BASE_URL",
         "HF_TOKEN",

@@ -2,7 +2,7 @@
 
 Flags (see docs/architecture.md 8):
     --tier           "restricted" | "elevated" | "full_access"
-    --provider       "opencode-go" | "MiniMax" | "openai" | "anthropic" | "custom"
+    --provider       "opencode-go" | "MiniMax" | "openai" | "anthropic" | "google" | "custom"
     --model          model id string
     --litellm-proxy  URL (overrides api_base)
     --workspace      path

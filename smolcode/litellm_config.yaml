@@ -1,6 +1,6 @@
 # LiteLLM proxy configuration (M6; decision 0002).
 #
-# This is a STARTER config that mirrors the five provider presets already
+# This is a STARTER config that mirrors the six provider presets already
 # wired into smolcode/src/smolcode/models.py (PROVIDER_PRESETS). The
 # direct-provider path (the default) and the proxy path (opt-in via
 # SMOLCODE_LITELLM_PROXY) therefore expose the same model ids.
@@ -49,6 +49,14 @@ model_list:
     litellm_params:
       model: claude-3-5-haiku-latest
       api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ----- Google Gemini (secondary; litellm native) -------------------------
+  # The `gemini/` prefix keeps the request on Google AI Studio instead of
+  # Vertex AI. Model name matches the app's SMOLCODE_MODEL exactly.
+  - model_name: gemini/gemini-3.6-flash
+    litellm_params:
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GOOGLE_API_KEY
 
   # ----- Custom OpenAI-compatible endpoint ----------------------------------
   # CUSTOM_BASE_URL is required; CUSTOM_API_KEY is optional (self-hosted
@@ -110,6 +118,11 @@ model_group_settings:
   - model_group: claude-3-5-haiku-latest
     limits:
       rpm: 60
+      tpm: 200000
+  # Google: conservative cap for a single-user dev setup.
+  - model_group: gemini/gemini-3.6-flash
+    limits:
+      rpm: 30
       tpm: 200000
 
 

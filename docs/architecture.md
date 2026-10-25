@@ -205,7 +205,7 @@ operate if it cannot be resolved to an absolute path inside the
 Each preset is a `(model_id, api_key_env, api_base_env, default_model,
 custom_llm_provider)` tuple. The factory returns a `LiteLLMModel`
 configured with those values, raising a structured `MissingAPIKey` error
-if the env var is unset. The five v1 presets are:
+if the env var is unset. The six v1 presets are:
 
 | Preset id | `api_key_env` | `api_base_env` | Default model | `custom_llm_provider` | Tier |
 |---|---|---|---|---|---|
@@ -213,6 +213,7 @@ if the env var is unset. The five v1 presets are:
 | `MiniMax` | `MINIMAX_API_KEY` | `MINIMAX_HOST` (`https://api.minimax.io/v1`) | `MiniMax-M3` | `openai` | first-class |
 | `openai` | `OPENAI_API_KEY` | unset | `gpt-4o-mini` | unset (litellm native) | secondary |
 | `anthropic` | `ANTHROPIC_API_KEY` | unset | `claude-3-5-sonnet-latest` | unset (litellm native) | secondary |
+| `google` | `GOOGLE_API_KEY` | unset | `gemini/gemini-3.6-flash` | unset (`gemini/` model prefix) | secondary |
 | `custom` | `CUSTOM_API_KEY` (`optional`) | `CUSTOM_BASE_URL` | `custom-model` | `openai` | secondary |
 
 **Default provider / model** (resolved by user, see `docs/decisions/0001-initial-setup.md`): `opencode-go` + `deepseek-v4-flash`. The user wrote: `OPENCODE_GO_APIKEY is the api key for opencode go provider (default bu add minimax support) in .env file, always use deepseek flash v4, model id "deepseek-v4-flash"`.
@@ -580,7 +581,7 @@ smolcode/
 ├── litellm_config.yaml           Starter config declaring 5 provider presets + per-model rpm/tpm
 ├── docs/litellm-proxy.md         Usage guide (start, point CLI, add provider, troubleshoot)
 └── src/smolcode/
-    ├── model_catalog.py          5-provider catalog (1h TTL, sync httpx.Client)
+    ├── model_catalog.py          6-provider catalog (1h TTL, sync httpx.Client)
     └── tests/test_model_catalog.py  27 tests
 ```
 
@@ -588,7 +589,7 @@ smolcode/
 
 `smolcode.model_catalog` exposes:
 
-* `PROVIDERS` — the 5-provider registry (opencode-go, MiniMax, openai,
+* `PROVIDERS` — the 6-provider registry (opencode-go, MiniMax, openai,
   anthropic, custom).
 * `fetch_models(provider, keys, refresh=False)` — returns
   `{models, cached, fetched_at, error}`. 1-hour in-memory TTL

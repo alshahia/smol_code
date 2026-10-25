@@ -49,6 +49,7 @@ services:
       - MINIMAX_HOST=${MINIMAX_HOST:-https://api.minimax.io/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - CUSTOM_API_KEY=${CUSTOM_API_KEY:-}
       - CUSTOM_BASE_URL=${CUSTOM_BASE_URL:-}
     healthcheck:

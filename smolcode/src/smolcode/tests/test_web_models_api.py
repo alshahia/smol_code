@@ -40,6 +40,7 @@ def client(tmp_path, monkeypatch):
             "MINIMAX_HOST",
             "OPENAI_API_KEY",
             "ANTHROPIC_API_KEY",
+            "GOOGLE_API_KEY",
             "CUSTOM_BASE_URL",
             "CUSTOM_API_KEY",
             "HF_TOKEN",
