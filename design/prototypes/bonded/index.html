@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>smolcode · bonded prototype</title>
+<link rel="stylesheet" href="../fonts/fonts.css" />
+<style>
+  :root {
+    --yard: #e6dcc7;
+    --sheet: #f8f1e1;
+    --panel: #efe6d2;
+    --ink: #181d20;
+    --ink-2: #454a43;
+    --muted: #605e4c;
+    --line: #cdbfa6;
+    --line-2: #e2d7c1;
+    --navy: #152c3e;
+    --navy-2: #1d3b50;
+    --orange: #ad441f;
+    --orange-soft: #f3decf;
+    --green: #2b5945;
+    --green-soft: #e0ebe3;
+    --amber: #8a5a14;
+    --amber-soft: #f3e4c4;
+    --display: 'Barlow Condensed', 'Archivo', sans-serif;
+    --sans: 'Barlow', 'Public Sans', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--yard); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--orange); color: var(--sheet); }
+  :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .mono { font-family: var(--mono); }
+  .skip { position: absolute; left: -9999px; top: 0; background: var(--sheet); color: var(--ink); padding: 8px 12px; z-index: 60; }
+  .skip:focus { left: 8px; top: 8px; }
+
+  /* ---------- port header ---------- */
+  .port { background: var(--navy); color: var(--sheet); }
+  .port-inner { max-width: 1320px; margin: 0 auto; height: 62px; padding: 0 24px; display: flex; align-items: center; gap: 26px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+  .brand b { font-family: var(--display); font-size: 27px; font-weight: 600; letter-spacing: 0.01em; line-height: 1; }
+  .brand span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #a9b8c0; }
+  .port nav { display: flex; gap: 2px; margin-left: 10px; align-self: stretch; }
+  .port nav button { border: 0; background: transparent; color: #b7c4ca; padding: 0 12px; font-family: var(--display); font-size: 17px; letter-spacing: 0.07em; text-transform: uppercase; border-bottom: 3px solid transparent; }
+  .port nav button:hover { color: var(--sheet); }
+  .port nav button[aria-current="page"] { color: var(--sheet); border-bottom-color: var(--orange); }
+  .port-right { margin-left: auto; display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; white-space: nowrap; color: #c9d4d8; }
+  .proj { border: 1px solid #436074; padding: 4px 7px; border-radius: 3px; display: inline-flex; gap: 6px; align-items: center; color: #e4ebed; }
+  .proj svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+  .stale { color: #e8c27b; }
+  .money { color: var(--sheet); }
+  .money span { color: #9fb0b7; }
+  .who { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 50%; background: var(--orange); color: var(--sheet); font-family: var(--mono); font-size: 12px; }
+  .ticker { background: var(--navy-2); color: #dbe5e7; border-top: 1px solid #2f4c60; }
+  .ticker-in { max-width: 1320px; margin: 0 auto; padding: 5px 24px; display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.02em; }
+  .ticker b { color: #f0c39c; font-weight: 500; }
+  .ticker .ok { color: #a9d3bd; }
+
+  /* ---------- frame ---------- */
+  .yard { max-width: 1320px; margin: 0 auto; padding: 26px 24px 72px; }
+  .view[hidden] { display: none; }
+  .yard-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 28px; margin-bottom: 20px; }
+  .yard-head h1 { margin: 0; font-family: var(--display); font-size: clamp(46px, 6vw, 78px); line-height: 0.88; letter-spacing: -0.015em; font-weight: 600; max-width: 17ch; }
+  .yard-head .lede { margin: 12px 0 0; max-width: 62ch; color: var(--ink-2); font-size: 15px; }
+  .yard-mark { text-align: right; }
+  .yard-mark .plate { display: inline-grid; gap: 1px; background: var(--orange); color: var(--sheet); padding: 8px 12px; }
+  .yard-mark .plate span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
+  .yard-mark .plate b { font-family: var(--display); font-size: 42px; font-weight: 600; line-height: 0.9; letter-spacing: 0.03em; }
+  .yard-mark small { display: block; margin-top: 6px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  .tally { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 2px solid var(--navy); border-bottom: 1px solid var(--navy); margin: 0 0 24px; }
+  .tally div { padding: 10px 14px 12px; border-right: 1px solid var(--line); }
+  .tally div:last-child { border-right: 0; }
+  .tally b { display: block; font-family: var(--display); font-size: 40px; font-weight: 600; line-height: 0.95; letter-spacing: 0.02em; }
+  .tally b em { font-style: normal; font-size: 20px; color: var(--muted); }
+  .tally span { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .tally .held b { color: var(--orange); }
+  .tally .money-cell b { font-size: 30px; padding-top: 4px; }
+
+  .yard-grid { display: grid; grid-template-columns: minmax(0, 1fr) 356px; gap: 22px; align-items: start; }
+  .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .panel-hd { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--navy); }
+  .panel-hd h2 { margin: 0; font-family: var(--display); font-size: 21px; font-weight: 600; letter-spacing: 0.045em; text-transform: uppercase; }
+  .panel-hd span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .mtable { width: 100%; border-collapse: collapse; }
+  .mtable th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .mtable td { padding: 12px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  .mtable tr[data-to] { cursor: pointer; }
+  .mtable tr[data-to]:hover td { background: var(--panel); }
+  .slot { font-family: var(--display); font-size: 25px; font-weight: 600; color: var(--orange); line-height: 1; letter-spacing: 0.02em; white-space: nowrap; }
+  .slot small { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0; margin-top: 3px; }
+  .cargo { font-family: var(--sans); font-weight: 600; font-size: 15px; line-height: 1.3; }
+  .cargo small { display: block; margin-top: 4px; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--muted); }
+  .seal { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); padding: 3px 6px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap; color: var(--muted); }
+  .seal::before { content: ''; width: 7px; height: 7px; background: currentColor; }
+  .seal.hold { border-color: var(--orange); color: var(--orange); background: var(--orange-soft); }
+  .seal.ok { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+  .seal.stale { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+  .gate { color: var(--green); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .gate.held { color: var(--orange); }
+  .side { display: grid; gap: 16px; }
+  .gatecard { background: var(--sheet); border: 1px solid var(--orange); border-radius: 12px; overflow: hidden; position: relative; }
+  .gatecard .band { background: var(--orange); color: var(--sheet); display: flex; justify-content: space-between; gap: 10px; padding: 6px 12px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .gatecard .inner { padding: 14px; }
+  .gatecard h2 { margin: 0 0 6px; font-family: var(--display); font-size: 30px; line-height: 0.95; letter-spacing: 0.005em; font-weight: 600; max-width: 15ch; }
+  .gatecard p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .cargolabel { margin: 12px 0 0; display: flex; justify-content: space-between; gap: 10px; border: 1px solid var(--line); background: var(--panel); padding: 7px 8px; font-family: var(--mono); font-size: 12px; }
+  .cargolabel b { color: var(--orange); font-weight: 500; }
+  .gatecard .acts { display: flex; gap: 8px; margin-top: 12px; }
+  .stamp { position: absolute; right: 12px; top: 42px; border: 2px solid var(--orange); color: var(--orange); padding: 3px 7px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; transform: rotate(-5deg); opacity: 0.9; background: rgba(248, 241, 225, 0.7); }
+
+  /* ---------- buttons ---------- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--navy); background: transparent; color: var(--navy); padding: 7px 10px; border-radius: 3px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; text-decoration: none; white-space: nowrap; }
+  .btn:hover { background: var(--panel); }
+  .btn.solid { background: var(--navy); color: var(--sheet); }
+  .btn.solid:hover { background: var(--navy-2); }
+  .btn.orange { background: var(--orange); border-color: var(--orange); color: #fff; }
+  .btn.orange:hover { background: #963617; }
+  .btn.ghost { border-color: var(--line); color: var(--muted); }
+  .btn.ghost:hover { color: var(--ink); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; filter: saturate(0.35); }
+  .btn.orange[disabled] { background: #c9a18d; border-color: #c9a18d; color: #fffdf7; opacity: 1; filter: none; }
+  .mtable td.mono { white-space: nowrap; }
+  .btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  /* ---------- container view ---------- */
+  .cont { background: var(--sheet); border: 1px solid var(--navy); border-radius: 12px; overflow: hidden; }
+  .cont-top { display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; gap: 22px; padding: 18px 20px; align-items: start; }
+  .cplate { background: var(--orange); color: var(--sheet); padding: 10px 12px; display: inline-grid; gap: 1px; min-width: 150px; }
+  .cplate span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
+  .cplate b { font-family: var(--display); font-size: 46px; line-height: 0.9; letter-spacing: 0.04em; font-weight: 600; }
+  .cplate small { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cont-title h1 { margin: 0; font-family: var(--display); font-size: clamp(32px, 4vw, 48px); line-height: 0.93; letter-spacing: -0.005em; font-weight: 600; max-width: 26ch; }
+  .cont-title .lede { margin: 8px 0 0; color: var(--ink-2); max-width: 68ch; font-size: 14px; }
+  .cont-title .caseid { margin-top: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+  .cont-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .cont-actions .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .cont-meta { display: flex; flex-wrap: wrap; border-top: 1px solid var(--navy); border-bottom: 1px solid var(--line); }
+  .cont-meta div { padding: 7px 12px; border-right: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .cont-meta div:last-child { border-right: 0; }
+  .cont-meta b { display: block; margin-top: 2px; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .cont-body { display: grid; grid-template-columns: 142px minmax(0, 1fr) 320px; }
+  .cont-index { background: var(--navy); color: var(--sheet); padding: 8px 0; }
+  .cont-index .ih { padding: 4px 12px 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #9fb2bb; }
+  .cont-index .row { display: flex; align-items: baseline; gap: 9px; padding: 9px 12px; border-top: 1px solid #29445a; font-family: var(--mono); font-size: 12px; color: #a9bbc2; }
+  .cont-index .row b { font-family: var(--display); font-size: 23px; line-height: 1; color: #e8ded0; font-weight: 600; }
+  .cont-index .row.on { background: var(--navy-2); color: var(--sheet); box-shadow: inset 1px 0 0 var(--orange); }
+  .cont-index .row.on b { color: #f0b48a; }
+  .manifest { min-width: 0; }
+  .mrow { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--line-2); }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow .no { font-family: var(--display); font-size: 26px; line-height: 1; color: var(--orange); font-weight: 600; letter-spacing: 0.03em; }
+  .mrow .no small { display: block; margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0; font-weight: 400; }
+  .kind { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .kind em { font-style: normal; color: var(--ink); }
+  .mrow p { margin: 4px 0 0; color: var(--ink-2); max-width: 68ch; font-size: 14px; }
+  .fileline { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; border: 1px solid var(--line); background: var(--panel); padding: 7px 9px; font-family: var(--mono); font-size: 12px; }
+  .term { margin-top: 8px; background: #12222e; color: #e9e2d1; border: 1px solid #12222e; padding: 9px 11px; font-family: var(--mono); font-size: 12px; overflow-x: auto; }
+  .term .ok { color: #a9d3bd; }
+  .term .dim { color: #93a4ac; }
+  .diffbox { margin-top: 8px; border: 1px solid var(--line); overflow: hidden; }
+  .diffbox .hd { display: flex; justify-content: space-between; gap: 10px; padding: 6px 9px; background: var(--panel); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
+  .diffbox .row { display: grid; grid-template-columns: 32px 16px minmax(0, 1fr); font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+  .diffbox .row span { padding: 2px 5px; }
+  .diffbox .row .ln { color: var(--muted); text-align: right; border-right: 1px solid var(--line-2); }
+  .diffbox .row .sg { text-align: center; color: var(--muted); }
+  .diffbox .add { background: var(--green-soft); }
+  .diffbox .add .sg { color: var(--green); }
+  .diffbox .del { background: var(--orange-soft); }
+  .diffbox .del .sg { color: var(--orange); }
+  .diffbox .hunk { background: var(--panel); color: var(--muted); }
+  .holdband { margin: 14px 18px 18px; background: var(--navy); color: var(--sheet); padding: 13px 14px; display: flex; gap: 20px; align-items: flex-start; border: 1px solid var(--navy); position: relative; }
+  .holdband .ht { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #f0b48a; }
+  .holdband h2 { margin: 4px 0 4px; font-family: var(--display); font-size: 26px; line-height: 1; font-weight: 600; }
+  .holdband p { margin: 0; color: #c3d0d3; font-size: 13px; max-width: 52ch; }
+  .holdband .acts { margin-left: auto; padding-top: 20px; display: flex; gap: 8px; }
+  .holdband .btn { border-color: #6d8794; color: var(--sheet); }
+  .holdband .btn:hover { background: var(--navy-2); }
+  .holdband .btn.orange { border-color: var(--orange); color: #fff; }
+  .holdband .hstamp { position: absolute; right: 13px; top: 10px; border: 2px solid #f0b48a; color: #f0b48a; font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; padding: 3px 6px; transform: rotate(-4deg); }
+  .cont-rail { border-left: 1px solid var(--line); padding: 14px; display: grid; gap: 14px; align-content: start; }
+  .mini { border-bottom: 1px solid var(--line-2); padding-bottom: 12px; }
+  .mini:last-child { border-bottom: 0; padding-bottom: 0; }
+  .mini h2 { margin: 0 0 7px; font-family: var(--display); font-size: 20px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+  .mini .big { font-family: var(--display); font-size: 34px; line-height: 0.9; color: var(--orange); font-weight: 600; }
+  .mini .big span { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.02em; font-weight: 400; }
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 6px 8px; margin: 0; }
+  .kv dt { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 12px; text-align: right; }
+  .policy { width: 100%; border-collapse: collapse; }
+  .policy th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--muted); text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  .policy td { font-family: var(--sans); font-size: 12px; padding: 4px; border-bottom: 1px solid var(--line-2); }
+  .yes { color: var(--green); }
+  .no { color: var(--orange); }
+  .gated { color: var(--amber); }
+  .barcode { display: flex; align-items: flex-end; gap: 2px; height: 26px; margin: 2px 0 5px; }
+  .barcode i { display: block; background: var(--navy); height: 100%; width: 2px; }
+  .barcode i.o { background: var(--orange); }
+  .sealnote { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+
+  /* ---------- composer ---------- */
+  .composer { position: sticky; bottom: 0; z-index: 20; background: var(--sheet); border-top: 2px solid var(--orange); padding: 10px 14px 12px; box-shadow: 0 -8px 20px rgba(24, 29, 32, 0.13); }
+  .composer textarea { width: 100%; min-height: 42px; resize: vertical; border: 1px solid var(--line); background: #fffdf7; padding: 8px 10px; border-radius: 3px; font-size: 14px; }
+  .composer textarea::placeholder { color: var(--muted); }
+  .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .field { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); padding: 5px 7px; border-radius: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .field select { border: 0; background: transparent; font-family: var(--mono); font-size: 12px; color: var(--ink); padding: 0 2px; }
+  .composer-row .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .kbdhint { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .kbdhint kbd { border: 1px solid var(--line); border-bottom-color: var(--muted); border-radius: 2px; padding: 1px 4px; background: var(--sheet); font-family: var(--mono); font-size: 12px; }
+  .auto { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---------- manifest view ---------- */
+  .manhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+  .manhead h1 { margin: 0; font-family: var(--display); font-size: clamp(56px, 8vw, 104px); line-height: 0.82; letter-spacing: -0.01em; font-weight: 600; text-transform: uppercase; }
+  .manhead .stampbig { border: 2px solid var(--green); color: var(--green); padding: 7px 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; transform: rotate(-2deg); text-align: center; line-height: 1.6; }
+  .manhead .stampbig b { display: block; font-size: 13px; }
+  .ledger-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+  .ledger { width: 100%; border-collapse: collapse; }
+  .ledger th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; text-align: left; padding: 9px 10px; border-bottom: 2px solid var(--navy); }
+  .ledger td { padding: 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  .ledger tr:hover td { background: var(--panel); }
+  .ledger .seq { font-family: var(--display); font-size: 23px; color: var(--orange); line-height: 1; font-weight: 600; }
+  .ledger .time { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .ledger .move b { display: block; font-family: var(--sans); font-weight: 600; font-size: 14px; }
+  .ledger .move small { display: block; margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .ledger .hash { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .ledger .by { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---------- store ---------- */
+  .store-grid { display: grid; grid-template-columns: minmax(0, 1fr) 356px; gap: 22px; align-items: start; }
+  .formsheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .formsheet .sec { padding: 14px 16px; border-bottom: 1px solid var(--line-2); }
+  .formsheet .sec:last-child { border-bottom: 0; }
+  .formsheet h2 { margin: 0 0 8px; font-family: var(--display); font-size: 24px; font-weight: 600; letter-spacing: 0.045em; text-transform: uppercase; }
+  .prow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+  .prow:last-child { border-bottom: 0; }
+  .prow b { display: block; font-size: 14px; font-weight: 600; }
+  .prow small { display: block; margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .lever { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--navy); background: transparent; color: var(--navy); padding: 5px 8px; border-radius: 3px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lever .knob { width: 24px; height: 12px; border: 1px solid var(--navy); position: relative; background: var(--line-2); }
+  .lever .knob::after { content: ''; position: absolute; top: 1px; left: 1px; width: 8px; height: 8px; background: var(--navy); }
+  .lever[aria-pressed="true"] { background: var(--navy); color: var(--sheet); }
+  .lever[aria-pressed="true"] .knob { background: var(--orange); border-color: var(--orange); }
+  .lever[aria-pressed="true"] .knob::after { left: 13px; background: var(--sheet); }
+  .ptable { width: 100%; border-collapse: collapse; }
+  .ptable th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--muted); text-align: left; padding: 7px 5px; border-bottom: 1px solid var(--line); text-transform: uppercase; }
+  .ptable td { font-family: var(--sans); font-size: 13px; padding: 8px 5px; border-bottom: 1px solid var(--line-2); }
+  .ptable td.mono { font-family: var(--mono); font-size: 12px; }
+
+  /* ---------- queue ---------- */
+  .slots { display: grid; gap: 0; }
+  .slotrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) 150px 130px 90px; gap: 16px; align-items: center; padding: 18px 16px; border-bottom: 1px solid var(--line-2); }
+  .slotrow:last-child { border-bottom: 0; }
+  .slotrow .n { font-family: var(--display); font-size: 52px; line-height: 0.8; color: var(--orange); font-weight: 600; letter-spacing: 0.02em; }
+  .slotrow .cargo { font-size: 16px; }
+  .slotrow .cargo small { margin-top: 5px; }
+  .slotrow .wait { font-family: var(--display); font-size: 26px; color: var(--ink); }
+  .slotrow .wait small { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---------- gate pass modal ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(21, 44, 62, 0.46); z-index: 80; }
+  .scrim[hidden] { display: none; }
+  .gatepass { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--sheet); border: 1px solid var(--navy); border-radius: 12px; z-index: 90; display: flex; flex-direction: column; box-shadow: 0 20px 64px rgba(24, 29, 32, 0.28); animation: pass-in 0.22s ease-out; }
+  .gatepass[hidden] { display: none; }
+  @keyframes pass-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 9px)); } to { opacity: 1; transform: translate(-50%, -50%); } }
+  .gatepass .oband { background: var(--orange); color: var(--sheet); display: flex; justify-content: space-between; gap: 12px; padding: 7px 14px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; }
+  .gatepass .gh { padding: 14px 16px 12px; border-bottom: 1px solid var(--navy); display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 18px; align-items: start; }
+  .gatepass .gplate { background: var(--navy); color: var(--sheet); padding: 8px 10px; }
+  .gatepass .gplate span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #9fb2bb; }
+  .gatepass .gplate b { display: block; font-family: var(--display); font-size: 36px; line-height: 0.9; letter-spacing: 0.03em; font-weight: 600; }
+  .gatepass .gh h2 { margin: 0; font-family: var(--display); font-size: 36px; line-height: 0.95; letter-spacing: 0; font-weight: 600; max-width: 22ch; }
+  .gatepass .x { border: 1px solid var(--line); background: var(--sheet); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 3px; }
+  .gatepass .x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .gatepass .gb { padding: 14px 16px; overflow: auto; }
+  .gatepass .gb p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; max-width: 72ch; }
+  .gp-cols { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 16px; margin-top: 10px; align-items: start; }
+  .gp-doc { border: 0; }
+  .gp-doc .dh { border: 1px solid var(--line); border-bottom: 0; }
+  .gp-doc .diffbox { margin-top: 0; border: 1px solid var(--line); border-top: 0; }
+  .gp-doc .dh { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
+  .gp-note { border: 1px solid var(--line); background: var(--panel); padding: 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+  .gp-note b { display: block; color: var(--ink); font-weight: 500; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .consent { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+  .consent input { width: 14px; height: 14px; margin-top: 2px; accent-color: var(--orange); }
+  .gatepass .gf { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--navy); background: var(--panel); }
+  .gatepass .gf .right { margin-left: auto; display: flex; gap: 8px; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--navy); color: var(--sheet); padding: 9px 14px; border-radius: 3px; font-family: var(--mono); font-size: 12px; z-index: 100; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1100px) {
+    .yard-grid, .ledger-grid, .store-grid { grid-template-columns: minmax(0, 1fr); }
+    .cont-body { grid-template-columns: 112px minmax(0, 1fr); }
+    .cont-rail { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cont-top { grid-template-columns: 150px minmax(0, 1fr); }
+    .cont-actions { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+    .cont-actions .row { justify-content: flex-start; }
+  }
+  @media (max-width: 880px) {
+    .port-inner { height: auto; flex-wrap: wrap; padding: 9px 14px 0; gap: 8px; }
+    .port nav { order: 4; width: 100%; overflow-x: auto; padding-top: 2px; }
+    .port nav button { padding: 6px 8px; white-space: nowrap; font-size: 16px; }
+    .brand b { font-size: 24px; }
+    .brand span { display: none; }
+    .port-right { margin-left: auto; gap: 7px; }
+    .stale { display: none; }
+    .ticker-in { padding: 5px 14px; font-size: 12px; }
+    .ticker-in .ok { display: none; }
+    .yard { padding: 18px 14px 64px; }
+    .yard-head { display: block; }
+    .yard-head h1 { font-size: 52px; }
+    .yard-mark { display: none; }
+    .tally { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tally div:nth-child(2) { border-right: 0; }
+    .tally div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    .tally b { font-size: 34px; }
+    .mtable th:nth-child(4), .mtable td:nth-child(4),
+    .mtable th:nth-child(5), .mtable td:nth-child(5) { display: none; }
+    .cont-top { grid-template-columns: 1fr; gap: 12px; padding: 14px; }
+    .cplate { width: max-content; }
+    .cont-title h1 { font-size: 34px; }
+    .cont-actions { flex-direction: row; flex-wrap: wrap; justify-content: space-between; }
+    .cont-body { grid-template-columns: 1fr; }
+    .cont-index { display: none; }
+    .mrow { grid-template-columns: 1fr; gap: 5px; padding: 12px 14px; }
+    .mrow .no { font-size: 22px; }
+    .mrow .no small { display: inline; margin-left: 6px; }
+    .holdband { margin: 12px 14px 16px; flex-direction: column; gap: 8px; }
+    .holdband .hstamp { position: static; align-self: flex-start; }
+    .holdband .acts { margin-left: 0; padding-top: 0; width: 100%; }
+    .holdband .acts .btn { flex: 1; }
+    .cont-rail { grid-template-columns: 1fr; }
+    .cont-meta div { padding: 6px 9px; }
+    .composer { position: static; margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; box-shadow: none; padding: 10px; }
+    .composer textarea { min-height: 38px; }
+    .composer-row .model-field, .composer-row .attach-field, .composer-row .auto, .composer-row .kbdhint { display: none; }
+    .composer-row .right { width: 100%; margin-left: 0; }
+    .composer-row .right .btn { flex: 1; }
+    .yard-head { margin-bottom: 14px; }
+    .manhead { display: block; }
+    .manhead h1 { font-size: 64px; }
+    .manhead .stampbig { display: inline-block; margin-top: 10px; transform: none; }
+    .ledger th:nth-child(4), .ledger td:nth-child(4),
+    .ledger th:nth-child(5), .ledger td:nth-child(5) { display: none; }
+    .ledger .move b { font-size: 13px; }
+    .slotrow { grid-template-columns: 64px minmax(0, 1fr) 80px; gap: 10px; padding: 14px 10px; }
+    .slotrow .n { font-size: 38px; }
+    .slotrow .wait { font-size: 20px; }
+    .slotrow .slot-tier, .slotrow .slot-seal { display: none; }
+    .gatepass { top: auto; bottom: 8px; transform: translate(-50%, 0); max-height: calc(100vh - 16px); }
+    @keyframes pass-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    .gatepass .gh { grid-template-columns: 1fr; gap: 8px; }
+    .gatepass .gh h2 { font-size: 28px; }
+    .gatepass .gh .x { position: absolute; right: 12px; top: 42px; }
+    .gp-cols { grid-template-columns: 1fr; }
+    .gatepass .gp-note { display: none; }
+    .gatepass .gf { flex-wrap: wrap; }
+    .gatepass .gf .right { width: 100%; margin-left: 0; }
+    .gatepass .gf .right .btn { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="port">
+  <div class="port-inner">
+    <div class="brand"><b>smolcode</b><span>bonded · prototype</span></div>
+    <nav aria-label="Main">
+      <button data-go="yard" aria-current="page">Yard</button>
+      <button data-go="container">Container</button>
+      <button data-go="queue">Queue</button>
+      <button data-go="manifest">Manifest</button>
+      <button data-go="store">Store</button>
+    </nav>
+    <div class="port-right">
+      <span class="proj"><svg viewBox="0 0 16 16"><path d="M2 4.5h4l1.5 2H14v6.5H2z"/></svg> orbit-api</span>
+      <span class="stale">1 image stale</span>
+      <span class="money">$3.84 <span>/ $12.00</span></span>
+      <span class="who" title="ahmadmhmdsy">AM</span>
+    </div>
+  </div>
+</header>
+<div class="ticker">
+  <div class="ticker-in">
+    <span><b>GATE 01</b> · HOLD · SEAL 4B21C9 · CONT. 2B9C</span>
+    <span class="ok">MANIFEST VERIFIED 20:41:12 · 1,204 ENTRIES</span>
+  </div>
+</div>
+
+<main id="main" class="yard">
+  <!-- ============ YARD ============ -->
+  <section class="view" data-view="yard">
+    <div class="yard-head">
+      <div>
+        <h1>Two containers in play. One gate is held.</h1>
+        <p class="lede">Every run is cargo. It enters through the gate, sits under seal while it works, and leaves only on a signed release. The yard is local to this machine and never on the public network.</p>
+      </div>
+      <div class="yard-mark">
+        <div class="plate"><span>yard</span><b>05</b></div>
+        <small>FRI 24 OCT 2026 · 20:41</small>
+      </div>
+    </div>
+
+    <div class="tally">
+      <div><b>02</b><span>in play</span></div>
+      <div><b>02</b><span>queued</span></div>
+      <div class="held"><b>01</b><span>gate held</span></div>
+      <div class="money-cell"><b>$3.84<em> / $12</em></b><span>spend tonight</span></div>
+    </div>
+
+    <div class="yard-grid">
+      <div class="panel">
+        <div class="panel-hd"><h2>Yard manifest</h2><span>5 entries · 1 daemon</span></div>
+        <table class="mtable">
+          <thead><tr><th>Slot</th><th>Cargo</th><th>Tier</th><th>Seal</th><th>Gate</th><th>Cost</th></tr></thead>
+          <tbody>
+            <tr data-to="container" tabindex="0">
+              <td><span class="slot">01<small>7F3A</small></span></td>
+              <td><span class="cargo">Wire idempotency keys into the Stripe webhook handler<small>run_7f3a · 20:37 · claude-sonnet-4</small></span></td>
+              <td class="mono" style="font-size:12px">restricted</td>
+              <td><span class="seal hold">9D07AA · held</span></td>
+              <td><span class="gate">running</span></td>
+              <td class="mono" style="font-size:12px">$0.38</td>
+            </tr>
+            <tr data-to="container" tabindex="0">
+              <td><span class="slot">02<small>2B9C</small></span></td>
+              <td><span class="cargo">Upgrade the session store to an append-only event log<small>run_2b9c · 20:33 · claude-opus-4</small></span></td>
+              <td class="mono" style="font-size:12px">elevated</td>
+              <td><span class="seal hold">4B21C9 · release pending</span></td>
+              <td><span class="gate held">held</span></td>
+              <td class="mono" style="font-size:12px">$0.91</td>
+            </tr>
+            <tr data-to="container" tabindex="0">
+              <td><span class="slot">03<small>6D1E</small></span></td>
+              <td><span class="cargo">Fix the flaky billing snapshot test<small>run_6d1e · 20:19 · claude-sonnet-4</small></span></td>
+              <td class="mono" style="font-size:12px">restricted</td>
+              <td><span class="seal ok">verified</span></td>
+              <td><span class="gate">cleared</span></td>
+              <td class="mono" style="font-size:12px">$0.14</td>
+            </tr>
+            <tr data-to="container" tabindex="0">
+              <td><span class="slot">04<small>04AA</small></span></td>
+              <td><span class="cargo">Migrate the audit chain to v2 with rotation<small>run_04aa · queued #1 · claude-opus-4</small></span></td>
+              <td class="mono" style="font-size:12px">full access</td>
+              <td><span class="seal">not sealed</span></td>
+              <td><span class="gate">queued</span></td>
+              <td class="mono" style="font-size:12px">—</td>
+            </tr>
+            <tr data-to="container" tabindex="0">
+              <td><span class="slot">05<small>9C31</small></span></td>
+              <td><span class="cargo">Document the tier policy matrix in docs/security.md<small>run_9c31 · 19:58 · minimax-m2</small></span></td>
+              <td class="mono" style="font-size:12px">elevated</td>
+              <td><span class="seal">returned</span></td>
+              <td><span class="gate">refused</span></td>
+              <td class="mono" style="font-size:12px">$0.02</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="side">
+        <div class="gatecard">
+          <div class="band"><span>Gate 01 · hold</span><span>CONT. 2B9C</span></div>
+          <div class="stamp">held</div>
+          <div class="inner">
+            <h2>Drop 12 legacy snapshot files?</h2>
+            <p>The elevated sandbox wants to clear the old snapshot directory before writing the event log. The only irreversible move in the case.</p>
+            <div class="cargolabel"><span>src/session/store.py</span><b>+42 −11</b></div>
+            <div class="cargolabel" style="margin-top:-1px"><span>seal 4B21C9</span><span>tier elevated</span></div>
+            <div class="acts">
+              <button class="btn orange" data-open>Open gate pass</button>
+              <button class="btn ghost">Hold cargo</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-hd"><h2>Seal register</h2><span>2 active</span></div>
+          <div style="padding:12px 14px">
+            <div class="barcode" aria-hidden="true">
+              <i style="width:3px"></i><i style="width:1px"></i><i style="width:5px"></i><i class="o" style="width:2px"></i><i style="width:1px"></i><i style="width:4px"></i><i style="width:1px"></i><i style="width:2px"></i><i style="width:6px"></i><i style="width:1px"></i><i style="width:3px"></i><i class="o" style="width:2px"></i><i style="width:1px"></i><i style="width:5px"></i><i style="width:2px"></i><i style="width:1px"></i><i style="width:3px"></i><i style="width:2px"></i>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono" style="font-size:12px">9D07AA</span><span class="seal hold">intact · held</span></div>
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono" style="font-size:12px">4B21C9</span><span class="seal hold">intact · held</span></div>
+            </div>
+            <p class="sealnote">A seal is one diff, one case. Breaking it writes the release and the hash to the manifest.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-hd"><h2>Bonded store</h2><span>docker</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Restricted</dt><dd>a91c4e · current</dd>
+              <dt>Elevated</dt><dd style="color:var(--amber)">02b7f1 · stale</dd>
+              <dt>Full</dt><dd>7ce0aa · current</dd>
+              <dt>Bind</dt><dd>loopback only</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ QUEUE ============ -->
+  <section class="view" data-view="queue" hidden>
+    <div class="yard-head">
+      <div>
+        <h1>The yard queue. Two slots open.</h1>
+        <p class="lede">One container works at a time. A held gate keeps its slot and its seal until a person releases the cargo or returns it to the store.</p>
+      </div>
+      <div class="yard-mark">
+        <div class="plate"><span>queue</span><b>02</b></div>
+        <small>NEXT GATE 20:42:00 · HOLD 1</small>
+      </div>
+    </div>
+    <div class="yard-grid">
+      <div class="panel">
+        <div class="panel-hd"><h2>Slots</h2><span>drain 1 at a time</span></div>
+        <div class="slots">
+          <div class="slotrow">
+            <div class="n">01</div>
+            <div class="cargo">Migrate the audit chain to v2 with rotation<small>run_04aa · full access · 8 steps</small></div>
+            <div class="slot-tier"><span class="seal">full access</span></div>
+            <div class="slot-seal"><span class="seal">not sealed</span></div>
+            <div class="wait">27m<small>wait</small></div>
+          </div>
+          <div class="slotrow">
+            <div class="n">02</div>
+            <div class="cargo">Backfill cost caps into docs/operations.md<small>run_31ba · restricted · 3 steps</small></div>
+            <div class="slot-tier"><span class="seal">restricted</span></div>
+            <div class="slot-seal"><span class="seal">not sealed</span></div>
+            <div class="wait">19m<small>wait</small></div>
+          </div>
+          <div class="slotrow">
+            <div class="n">—</div>
+            <div class="cargo">Drop 12 legacy snapshot files<small>run_2b9c · elevated · held at seal 4B21C9</small></div>
+            <div class="slot-tier"><span class="seal">elevated</span></div>
+            <div class="slot-seal"><span class="seal hold">release pending</span></div>
+            <div class="wait" style="color:var(--orange)">held<small>gate 01</small></div>
+          </div>
+        </div>
+        <div style="padding:14px 16px;border-top:1px solid var(--line)">
+          <p style="margin:0;font-family:var(--mono);font-size:12px;color:var(--muted)">The local daemon drains the queue. A run that fails its test stops before the next slot; the container is returned to the manifest, never silently retried.</p>
+        </div>
+      </div>
+      <div class="side">
+        <div class="panel">
+          <div class="panel-hd"><h2>Capacity</h2><span>1 active</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Active</dt><dd>7f3a</dd>
+              <dt>Queued</dt><dd>2</dd>
+              <dt>Held</dt><dd style="color:var(--orange)">1</dd>
+              <dt>Tonight</dt><dd>$3.84 / $12.00</dd>
+            </dl>
+            <div style="margin-top:10px"><button class="btn" disabled>Drain now</button></div>
+            <p class="sealnote">Drain is disabled while a gate is held.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd"><h2>Rule</h2><span>queue</span></div>
+          <div style="padding:12px 14px">
+            <p style="margin:0;font-size:13px;color:var(--ink-2)">One container at a time on this machine. A full-access case takes the next slot only after the elevated gate is resolved.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONTAINER ============ -->
+  <section class="view" data-view="container" hidden>
+    <div class="cont">
+      <div class="cont-top">
+        <div class="cplate"><span>container</span><b>7F3A</b><small>restricted · 20:37</small></div>
+        <div class="cont-title">
+          <h1>Wire idempotency keys into the Stripe webhook handler</h1>
+          <p class="lede">Add an idempotency column, a unique index migration, and a replay guard before the charge call. Keep the existing signature check and add tests for the replay case.</p>
+          <div class="caseid">CASE 7F3A · INTAKE 20:37:04 · CUSTODIAN AHMAD</div>
+        </div>
+        <div class="cont-actions">
+          <span class="seal hold">9D07AA · seal intact</span>
+          <div class="row">
+            <button class="btn"><svg viewBox="0 0 16 16"><path d="M6 3v10M10 3v10"/></svg> Pause</button>
+            <button class="btn orange"><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10"/></svg> Stop</button>
+            <button class="btn ghost">Export</button>
+          </div>
+        </div>
+      </div>
+      <div class="cont-meta">
+        <div>Tier<b>restricted</b></div>
+        <div>Model<b>anthropic/claude-sonnet-4</b></div>
+        <div>Image<b>a91c4e · current</b></div>
+        <div>Network<b>none · internal bridge</b></div>
+        <div>Elapsed<b>04:12</b></div>
+        <div>Gate<b style="color:var(--orange)">held · 01</b></div>
+        <div>Spend<b>$0.38 / $2.00</b></div>
+      </div>
+      <div class="cont-body">
+        <aside class="cont-index" aria-hidden="true">
+          <div class="ih">Manifest</div>
+          <div class="row on"><b>001</b>20:37</div>
+          <div class="row"><b>002</b>20:37</div>
+          <div class="row"><b>003</b>20:37</div>
+          <div class="row"><b>004</b>20:37</div>
+          <div class="row"><b>005</b>20:38</div>
+          <div class="row"><b>006</b>20:40</div>
+        </aside>
+        <div class="manifest">
+          <div class="mrow">
+            <div class="no">001<small>20:37:04</small></div>
+            <div>
+              <div class="kind"><em>Intake</em> · task · operator</div>
+              <p>Add idempotency keys to the Stripe webhook handler so duplicate deliveries cannot double-charge. Keep the existing signature check. Add tests for the replay case.</p>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="no">002<small>20:37:11</small></div>
+            <div>
+              <div class="kind"><em>Plan</em> · lead agent</div>
+              <p>Read the handler and the billing tests, key the event on <span class="mono">stripe_event_id</span>, store it beside the charge, run the suite, then patch the handler.</p>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="no">003<small>20:37:19</small></div>
+            <div>
+              <div class="kind"><em>Tool</em> · read_file · restricted</div>
+              <div class="fileline"><span>src/billing/webhook.py</span><span>212 lines · inside root</span></div>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="no">004<small>20:37:41</small></div>
+            <div>
+              <div class="kind"><em>Exec</em> · pytest · allowed</div>
+              <div class="term">
+                <div>$ pytest tests/billing -q</div>
+                <div style="margin-top:4px">18 passed in 2.14s</div>
+                <div class="ok">tests/billing/test_webhook.py::test_replay_is_idempotent PASSED</div>
+              </div>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="no">005<small>20:38:02</small></div>
+            <div>
+              <div class="kind"><em>Sub-agent</em> · scout · grep · read-only</div>
+              <div class="term"><div>$ grep -rn "stripe_event_id" src/ tests/</div><div style="margin-top:4px" class="dim">14 hits · 6 files · no write</div></div>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="no">006<small>20:40:03</small></div>
+            <div>
+              <div class="kind"><em>Diff proposed</em> · src/billing/webhook.py · sealed</div>
+              <p style="margin-top:2px">Adds a replay guard before the charge call. The restricted sandbox cannot apply a schema change alone.</p>
+              <div class="diffbox">
+                <div class="hd"><span>src/billing/webhook.py</span><span style="color:var(--orange)">+24 −3 · seal 9D07AA</span></div>
+                <div class="row hunk"><span class="ln">1</span><span class="sg"></span><span>@@ -61,7 +61,12 @@ def handle_event(request: Request):</span></div>
+                <div class="row"><span class="ln">61</span><span class="sg"></span><span> def handle_event(request: Request) -&gt; Response:</span></div>
+                <div class="row"><span class="ln">62</span><span class="sg"></span><span>     event = stripe.Event.construct_from(request.json(), WEBHOOK_SECRET)</span></div>
+                <div class="row add"><span class="ln">63</span><span class="sg">+</span><span>     existing = Charge.by_event_id(event.id)</span></div>
+                <div class="row add"><span class="ln">64</span><span class="sg">+</span><span>     if existing is not None:</span></div>
+                <div class="row add"><span class="ln">65</span><span class="sg">+</span><span>         return Response(status_code=200, body={"replayed": True})</span></div>
+                <div class="row del"><span class="ln">67</span><span class="sg">−</span><span>     Charge.create(customer=event.customer, amount=event.amount)</span></div>
+                <div class="row add"><span class="ln">68</span><span class="sg">+</span><span>     Charge.create(customer=event.customer, amount=event.amount, event_id=event.id)</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="holdband">
+            <div>
+              <div class="ht">Gate hold · seal 9D07AA</div>
+              <h2>The cargo is sealed. Nothing is applied yet.</h2>
+              <p>Breaking the seal writes the release and the diff hash to the manifest. Returning it keeps the container in play and the step replans.</p>
+            </div>
+            <div class="hstamp">hold</div>
+            <div class="acts">
+              <button class="btn" data-open7>Review seal</button>
+              <button class="btn orange" data-open7>Open gate</button>
+            </div>
+          </div>
+        </div>
+        <aside class="cont-rail">
+          <div class="mini">
+            <h2>Custody</h2>
+            <div class="big">06 <span>/ 08 steps</span></div>
+            <div class="kv" style="margin-top:8px">
+              <dt>Run</dt><dd>run_7f3a</dd>
+              <dt>Executor</dt><dd>docker · restricted</dd>
+              <dt>Image</dt><dd>a91c4e · current</dd>
+              <dt>Limits</dt><dd>2 cpu · 2g · 900s</dd>
+              <dt>Approvals</dt><dd>0 released · 1 held</dd>
+              <dt>Sub-agents</dt><dd>1 · scout</dd>
+            </div>
+          </div>
+          <div class="mini">
+            <h2>Budget</h2>
+            <dl class="kv">
+              <dt>Model</dt><dd>claude-sonnet-4</dd>
+              <dt>Tokens</dt><dd>148.2k in · 11.4k out</dd>
+              <dt>Cap</dt><dd>$0.38 / $2.00</dd>
+            </dl>
+          </div>
+          <div class="mini">
+            <h2>Gate policy</h2>
+            <table class="policy">
+              <thead><tr><th>Action</th><th>R</th><th>E</th><th>F</th></tr></thead>
+              <tbody>
+                <tr><td>Write workspace</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+                <tr><td>Delete files</td><td class="gated">gated</td><td class="gated">gated</td><td class="yes">yes</td></tr>
+                <tr><td>Network</td><td class="no">none</td><td class="gated">allowlist</td><td class="yes">full</td></tr>
+                <tr><td>Push branch</td><td class="no">no</td><td class="gated">gated</td><td class="yes">yes</td></tr>
+              </tbody>
+            </table>
+            <p class="sealnote">Restricted: workspace read/write, no network, allowlisted commands. The gate is fail-closed.</p>
+          </div>
+          <div class="mini">
+            <h2>Seal</h2>
+            <div class="barcode" aria-hidden="true">
+              <i style="width:2px"></i><i style="width:4px"></i><i style="width:1px"></i><i class="o" style="width:3px"></i><i style="width:2px"></i><i style="width:1px"></i><i style="width:5px"></i><i style="width:1px"></i><i style="width:2px"></i><i style="width:3px"></i><i class="o" style="width:1px"></i><i style="width:4px"></i><i style="width:2px"></i><i style="width:1px"></i>
+            </div>
+            <div class="mono" style="font-size:12px">9D07AA · intact</div>
+            <button class="btn" style="margin-top:8px;width:100%" data-open7>Open gate pass</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="composer">
+      <textarea aria-label="Next instruction" placeholder="Load the next instruction. @ to attach cargo, / for a command."></textarea>
+      <div class="composer-row">
+        <label class="field tier-field">TIER
+          <select aria-label="Tier"><option>Restricted</option><option>Elevated</option><option>Full access</option></select>
+        </label>
+        <label class="field model-field">MODEL
+          <select aria-label="Model"><option>sonnet-4</option><option>opus-4</option><option>minimax-m2</option></select>
+        </label>
+        <span class="field attach-field">ATTACH 2 files</span>
+        <label class="auto"><input type="checkbox" /> Auto-release workspace diffs</label>
+        <div class="right">
+          <span class="kbdhint"><kbd>⌘</kbd><kbd>↵</kbd> to load</span>
+          <button class="btn orange">Load instruction</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MANIFEST ============ -->
+  <section class="view" data-view="manifest" hidden>
+    <div class="manhead">
+      <h1>Manifest</h1>
+      <div class="stampbig">verified · 20:41:12<b>CHAIN 1,204 · UNBROKEN</b></div>
+    </div>
+    <div class="ledger-grid">
+      <div class="panel">
+        <div class="panel-hd"><h2>Custody ledger</h2><span>entries 1198–1204</span></div>
+        <table class="ledger">
+          <thead><tr><th>Seq</th><th>Time</th><th>Movement</th><th>Seal · hash</th><th>Custodian</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="seq">1204</td><td class="time">20:41:12</td>
+              <td class="move"><b>gate.hold · patch_file · run_7f3a</b><small>held for a human signature · diff sha 9d07aa</small></td>
+              <td class="hash">7f3a…1204 · 9c1e4d22</td><td class="by">ahmad</td>
+            </tr>
+            <tr>
+              <td class="seq">1203</td><td class="time">20:40:03</td>
+              <td class="move"><b>diff.sealed · src/billing/webhook.py</b><small>+24 −3 · seal 9d07aa</small></td>
+              <td class="hash">7f3a…1203 · 41aa9b07</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1202</td><td class="time">20:39:41</td>
+              <td class="move"><b>exec.run · pytest tests/billing -q</b><small>exit 0 · 2.14s · allowed</small></td>
+              <td class="hash">7f3a…1202 · 0c55de81</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1201</td><td class="time">20:39:02</td>
+              <td class="move"><b>subagent.spawn · scout</b><small>restricted image · no network</small></td>
+              <td class="hash">7f3a…1201 · aa02e7c4</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1200</td><td class="time">20:38:02</td>
+              <td class="move"><b>tool.run · grep stripe_event_id</b><small>14 hits · read-only</small></td>
+              <td class="hash">7f3a…1200 · 5db10a9f</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1199</td><td class="time">20:37:58</td>
+              <td class="move"><b>policy.check · restricted · allowlist</b><small>pytest · git · python permitted</small></td>
+              <td class="hash">7f3a…1199 · 2e90ab14</td><td class="by">daemon</td>
+            </tr>
+            <tr>
+              <td class="seq">1198</td><td class="time">20:37:19</td>
+              <td class="move"><b>intake.accepted · run_7f3a</b><small>workspace read · src/billing/webhook.py · 212 lines</small></td>
+              <td class="hash">7f3a…1198 · c4b17e0f</td><td class="by">ahmad</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line)">
+          <span class="seal ok">chain intact · genesis 0000…8f1c</span>
+          <button class="btn">Verify chain</button>
+        </div>
+      </div>
+      <div class="side">
+        <div class="panel">
+          <div class="panel-hd"><h2>Chain</h2><span>sha-256</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Verified</dt><dd>1,204 · unbroken</dd>
+              <dt>Last check</dt><dd>20:41:12</dd>
+              <dt>Files</dt><dd>3 rotated · 2 archived</dd>
+              <dt>Anchor</dt><dd>genesis 0000…8f1c</dd>
+            </dl>
+            <p class="sealnote">Editing a past entry breaks the chain at that line; the verifier names the first mismatch.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd"><h2>Seal register</h2><span>2 active</span></div>
+          <div style="padding:12px 14px">
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono" style="font-size:12px">9D07AA</span><span class="seal hold">intact · held</span></div>
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono" style="font-size:12px">4B21C9</span><span class="seal hold">intact · held</span></div>
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="mono" style="font-size:12px">RETURNED</span><span class="seal">9c31 · 20:04</span></div>
+            </div>
+            <p class="sealnote">One seal is one diff, one case. The release writes entry 1205.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd"><h2>Bonded store</h2><span>docker</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Restricted</dt><dd>a91c4e · current</dd>
+              <dt>Elevated</dt><dd style="color:var(--amber)">02b7f1 · stale</dd>
+              <dt>Full</dt><dd>7ce0aa · current</dd>
+              <dt>Bind</dt><dd>loopback only</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STORE ============ -->
+  <section class="view" data-view="store" hidden>
+    <div class="yard-head">
+      <div>
+        <h1>What the yard will accept.</h1>
+        <p class="lede">Providers, gates, caps, and the bonded store. Everything is local to this machine and loopback-only; keys come from the environment.</p>
+      </div>
+      <div class="yard-mark">
+        <div class="plate"><span>store</span><b>03</b></div>
+        <small>PROTOCOL · NO TELEMETRY</small>
+      </div>
+    </div>
+    <div class="store-grid">
+      <div class="formsheet">
+        <div class="sec">
+          <h2>Providers</h2>
+          <table class="ptable">
+            <thead><tr><th>Provider</th><th>Model</th><th>Route</th><th>Key</th></tr></thead>
+            <tbody>
+              <tr><td>LiteLLM proxy</td><td class="mono">127.0.0.1:4000</td><td>primary</td><td class="yes">ready</td></tr>
+              <tr><td>Anthropic</td><td class="mono">claude-sonnet-4</td><td>direct</td><td class="yes">env</td></tr>
+              <tr><td>Anthropic</td><td class="mono">claude-opus-4</td><td>direct</td><td class="yes">env</td></tr>
+              <tr><td>OpenRouter</td><td class="mono">minimax-m2</td><td>fallback</td><td class="no">no key</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="sec">
+          <h2>Gates</h2>
+          <div class="prow">
+            <div><b>Destructive steps always need a gate pass</b><small>delete · push · network egress · schema change</small></div>
+            <button class="lever" aria-pressed="true"><span class="knob"></span> on</button>
+          </div>
+          <div class="prow">
+            <div><b>Auto-release diffs inside the workspace</b><small>release is written to the manifest without a human stop</small></div>
+            <button class="lever" aria-pressed="false"><span class="knob"></span> off</button>
+          </div>
+          <div class="prow">
+            <div><b>Stop the container on a failed test</b><small>the case is returned, never silently retried</small></div>
+            <button class="lever" aria-pressed="true"><span class="knob"></span> on</button>
+          </div>
+          <div class="prow">
+            <div><b>Rebuild a stale image before the next container</b><small>elevated image 02b7f1 is stale tonight</small></div>
+            <button class="lever" aria-pressed="false"><span class="knob"></span> off</button>
+          </div>
+        </div>
+        <div class="sec">
+          <h2>Paths</h2>
+          <div class="prow"><div><b>Workspace root</b><small>~/work/orbit-api</small></div><button class="btn ghost">Change</button></div>
+          <div class="prow"><div><b>Uploads</b><small>~/.local/share/smolcode/uploads</small></div><button class="btn ghost">Change</button></div>
+          <div class="prow"><div><b>Manifest</b><small>~/.local/share/smolcode/audit</small></div><button class="btn ghost">Open</button></div>
+          <div class="prow"><div><b>Bind</b><small>127.0.0.1:8765 · loopback only</small></div><span class="seal ok">enforced</span></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="panel">
+          <div class="panel-hd"><h2>Caps</h2><span>tonight</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Tonight</dt><dd>$3.84 / $12.00</dd>
+              <dt>Per case</dt><dd>$2.00</dd>
+              <dt>Steps</dt><dd>8</dd>
+              <dt>On cap</dt><dd>stop · keep cargo</dd>
+            </dl>
+            <div style="margin-top:10px"><button class="btn">Reset tonight</button></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd"><h2>Bonded store</h2><span>docker</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Restricted</dt><dd>a91c4e · current</dd>
+              <dt>Elevated</dt><dd style="color:var(--amber)">02b7f1 · stale</dd>
+              <dt>Full</dt><dd>7ce0aa · current</dd>
+            </dl>
+            <div style="margin-top:10px"><button class="btn">Rebuild elevated</button></div>
+            <p class="sealnote">A stale image is rebuilt before the next container at that tier, or the case is refused.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-hd"><h2>Manifest</h2><span>local</span></div>
+          <div style="padding:12px 14px">
+            <dl class="kv">
+              <dt>Entries</dt><dd>1,204</dd>
+              <dt>Rotated</dt><dd>3 files</dd>
+              <dt>Archived</dt><dd>2 files</dd>
+              <dt>Last verify</dt><dd>20:41:12</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ GATE PASSES ============ -->
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="gatepass" id="release" role="dialog" aria-modal="true" aria-labelledby="gt" hidden>
+  <div class="oband"><span>Customs release · gate 01</span><span>CONT. 2B9C</span></div>
+  <div class="gh">
+    <div class="gplate"><span>container</span><b>2B9C</b></div>
+    <div>
+      <h2 id="gt">Drop 12 legacy snapshot files?</h2>
+      <div class="mono" style="font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:5px">RELEASE AUTHORIZATION · SEAL 4B21C9 · ELEVATED</div>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  </div>
+  <div class="gb">
+    <p>The elevated sandbox wants to remove <span class="mono">src/session/snapshots/</span> before writing the event log. Twelve files, 3.4 MB, no copy outside the image. This is the only irreversible movement in the case.</p>
+    <div class="gp-cols">
+      <div class="gp-doc">
+        <div class="dh"><span>src/session/store.py</span><span style="color:var(--orange)">+42 −11</span></div>
+        <div class="diffbox">
+          <div class="hd"><span>@@ -88,6 +88,9 @@ def migrate_session_store()</span><span style="color:var(--orange)">seal 4B21C9</span></div>
+          <div class="row del"><span class="ln">88</span><span class="sg">−</span><span>     for path in SNAPSHOT_DIR.glob("*.json"):</span></div>
+          <div class="row del"><span class="ln">89</span><span class="sg">−</span><span>         path.unlink()</span></div>
+          <div class="row add"><span class="ln">88</span><span class="sg">+</span><span>     for path in SNAPSHOT_DIR.glob("*.json"):</span></div>
+          <div class="row add"><span class="ln">89</span><span class="sg">+</span><span>         if path.stat().st_size == 0:</span></div>
+          <div class="row add"><span class="ln">90</span><span class="sg">+</span><span>             path.unlink()</span></div>
+          <div class="row add"><span class="ln">91</span><span class="sg">+</span><span>             continue</span></div>
+          <div class="row add"><span class="ln">92</span><span class="sg">+</span><span>         archive(path)</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="gp-note"><b>Cargo</b>src/session/snapshots/**<br />12 files · 3.4 MB<br /><br /><b>Gate</b>01 · release pending<br /><b>Tier</b>elevated</div>
+        <label class="consent"><input type="checkbox" id="ack" /> I accept the bond. The diff and this signature are written to the manifest.</label>
+        <p class="sealnote">Release writes manifest entry 1205 and cannot be undone from this screen.</p>
+      </div>
+    </div>
+  </div>
+  <div class="gf">
+    <span class="seal hold">seal intact</span>
+    <div class="right">
+      <button class="btn" data-close>Refuse entry</button>
+      <button class="btn orange" data-release disabled>Release cargo</button>
+    </div>
+  </div>
+</div>
+
+<div class="gatepass" id="release7" role="dialog" aria-modal="true" aria-labelledby="gt7" hidden>
+  <div class="oband"><span>Customs release · gate 01</span><span>CONT. 7F3A</span></div>
+  <div class="gh">
+    <div class="gplate"><span>container</span><b>7F3A</b></div>
+    <div>
+      <h2 id="gt7">Release the webhook patch?</h2>
+      <div class="mono" style="font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:5px">RELEASE AUTHORIZATION · SEAL 9D07AA · RESTRICTED</div>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  </div>
+  <div class="gb">
+    <p>The restricted run proposes a diff against the Stripe handler. The seal keeps the working copy unchanged until you release it. Tests already passed inside the sandbox; nothing has touched the host workspace.</p>
+    <div class="gp-cols">
+      <div class="gp-doc">
+        <div class="dh"><span>src/billing/webhook.py</span><span style="color:var(--orange)">+24 −3</span></div>
+        <div class="diffbox">
+          <div class="hd"><span>@@ -61,7 +61,12 @@ def handle_event(request: Request):</span><span style="color:var(--orange)">seal 9D07AA</span></div>
+          <div class="row"><span class="ln">61</span><span class="sg"></span><span> def handle_event(request: Request) -&gt; Response:</span></div>
+          <div class="row"><span class="ln">62</span><span class="sg"></span><span>     event = stripe.Event.construct_from(request.json(), WEBHOOK_SECRET)</span></div>
+          <div class="row add"><span class="ln">63</span><span class="sg">+</span><span>     existing = Charge.by_event_id(event.id)</span></div>
+          <div class="row add"><span class="ln">64</span><span class="sg">+</span><span>     if existing is not None:</span></div>
+          <div class="row add"><span class="ln">65</span><span class="sg">+</span><span>         return Response(status_code=200, body={"replayed": True})</span></div>
+          <div class="row del"><span class="ln">67</span><span class="sg">−</span><span>     Charge.create(customer=event.customer, amount=event.amount)</span></div>
+          <div class="row add"><span class="ln">68</span><span class="sg">+</span><span>     Charge.create(customer=event.customer, amount=event.amount, event_id=event.id)</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="gp-note"><b>Cargo</b>src/billing/webhook.py<br />+24 −3 · diff sha 9d07aa<br /><br /><b>Gate</b>01 · release pending<br /><b>Tier</b>restricted</div>
+        <label class="consent"><input type="checkbox" id="ack7" /> I accept the diff as written. The seal is broken and the manifest records the release.</label>
+        <p class="sealnote">Release writes manifest entry 1205 with the diff hash 9d07aa.</p>
+      </div>
+    </div>
+  </div>
+  <div class="gf">
+    <span class="seal hold">seal intact</span>
+    <div class="right">
+      <button class="btn" data-close>Refuse entry</button>
+      <button class="btn orange" data-release7 disabled>Release cargo</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden>Release written to manifest · entry 1205</div>
+
+<script>
+(function () {
+  var views = Array.prototype.slice.call(document.querySelectorAll('.view'));
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.port nav button'));
+
+  function show(name) {
+    views.forEach(function (v) { v.hidden = v.getAttribute('data-view') !== name; });
+    tabs.forEach(function (b) {
+      if (b.getAttribute('data-go') === name) { b.setAttribute('aria-current', 'page'); }
+      else { b.removeAttribute('aria-current'); }
+    });
+    window.scrollTo(0, 0);
+  }
+
+  document.addEventListener('click', function (e) {
+    var go = e.target.closest('[data-go]');
+    if (go) { e.preventDefault(); show(go.getAttribute('data-go')); return; }
+    var row = e.target.closest('[data-to]');
+    if (row) { show(row.getAttribute('data-to')); return; }
+    if (e.target.closest('[data-open]')) { openModal('release'); return; }
+    if (e.target.closest('[data-open7]')) { openModal('release7'); return; }
+    if (e.target.closest('[data-close]')) { closeModal(); return; }
+    if (e.target.id === 'scrim') { closeModal(); return; }
+    if (e.target.closest('[data-release]') || e.target.closest('[data-release7]')) { closeModal(); toast(); return; }
+    var t = e.target.closest('.lever');
+    if (t) {
+      var on = t.getAttribute('aria-pressed') === 'true';
+      t.setAttribute('aria-pressed', on ? 'false' : 'true');
+      if (t.lastChild && t.lastChild.nodeType === 3) { t.lastChild.nodeValue = on ? ' off' : ' on'; }
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeModal(); }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault(); show('container');
+      var ta = document.querySelector('.view[data-view="container"] textarea');
+      if (ta) { ta.focus(); }
+    }
+    var row = e.target.closest('[data-to]');
+    if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); show(row.getAttribute('data-to')); }
+  });
+
+  var scrim = document.getElementById('scrim');
+  var modals = Array.prototype.slice.call(document.querySelectorAll('.gatepass'));
+  var lastFocus = null;
+
+  function openModal(id) {
+    var m = document.getElementById(id);
+    if (!m) { return; }
+    lastFocus = document.activeElement;
+    modals.forEach(function (x) { x.hidden = true; });
+    scrim.hidden = false;
+    m.hidden = false;
+    var first = m.querySelector('button');
+    if (first) { first.focus(); }
+  }
+  function closeModal() {
+    if (scrim.hidden) { return; }
+    scrim.hidden = true;
+    modals.forEach(function (x) { x.hidden = true; });
+    if (lastFocus && lastFocus.focus) { lastFocus.focus(); }
+  }
+
+  var ack = document.getElementById('ack');
+  var ack7 = document.getElementById('ack7');
+  var rel = document.querySelector('[data-release]');
+  var rel7 = document.querySelector('[data-release7]');
+  if (ack && rel) { ack.addEventListener('change', function () { rel.disabled = !ack.checked; }); }
+  if (ack7 && rel7) { ack7.addEventListener('change', function () { rel7.disabled = !ack7.checked; }); }
+
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast() {
+    if (!toastEl) { return; }
+    toastEl.hidden = false;
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 4000);
+  }
+
+  var hash = (location.hash || '').replace('#', '');
+  var map = { yard: 'yard', container: 'container', run: 'container', queue: 'queue', manifest: 'manifest', audit: 'manifest', store: 'store' };
+  if (hash === 'release7') { show('container'); openModal('release7'); }
+  else if (hash === 'release') { show('container'); openModal('release'); }
+  else if (map[hash]) { show(map[hash]); }
+})();
+</script>
+</body>
+</html>

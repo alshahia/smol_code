@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>smolcode · custody prototype</title>
+<link rel="stylesheet" href="../fonts/fonts.css" />
+<style>
+  :root {
+    --bench: #e8ece9;
+    --sheet: #fbfcf9;
+    --panel: #f2f5f1;
+    --ink: #131b19;
+    --ink-2: #3f4c48;
+    --steel: #5c6b66;
+    --line: #c9d3ce;
+    --line-2: #e0e7e2;
+    --seal: #8c2f2a;
+    --seal-soft: #f4e5e1;
+    --verify: #0d6159;
+    --verify-soft: #e0efea;
+    --amber: #8a5a12;
+    --amber-soft: #f6ecd5;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Instrument Sans', 'Public Sans', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bench);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--seal); color: var(--sheet); }
+  :focus-visible { outline: 2px solid var(--verify); outline-offset: 2px; }
+  a { color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .mono { font-family: var(--mono); }
+  .skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--sheet); padding: 8px 12px; z-index: 50; }
+  .skip:focus { left: 8px; top: 8px; }
+
+  /* ---------- bench bar ---------- */
+  .bench {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 20px;
+    padding: 0 24px; height: 58px;
+    background: var(--sheet);
+    border-bottom: 1px solid var(--ink);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+  .brand b { font-size: 18px; font-weight: 650; letter-spacing: -0.03em; }
+  .brand span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; color: var(--steel); text-transform: uppercase; }
+  .tabs { display: flex; gap: 2px; margin-left: 12px; }
+  .tabs button {
+    border: 0; background: transparent; padding: 9px 12px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--steel); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .bench-right { display: flex; align-items: center; gap: 10px; margin-left: auto; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .project { border: 1px solid var(--line); background: var(--panel); padding: 5px 8px; border-radius: 4px; display: inline-flex; gap: 6px; align-items: center; }
+  .project svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+  .health { display: inline-flex; align-items: center; gap: 6px; color: var(--amber); }
+  .health i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+  .spend { color: var(--ink); }
+  .spend span { color: var(--steel); }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--ink); background: var(--ink); color: var(--sheet); font-family: var(--mono); font-size: 12px; display: grid; place-items: center; }
+
+  /* ---------- sheet frame ---------- */
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 26px 24px 80px; }
+  .view[hidden] { display: none; }
+  .doc-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 22px; }
+  .doc-head h1 {
+    margin: 0; font-size: clamp(34px, 4.6vw, 54px); line-height: 0.98;
+    letter-spacing: -0.035em; font-weight: 600; max-width: 20ch;
+  }
+  .doc-head .doc-meta { font-family: var(--mono); font-size: 12px; color: var(--steel); text-align: right; line-height: 1.7; }
+  .doc-head .lede { margin: 10px 0 0; max-width: 62ch; color: var(--ink-2); font-size: 15px; }
+  .sheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; }
+  .hair { height: 1px; background: var(--line); border: 0; margin: 0; }
+  .label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--steel); }
+
+  /* ---------- stats strip ---------- */
+  .stat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); margin: 18px 0 26px; }
+  .stat-strip div { padding: 12px 16px; border-right: 1px solid var(--line); }
+  .stat-strip div:last-child { border-right: 0; }
+  .stat-strip b { display: block; font-size: 26px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
+  .stat-strip span { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--steel); }
+  .stat-strip .go a { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--verify); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .stat-strip .go a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---------- overview ---------- */
+  .intake-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+  .log { width: 100%; border-collapse: collapse; }
+  .log th { font-family: var(--mono); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; color: var(--steel); text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--ink); white-space: nowrap; }
+  .log td { padding: 14px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  .log tr[data-to] { cursor: pointer; }
+  .log tr[data-to]:hover td { background: var(--panel); }
+  .log tr[data-to]:focus-visible { outline: 2px solid var(--verify); outline-offset: -2px; }
+  .case-no { font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; }
+  .log .task { font-weight: 550; font-size: 14px; line-height: 1.35; }
+  .log .sub { display: block; margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .seal-tag { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--sheet); padding: 3px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+  .seal-tag::before { content: ''; width: 6px; height: 6px; background: currentColor; }
+  .seal-tag.hold { border-color: var(--seal); color: var(--seal); background: var(--seal-soft); }
+  .seal-tag.verified { border-color: var(--verify); color: var(--verify); background: var(--verify-soft); }
+  .seal-tag.muted { color: var(--steel); }
+  .side { display: grid; gap: 16px; }
+  .card { background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .card h2 { margin: 0; padding: 11px 14px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; color: var(--steel); display: flex; justify-content: space-between; gap: 10px; }
+  .card h2 span { color: var(--ink); }
+  .card .body { padding: 14px; }
+  .kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
+  .kv dt { font-family: var(--mono); font-size: 12px; color: var(--steel); text-transform: uppercase; letter-spacing: 0.03em; }
+  .kv dd { margin: 0; font-size: 13px; text-align: right; }
+  .kv dd.mono { font-family: var(--mono); font-size: 12px; }
+  .bar { display: flex; align-items: flex-end; gap: 2px; height: 30px; margin: 10px 0 6px; }
+  .bar i { display: block; width: var(--w, 2px); background: var(--ink); }
+  .tiny { font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .gate { padding: 14px; background: var(--ink); color: var(--sheet); }
+  .gate .label { color: #a9b6b0; }
+  .gate h2 { margin: 8px 0 6px; font-size: 18px; line-height: 1.25; letter-spacing: -0.02em; font-weight: 600; }
+  .gate p { margin: 0; color: #c8d2cd; font-size: 13px; }
+  .gate .diff-meta { display: flex; justify-content: space-between; gap: 10px; margin: 12px 0; padding: 7px 8px; border: 1px solid #3a4742; font-family: var(--mono); font-size: 12px; }
+  .gate .diff-meta b { color: #f0b9a8; }
+  .gate .acts { display: flex; gap: 8px; }
+
+  /* ---------- buttons ---------- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--ink); background: var(--sheet); color: var(--ink); padding: 7px 11px; border-radius: 4px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.035em; text-decoration: none; white-space: nowrap; }
+  .btn:hover { background: var(--panel); }
+  .btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .btn.solid { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+  .btn.solid:hover { background: #2b3531; }
+  .btn.verify { background: var(--verify); border-color: var(--verify); color: #fff; }
+  .btn.verify:hover { background: #0a4f49; }
+  .btn.danger { background: var(--seal); border-color: var(--seal); color: #fff; }
+  .btn.danger:hover { background: #74231f; }
+  .btn.ghost { border-color: var(--line); color: var(--steel); background: transparent; }
+  .btn.ghost:hover { color: var(--ink); background: var(--panel); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .gate .btn { border-color: #6d7c76; background: transparent; color: var(--sheet); }
+  .gate .btn.solid { background: var(--sheet); color: var(--ink); border-color: var(--sheet); }
+  .gate .btn.danger { background: var(--seal); border-color: var(--seal); color: #fff; }
+
+  /* ---------- case / run view ---------- */
+  .casefile { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .case-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 22px; padding: 20px 24px 16px; border-bottom: 1px solid var(--ink); }
+  .case-head .case-id { font-family: var(--mono); font-size: 12px; color: var(--steel); letter-spacing: 0.06em; text-transform: uppercase; }
+  .case-head h1 { margin: 4px 0 8px; font-size: clamp(25px, 3.2vw, 38px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 600; max-width: 28ch; }
+  .case-head .lede { margin: 0; color: var(--ink-2); max-width: 70ch; font-size: 14px; }
+  .case-head .answers { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .case-meta { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--line); }
+  .case-meta div { padding: 9px 14px; border-right: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--steel); text-transform: uppercase; letter-spacing: 0.03em; }
+  .case-meta div:last-child { border-right: 0; }
+  .case-meta b { color: var(--ink); font-weight: 500; display: block; margin-top: 3px; text-transform: none; letter-spacing: 0; }
+  .case-body { display: grid; grid-template-columns: 92px minmax(0, 1fr) 344px; }
+  .sequence { border-right: 1px solid var(--line); background: var(--panel); padding: 8px 0; }
+  .sequence .item { padding: 12px 10px; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--steel); border-bottom: 1px solid var(--line-2); }
+  .sequence .item b { display: block; color: var(--ink); font-weight: 500; }
+  .sequence .item.on { background: var(--sheet); color: var(--ink); box-shadow: inset 1px 0 0 var(--verify); }
+  .entries { min-width: 0; }
+  .entry { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--line-2); }
+  .entry:last-child { border-bottom: 0; }
+  .entry .stamp { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--steel); white-space: nowrap; }
+  .entry .stamp b { display: inline; margin-right: 6px; color: var(--ink); font-weight: 600; }
+  .entry .kind { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--steel); display: flex; align-items: center; gap: 8px; }
+  .entry .kind em { font-style: normal; color: var(--ink); }
+  .entry p { margin: 5px 0 0; font-size: 14px; color: var(--ink-2); max-width: 68ch; }
+  .entry .file { margin-top: 8px; display: flex; justify-content: space-between; gap: 12px; border: 1px solid var(--line); background: var(--panel); padding: 8px 10px; font-family: var(--mono); font-size: 12px; }
+  .term { margin-top: 8px; border: 1px solid var(--line); background: #f4f7f3; padding: 10px 12px; font-family: var(--mono); font-size: 12px; color: var(--ink); overflow-x: auto; }
+  .term .ok { color: var(--verify); }
+  .diffbox { margin-top: 8px; border: 1px solid var(--line); overflow: hidden; }
+  .diffbox .hd { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; background: var(--panel); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
+  .diffbox .row { display: grid; grid-template-columns: 34px 18px minmax(0, 1fr); font-family: var(--mono); font-size: 12px; line-height: 1.55; }
+  .diffbox .row span { padding: 2px 6px; }
+  .diffbox .row .ln { color: var(--steel); text-align: right; border-right: 1px solid var(--line-2); }
+  .diffbox .row .sg { text-align: center; color: var(--steel); }
+  .diffbox .add { background: var(--verify-soft); }
+  .diffbox .add .sg { color: var(--verify); }
+  .diffbox .del { background: var(--seal-soft); }
+  .diffbox .del .sg { color: var(--seal); }
+  .diffbox .hunk { background: var(--panel); color: var(--steel); }
+  .hold-block { margin: 16px 22px 20px; border: 1px solid var(--seal); background: var(--seal-soft); padding: 14px; display: flex; gap: 18px; align-items: flex-start; position: relative; }
+  .hold-block .stampmark { position: absolute; right: 14px; top: 12px; transform: rotate(-5deg); border: 2px solid var(--seal); color: var(--seal); font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; padding: 4px 7px; text-transform: uppercase; opacity: 0.92; }
+  .hold-block h2 { margin: 0 0 4px; font-size: 17px; letter-spacing: -0.02em; }
+  .hold-block p { margin: 0; color: var(--ink-2); font-size: 13px; max-width: 55ch; }
+  .hold-block .acts { display: flex; gap: 8px; margin-left: auto; padding-top: 22px; }
+  .rail { border-left: 1px solid var(--line); padding: 16px; display: grid; gap: 14px; align-content: start; background: var(--sheet); }
+  .rail .mini { border-bottom: 1px solid var(--line-2); padding-bottom: 12px; }
+  .rail .mini:last-child { border-bottom: 0; padding-bottom: 0; }
+  .rail .mini h2 { margin: 0 0 8px; font-family: var(--mono); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; color: var(--steel); }
+  .rail .big { font-size: 28px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; }
+  .rail .big span { font-family: var(--mono); font-size: 12px; letter-spacing: 0.03em; color: var(--steel); font-weight: 400; text-transform: uppercase; }
+  .rail .kv { grid-template-columns: 86px 1fr; gap: 6px 8px; }
+  .rail .kv dd { font-family: var(--mono); font-size: 12px; }
+  .policy { width: 100%; border-collapse: collapse; }
+  .policy th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--steel); text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  .policy td { font-size: 12px; padding: 4px; border-bottom: 1px solid var(--line-2); }
+  .policy td:first-child { color: var(--ink-2); }
+  .yes { color: var(--verify); }
+  .no { color: var(--seal); }
+  .gate2 { color: var(--amber); }
+  .sealed { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--seal); border: 1px solid var(--seal); padding: 3px 6px; border-radius: 3px; }
+  .sealed::before { content: ''; width: 8px; height: 8px; border: 1px solid currentColor; transform: rotate(45deg); }
+  .sealed { white-space: nowrap; }
+  .case-head .case-id { margin-top: 10px; }
+  .modal .mh .case-id { margin-top: 5px; }
+
+  /* ---------- composer ---------- */
+  .composer { position: sticky; bottom: 0; z-index: 20; background: var(--sheet); border-top: 1px solid var(--ink); padding: 10px 16px 12px; box-shadow: 0 -8px 18px rgba(19, 27, 25, 0.06); }
+  .composer textarea { width: 100%; min-height: 44px; resize: vertical; border: 1px solid var(--line); background: #fff; padding: 9px 10px; border-radius: 5px; font-size: 14px; color: var(--ink); }
+  .composer textarea::placeholder { color: var(--steel); }
+  .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .field { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); padding: 5px 7px; border-radius: 4px; font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .field select { border: 0; background: transparent; font-family: var(--mono); font-size: 12px; color: var(--ink); padding: 0 2px; }
+  .composer-row .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .hint { font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .hint kbd { border: 1px solid var(--line); border-bottom-color: var(--steel); border-radius: 3px; padding: 1px 4px; font-family: var(--mono); font-size: 12px; background: var(--sheet); }
+
+  /* ---------- register ---------- */
+  .reg-head { background: var(--ink); color: var(--sheet); border-radius: 12px; padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 18px; }
+  .reg-head h1 { margin: 0; font-size: clamp(22px, 3vw, 32px); letter-spacing: -0.03em; font-weight: 600; }
+  .reg-head .label { color: #a9b6b0; }
+  .reg-head .ok { border: 1px solid #7f9189; padding: 6px 9px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #d8e4de; display: inline-flex; gap: 7px; align-items: center; }
+  .reg-head .ok i { width: 7px; height: 7px; border-radius: 50%; background: #8fd0b8; box-shadow: 0 0 0 3px #2c453d; }
+  .reg-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; align-items: start; }
+  .reg-table { width: 100%; border-collapse: collapse; }
+  .reg-table th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--steel); text-transform: uppercase; letter-spacing: 0.04em; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--ink); }
+  .reg-table td { padding: 11px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; font-size: 13px; }
+  .reg-table .seq { font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .reg-table .what b { font-weight: 600; }
+  .reg-table .time { font-family: var(--mono); font-size: 12px; color: var(--steel); white-space: nowrap; }
+  .reg-table .hash { font-family: var(--mono); font-size: 12px; color: var(--steel); white-space: nowrap; }
+  .reg-table .by { font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .reg-table tr:hover td { background: var(--panel); }
+
+  /* ---------- settings ---------- */
+  .protocol-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+  .formsheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .formsheet .sec { padding: 16px 18px; border-bottom: 1px solid var(--line-2); }
+  .formsheet .sec:last-child { border-bottom: 0; }
+  .formsheet h2 { margin: 0 0 10px; font-family: var(--mono); font-size: 12px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.04em; color: var(--steel); }
+  .formrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--line-2); }
+  .formrow:last-child { border-bottom: 0; }
+  .formrow .what b { display: block; font-weight: 550; font-size: 14px; }
+  .formrow .what small { display: block; color: var(--steel); font-family: var(--mono); font-size: 12px; margin-top: 3px; }
+  .toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel); padding: 4px 7px; border-radius: 999px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; color: var(--steel); }
+  .toggle .sw { width: 26px; height: 14px; border-radius: 999px; background: var(--line); position: relative; }
+  .toggle .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--sheet); border: 1px solid var(--steel); }
+  .toggle[aria-pressed="true"] { color: var(--ink); border-color: var(--verify); background: var(--verify-soft); }
+  .toggle[aria-pressed="true"] .sw { background: var(--verify); border-color: var(--verify); }
+  .toggle[aria-pressed="true"] .sw::after { left: 13px; background: #fff; border-color: #fff; }
+  .provider-table { width: 100%; border-collapse: collapse; }
+  .provider-table th { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--steel); text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); text-transform: uppercase; }
+  .provider-table td { font-size: 13px; padding: 8px 6px; border-bottom: 1px solid var(--line-2); }
+  .provider-table td.mono { font-family: var(--mono); font-size: 12px; }
+
+  /* ---------- modals ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(19, 27, 25, 0.42); z-index: 80; }
+  .scrim[hidden] { display: none; }
+  .modal {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+    background: var(--sheet); border: 1px solid var(--ink); border-radius: 10px;
+    z-index: 90; display: flex; flex-direction: column;
+    box-shadow: 0 18px 60px rgba(12, 20, 17, 0.24);
+    animation: sheet-in 0.22s ease-out;
+  }
+  .modal[hidden] { display: none; }
+  @keyframes sheet-in { from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)); } to { opacity: 1; transform: translate(-50%, -50%); } }
+  .modal .sealband { height: 8px; background: var(--seal); }
+  .modal .mh { display: flex; justify-content: space-between; gap: 16px; padding: 14px 18px 12px; border-bottom: 1px solid var(--ink); }
+  .modal .mh .case-id { font-family: var(--mono); font-size: 12px; color: var(--seal); text-transform: uppercase; letter-spacing: 0.05em; }
+  .modal .mh h2 { margin: 4px 0 0; font-size: 23px; line-height: 1.12; letter-spacing: -0.03em; font-weight: 600; max-width: 26ch; }
+  .modal .x { border: 1px solid var(--line); background: var(--sheet); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 4px; }
+  .modal .x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .modal .mb { padding: 14px 18px; overflow: auto; }
+  .modal .mb p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; max-width: 70ch; }
+  .modal .filebar { display: flex; justify-content: space-between; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); background: var(--panel); font-family: var(--mono); font-size: 12px; }
+  .modal .filebar .chg { color: var(--seal); }
+  .modal .diffbox { margin-top: 0; border-top: 0; }
+  .modal .note { margin: 10px 0 0; font-family: var(--mono); font-size: 12px; color: var(--steel); }
+  .modal .consent { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+  .modal .consent input { width: 14px; height: 14px; accent-color: var(--seal); }
+  .modal .mfoot { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--ink); background: var(--panel); }
+  .modal .mfoot .right { margin-left: auto; display: flex; gap: 8px; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: var(--sheet); padding: 9px 14px; border-radius: 4px; font-family: var(--mono); font-size: 12px; z-index: 100; }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 1080px) {
+    .intake-grid, .reg-grid, .protocol-grid { grid-template-columns: minmax(0, 1fr); }
+    .case-body { grid-template-columns: 72px minmax(0, 1fr); }
+    .rail { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rail .mini:last-child { border-bottom: 0; }
+  }
+  @media (max-width: 860px) {
+    .bench { height: auto; flex-wrap: wrap; padding: 10px 14px 0; gap: 8px; }
+    .brand span { display: none; }
+    .tabs { order: 4; width: 100%; overflow-x: auto; margin-left: 0; border-top: 1px solid var(--line); }
+    .tabs button { padding: 8px 8px; white-space: nowrap; }
+    .bench-right { margin-left: auto; gap: 7px; }
+    .health { display: none; }
+    .wrap { padding: 18px 14px 64px; }
+    .doc-head { display: block; }
+    .doc-head .doc-meta { text-align: left; margin-top: 8px; }
+    .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat-strip div:nth-child(2) { border-right: 0; }
+    .stat-strip div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    .stat-strip .go { grid-column: 1 / -1; }
+    .stat-strip div:nth-child(3) { grid-column: 1 / -1; border-right: 0; border-bottom: 1px solid var(--line); }
+    .case-head { grid-template-columns: 1fr; }
+    .case-head .answers { flex-direction: row; align-items: center; flex-wrap: wrap; }
+    .case-body { grid-template-columns: 1fr; }
+    .sequence { display: none; }
+    .entry { grid-template-columns: 1fr; gap: 5px; padding: 13px 14px; }
+    .entry .stamp { text-align: left; display: flex; gap: 10px; align-items: baseline; }
+    .entry .stamp b { display: inline; }
+    .hold-block { margin: 12px 14px 16px; flex-direction: column; gap: 10px; }
+    .hold-block .stampmark { position: static; align-self: flex-start; transform: none; }
+    .hold-block .acts { margin-left: 0; padding-top: 0; width: 100%; }
+    .hold-block .acts .btn { flex: 1; }
+    .rail { grid-template-columns: 1fr; }
+    .composer { position: static; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; box-shadow: none; padding: 10px; }
+    .composer textarea { min-height: 38px; }
+    .composer-row { gap: 6px; }
+    .composer-row .model-field, .composer-row .attach-field, .composer-row .auto-field, .composer-row .hint { display: none; }
+    .composer-row .right { width: 100%; margin-left: 0; justify-content: stretch; }
+    .composer-row .right .btn { flex: 1; }
+    .log th:nth-child(4), .log td:nth-child(4) { display: none; }
+    .log th:nth-child(5), .log td:nth-child(5) { display: none; }
+    .reg-table th:nth-child(4), .reg-table td:nth-child(4),
+    .reg-table th:nth-child(5), .reg-table td:nth-child(5) { display: none; }
+    .reg-head { flex-wrap: wrap; }
+    .modal { top: auto; bottom: 8px; transform: translate(-50%, 0); max-height: calc(100vh - 16px); }
+    @keyframes sheet-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    .modal .mh h2 { font-size: 19px; }
+    .modal .mfoot { flex-wrap: wrap; }
+    .modal .mfoot .right { width: 100%; margin-left: 0; }
+    .modal .mfoot .right .btn { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bench">
+  <div class="brand"><b>smolcode</b><span>custody · prototype</span></div>
+  <nav class="tabs" aria-label="Main">
+    <button data-go="intake" aria-current="page">Intake</button>
+    <button data-go="run">Case</button>
+    <button data-go="queue">Queue</button>
+    <button data-go="register">Register</button>
+    <button data-go="protocol">Protocol</button>
+  </nav>
+  <div class="bench-right">
+    <span class="project"><svg viewBox="0 0 16 16"><path d="M2 4.5h4l1.5 2H14v6.5H2z"/></svg> orbit-api</span>
+    <span class="health" title="One sandbox image needs a rebuild"><i></i> 1 image stale</span>
+    <span class="spend">$3.84 <span>/ $12.00</span></span>
+    <span class="avatar" title="ahmadmhmdsy">AM</span>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <!-- ============ INTAKE ============ -->
+  <section class="view" data-view="intake">
+    <div class="doc-head">
+      <div>
+        <h1>Two cases open. One seal is waiting.</h1>
+        <p class="lede">Every agent action is taken into custody, written to a sealed register, and released only when a person signs for it. Nothing in this room happens off the record.</p>
+      </div>
+      <div class="doc-meta">CASE REGISTER · FRI 24 OCT 2026<br />20:41:12 · CUSTODIAN AHMAD<br />DAEMON 127.0.0.1:8765</div>
+    </div>
+
+    <div class="stat-strip">
+      <div><b>2</b><span>open cases</span></div>
+      <div><b>1</b><span>seal pending</span></div>
+      <div><b>1,204</b><span>chain entries · verified</span></div>
+      <div class="go"><a href="#" data-go="run">Review the release →</a></div>
+    </div>
+
+    <div class="intake-grid">
+      <div class="sheet">
+        <table class="log">
+          <thead><tr><th>Case</th><th>Intake</th><th>Tier</th><th>Seal</th><th>Custody</th><th>Spend</th></tr></thead>
+          <tbody>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">12</td>
+              <td><span class="task">Wire idempotency keys into the Stripe webhook handler</span><span class="sub">run_7f3a · 20:37 · anthropic/claude-sonnet-4</span></td>
+              <td class="mono" style="font-size:12px">restricted</td>
+              <td><span class="seal-tag hold">9D07AA · pending</span></td>
+              <td class="mono" style="font-size:12px">running</td>
+              <td class="mono" style="font-size:12px">$0.38</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">13</td>
+              <td><span class="task">Upgrade the session store to an append-only event log</span><span class="sub">run_2b9c · 20:33 · anthropic/claude-opus-4</span></td>
+              <td class="mono" style="font-size:12px">elevated</td>
+              <td><span class="seal-tag hold">4B21C9 · release pending</span></td>
+              <td class="mono" style="font-size:12px">on hold</td>
+              <td class="mono" style="font-size:12px">$0.91</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">—</td>
+              <td><span class="task">Fix the flaky billing snapshot test</span><span class="sub">run_6d1e · 20:19 · anthropic/claude-sonnet-4</span></td>
+              <td class="mono" style="font-size:12px">restricted</td>
+              <td><span class="seal-tag verified">verified</span></td>
+              <td class="mono" style="font-size:12px">closed</td>
+              <td class="mono" style="font-size:12px">$0.14</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">—</td>
+              <td><span class="task">Migrate the audit chain to v2 with rotation</span><span class="sub">run_04aa · 20:15 · queued #1 · anthropic/claude-opus-4</span></td>
+              <td class="mono" style="font-size:12px">full access</td>
+              <td><span class="seal-tag muted">not sealed</span></td>
+              <td class="mono" style="font-size:12px">queued</td>
+              <td class="mono" style="font-size:12px">—</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">—</td>
+              <td><span class="task">Document the tier policy matrix in docs/security.md</span><span class="sub">run_9c31 · 19:58 · openrouter/minimax-m2</span></td>
+              <td class="mono" style="font-size:12px">elevated</td>
+              <td><span class="seal-tag muted">returned</span></td>
+              <td class="mono" style="font-size:12px">struck</td>
+              <td class="mono" style="font-size:12px">$0.02</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="side">
+        <div class="gate">
+          <div class="label">Release pending · 01</div>
+          <h2>Drop 12 legacy snapshot files?</h2>
+          <p>The elevated sandbox wants to remove the old snapshot directory before writing the event log. One irreversible step.</p>
+          <div class="diff-meta"><span>src/session/store.py</span><b>+42 −11</b></div>
+          <div class="diff-meta" style="margin-top:-6px"><span>seal 4B21C9</span><span>case 2B9C</span></div>
+          <div class="acts">
+            <button class="btn solid" data-open>Open release sheet</button>
+            <button class="btn">Hold</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Seal register <span>2 active</span></h2>
+          <div class="body">
+            <div class="bar" aria-hidden="true">
+              <i style="--w:3px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:5px;height:30px"></i><i style="--w:2px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:4px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:2px;height:30px"></i><i style="--w:6px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:3px;height:30px"></i><i style="--w:2px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:5px;height:30px"></i><i style="--w:2px;height:30px"></i><i style="--w:1px;height:30px"></i><i style="--w:3px;height:30px"></i><i style="--w:2px;height:30px"></i>
+            </div>
+            <dl class="kv">
+              <dt>9D07AA</dt><dd><span class="seal-tag hold">intact · held</span></dd>
+              <dt>4B21C9</dt><dd><span class="seal-tag hold">intact · held</span></dd>
+              <dt>Chain</dt><dd class="mono">1,204 entries</dd>
+            </dl>
+            <p class="tiny" style="margin:10px 0 0">A seal is bound to one diff and one case. Breaking it writes the release to the register.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Store <span>docker</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Restricted</dt><dd><span class="mono">a91c4e · current</span></dd>
+              <dt>Elevated</dt><dd><span class="mono" style="color:var(--amber)">02b7f1 · stale</span></dd>
+              <dt>Full access</dt><dd><span class="mono">7ce0aa · current</span></dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ QUEUE ============ -->
+  <section class="view" data-view="queue" hidden>
+    <div class="doc-head">
+      <div>
+        <h1>Two in the intake queue. One case is held.</h1>
+        <p class="lede">The queue drains in order, one sandbox at a time. A held case keeps its seal and its place until a person releases it or returns it to the store.</p>
+      </div>
+      <div class="doc-meta">QUEUE · DRAIN 1 AT A TIME<br />NEXT 20:42:00 · HOLD 1</div>
+    </div>
+    <div class="intake-grid">
+      <div class="sheet">
+        <table class="log">
+          <thead><tr><th>#</th><th>Case</th><th>Tier</th><th>Seal</th><th>Requested</th><th>Wait</th></tr></thead>
+          <tbody>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">01</td>
+              <td><span class="task">Migrate the audit chain to v2 with rotation</span><span class="sub">run_04aa · full access · 8 steps</span></td>
+              <td class="mono" style="font-size:12px">full access</td>
+              <td><span class="seal-tag muted">not sealed</span></td>
+              <td class="mono" style="font-size:12px">20:15</td>
+              <td class="mono" style="font-size:12px">27m</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">02</td>
+              <td><span class="task">Backfill cost caps into docs/operations.md</span><span class="sub">run_31ba · restricted · 3 steps</span></td>
+              <td class="mono" style="font-size:12px">restricted</td>
+              <td><span class="seal-tag muted">not sealed</span></td>
+              <td class="mono" style="font-size:12px">20:22</td>
+              <td class="mono" style="font-size:12px">19m</td>
+            </tr>
+            <tr data-to="run" tabindex="0">
+              <td class="case-no">—</td>
+              <td><span class="task">Drop 12 legacy snapshot files</span><span class="sub">run_2b9c · elevated · held at seal 4B21C9</span></td>
+              <td class="mono" style="font-size:12px">elevated</td>
+              <td><span class="seal-tag hold">release pending</span></td>
+              <td class="mono" style="font-size:12px">20:33</td>
+              <td class="mono" style="font-size:12px">held</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:16px 18px;border-top:1px solid var(--line)">
+          <p class="tiny" style="margin:0">Queue is drained by the local daemon. A run that fails its test stops before the next case starts; the case is returned to the register, not retried silently.</p>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h2>Capacity <span>1 active</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Active</dt><dd class="mono">7f3a</dd>
+              <dt>Queued</dt><dd class="mono">2</dd>
+              <dt>Held</dt><dd class="mono" style="color:var(--seal)">1</dd>
+              <dt>Tonight</dt><dd class="mono">$3.84 / $12.00</dd>
+            </dl>
+            <div style="margin-top:12px"><button class="btn" disabled>Drain now</button></div>
+            <p class="tiny" style="margin:8px 0 0">Drain is disabled while a case is held.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Rule <span>queue</span></h2>
+          <div class="body">
+            <p style="margin:0;font-size:13px;color:var(--ink-2)">One run at a time on this machine. A full-access case takes the next slot only after the elevated seal is resolved.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CASE ============ -->
+  <section class="view" data-view="run" hidden>
+    <div class="casefile">
+      <div class="case-head">
+        <div>
+          <h1>Wire idempotency keys into the Stripe webhook handler</h1>
+          <p class="lede">Add an idempotency column, a unique index migration, and a replay guard before the charge call. Keep the existing signature check and add tests for the replay case.</p>
+          <div class="case-id">CASE 7F3A · INTAKE 20:37:04 · CUSTODIAN AHMAD</div>
+        </div>
+        <div class="answers">
+          <span class="sealed">seal intact</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn"><svg viewBox="0 0 16 16"><path d="M6 3v10M10 3v10"/></svg> Pause</button>
+            <button class="btn danger"><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10"/></svg> Stop</button>
+            <button class="btn ghost">Export</button>
+          </div>
+        </div>
+      </div>
+      <div class="case-meta">
+        <div>Tier<b>restricted</b></div>
+        <div>Model<b>anthropic/claude-sonnet-4</b></div>
+        <div>Image<b>a91c4e · current</b></div>
+        <div>Network<b>none · internal bridge</b></div>
+        <div>Elapsed<b>04:12</b></div>
+        <div>Spend<b>$0.38 / $2.00</b></div>
+      </div>
+      <div class="case-body">
+        <div class="sequence" aria-hidden="true">
+          <div class="item on"><b>20:37</b>01</div>
+          <div class="item"><b>20:37</b>02</div>
+          <div class="item"><b>20:37</b>03</div>
+          <div class="item"><b>20:37</b>04</div>
+          <div class="item"><b>20:38</b>05</div>
+          <div class="item"><b>20:40</b>06</div>
+        </div>
+        <div class="entries">
+          <div class="entry">
+            <div class="stamp"><b>20:37:04</b>01</div>
+            <div>
+              <div class="kind"><em>Intake</em> · task · operator</div>
+              <p>Add idempotency keys to the Stripe webhook handler so duplicate deliveries cannot double-charge. Keep the existing signature check. Add tests for the replay case.</p>
+            </div>
+          </div>
+          <div class="entry">
+            <div class="stamp"><b>20:37:11</b>02</div>
+            <div>
+              <div class="kind"><em>Plan</em> · lead agent</div>
+              <p>Read the handler and the billing tests, key the event on <span class="mono">stripe_event_id</span>, store it beside the charge, run the suite, then patch the handler.</p>
+            </div>
+          </div>
+          <div class="entry">
+            <div class="stamp"><b>20:37:19</b>03</div>
+            <div>
+              <div class="kind"><em>Tool</em> · read_file · restricted</div>
+              <div class="file"><span>src/billing/webhook.py</span><span>212 lines · inside root</span></div>
+            </div>
+          </div>
+          <div class="entry">
+            <div class="stamp"><b>20:37:41</b>04</div>
+            <div>
+              <div class="kind"><em>Exec</em> · pytest · allowed</div>
+              <div class="term">
+                <div>$ pytest tests/billing -q</div>
+                <div style="margin-top:4px">18 passed in 2.14s</div>
+                <div class="ok">tests/billing/test_webhook.py::test_replay_is_idempotent PASSED</div>
+              </div>
+            </div>
+          </div>
+          <div class="entry">
+            <div class="stamp"><b>20:38:02</b>05</div>
+            <div>
+              <div class="kind"><em>Sub-agent</em> · scout · grep · read-only</div>
+              <div class="term"><div>$ grep -rn "stripe_event_id" src/ tests/</div><div style="margin-top:4px">14 hits · 6 files · no write</div></div>
+            </div>
+          </div>
+          <div class="entry">
+            <div class="stamp"><b>20:40:03</b>06</div>
+            <div>
+              <div class="kind"><em>Diff proposed</em> · src/billing/webhook.py · sealed</div>
+              <p style="margin-top:2px">Adds a replay guard before the charge call. The restricted sandbox cannot apply a schema change alone.</p>
+              <div class="diffbox">
+                <div class="hd"><span>src/billing/webhook.py</span><span style="color:var(--seal)">+24 −3 · seal 9D07AA</span></div>
+                <div class="row hunk"><span class="ln">1</span><span class="sg"></span><span class="code">@@ -61,7 +61,12 @@ def handle_event(request: Request):</span></div>
+                <div class="row"><span class="ln">61</span><span class="sg"></span><span class="code"> def handle_event(request: Request) -&gt; Response:</span></div>
+                <div class="row"><span class="ln">62</span><span class="sg"></span><span class="code">     event = stripe.Event.construct_from(request.json(), WEBHOOK_SECRET)</span></div>
+                <div class="row add"><span class="ln">63</span><span class="sg">+</span><span class="code">     existing = Charge.by_event_id(event.id)</span></div>
+                <div class="row add"><span class="ln">64</span><span class="sg">+</span><span class="code">     if existing is not None:</span></div>
+                <div class="row add"><span class="ln">65</span><span class="sg">+</span><span class="code">         return Response(status_code=200, body={"replayed": True})</span></div>
+                <div class="row"><span class="ln">66</span><span class="sg"></span><span class="code"> </span></div>
+                <div class="row del"><span class="ln">67</span><span class="sg">−</span><span class="code">     Charge.create(customer=event.customer, amount=event.amount)</span></div>
+                <div class="row add"><span class="ln">68</span><span class="sg">+</span><span class="code">     Charge.create(</span></div>
+                <div class="row add"><span class="ln">69</span><span class="sg">+</span><span class="code">         customer=event.customer,</span></div>
+                <div class="row add"><span class="ln">70</span><span class="sg">+</span><span class="code">         amount=event.amount,</span></div>
+                <div class="row add"><span class="ln">71</span><span class="sg">+</span><span class="code">         event_id=event.id,</span></div>
+                <div class="row add"><span class="ln">72</span><span class="sg">+</span><span class="code">     )</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="hold-block">
+            <div>
+              <div class="label" style="color:var(--seal)">Release pending · seal 9D07AA</div>
+              <h2>The diff is in custody. Nothing is applied yet.</h2>
+              <p>Breaking the seal writes the release and the diff hash to the register. Returning it keeps the case open and the step replans.</p>
+            </div>
+            <div class="stampmark">Hold</div>
+            <div class="acts">
+              <button class="btn" data-open7>Review seal</button>
+              <button class="btn danger" data-open7>Open release</button>
+            </div>
+          </div>
+        </div>
+        <aside class="rail">
+          <div class="mini">
+            <h2>Custody</h2>
+            <div class="big">06 <span>/ 08 steps</span></div>
+            <div class="kv" style="margin-top:10px">
+              <dt>Run</dt><dd>run_7f3a</dd>
+              <dt>Executor</dt><dd>docker · restricted</dd>
+              <dt>Image</dt><dd>a91c4e · current</dd>
+              <dt>Limits</dt><dd>2 cpu · 2g · 900s</dd>
+              <dt>Approvals</dt><dd>0 released · 1 held</dd>
+              <dt>Sub-agents</dt><dd>1 · scout</dd>
+            </div>
+          </div>
+          <div class="mini">
+            <h2>Budget</h2>
+            <dl class="kv">
+              <dt>Model</dt><dd>claude-sonnet-4</dd>
+              <dt>Tokens</dt><dd>148.2k in · 11.4k out</dd>
+              <dt>Cap</dt><dd>$0.38 / $2.00</dd>
+            </dl>
+          </div>
+          <div class="mini">
+            <h2>Policy in force</h2>
+            <table class="policy">
+              <thead><tr><th>Action</th><th>R</th><th>E</th><th>F</th></tr></thead>
+              <tbody>
+                <tr><td>Write workspace</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+                <tr><td>Delete files</td><td class="gate2">gated</td><td class="gate2">gated</td><td class="yes">yes</td></tr>
+                <tr><td>Network</td><td class="no">none</td><td class="gate2">allowlist</td><td class="yes">full</td></tr>
+                <tr><td>Push branch</td><td class="no">no</td><td class="gate2">gated</td><td class="yes">yes</td></tr>
+              </tbody>
+            </table>
+            <p class="tiny" style="margin:8px 0 0">Restricted: workspace read/write, no network, allowlisted commands. The gate is fail-closed.</p>
+          </div>
+          <div class="mini">
+            <h2>Seal</h2>
+            <div class="bar" aria-hidden="true">
+              <i style="--w:2px;height:22px"></i><i style="--w:4px;height:22px"></i><i style="--w:1px;height:22px"></i><i style="--w:3px;height:22px"></i><i style="--w:2px;height:22px"></i><i style="--w:1px;height:22px"></i><i style="--w:5px;height:22px"></i><i style="--w:1px;height:22px"></i><i style="--w:2px;height:22px"></i><i style="--w:3px;height:22px"></i><i style="--w:1px;height:22px"></i><i style="--w:4px;height:22px"></i><i style="--w:2px;height:22px"></i><i style="--w:1px;height:22px"></i>
+            </div>
+            <div class="mono" style="font-size:12px;margin-top:6px">9D07AA · intact</div>
+            <button class="btn" style="margin-top:8px;width:100%" data-open7>Open release sheet</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="composer">
+      <textarea aria-label="Next instruction" placeholder="Enter the next instruction. @ to attach a file, / for a command."></textarea>
+      <div class="composer-row">
+        <label class="field tier-field">TIER
+          <select aria-label="Tier"><option>Restricted</option><option>Elevated</option><option>Full access</option></select>
+        </label>
+        <label class="field model-field">MODEL
+          <select aria-label="Model"><option>sonnet-4</option><option>opus-4</option><option>minimax-m2</option></select>
+        </label>
+        <span class="field attach-field">ATTACH 2 files</span>
+        <label class="consent auto-field" style="display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--steel);font-family:var(--mono)">
+          <input type="checkbox" /> Auto-seal workspace diffs
+        </label>
+        <div class="right">
+          <span class="hint"><kbd>⌘</kbd><kbd>↵</kbd> to queue</span>
+          <button class="btn verify">Seal instruction</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ REGISTER ============ -->
+  <section class="view" data-view="register" hidden>
+    <div class="reg-head">
+      <div>
+        <h1>Every transfer is written down.</h1>
+        <div class="label" style="margin-top:6px">Custody register · entries 1198–1204</div>
+      </div>
+      <div class="ok"><i></i> chain verified · 20:41:12</div>
+    </div>
+    <div class="reg-grid">
+      <div class="sheet">
+        <table class="reg-table">
+          <thead><tr><th>Seq</th><th>Time</th><th>Action</th><th>Seal · hash</th><th>Custodian</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="seq">1204</td><td class="time">20:41:12</td>
+              <td class="what"><b>release.pending</b> · patch_file · run_7f3a<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">held for a human signature · diff sha 9d07aa</span></td>
+              <td class="hash">7f3a…1204 · 9c1e4d22</td><td class="by">ahmad</td>
+            </tr>
+            <tr>
+              <td class="seq">1203</td><td class="time">20:40:03</td>
+              <td class="what"><b>diff.proposed</b> · src/billing/webhook.py<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">+24 −3 · sealed 9d07aa</span></td>
+              <td class="hash">7f3a…1203 · 41aa9b07</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1202</td><td class="time">20:39:41</td>
+              <td class="what"><b>exec.run</b> · pytest tests/billing -q<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">exit 0 · 2.14s · allowed</span></td>
+              <td class="hash">7f3a…1202 · 0c55de81</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1201</td><td class="time">20:39:02</td>
+              <td class="what"><b>subagent.spawn</b> · scout<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">restricted image · no network</span></td>
+              <td class="hash">7f3a…1201 · aa02e7c4</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1200</td><td class="time">20:38:02</td>
+              <td class="what"><b>tool.run</b> · grep stripe_event_id<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">14 hits · read-only</span></td>
+              <td class="hash">7f3a…1200 · 5db10a9f</td><td class="by">agent</td>
+            </tr>
+            <tr>
+              <td class="seq">1199</td><td class="time">20:37:58</td>
+              <td class="what"><b>policy.check</b> · restricted · allowlist<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">pytest · git · python permitted</span></td>
+              <td class="hash">7f3a…1199 · 2e90ab14</td><td class="by">daemon</td>
+            </tr>
+            <tr>
+              <td class="seq">1198</td><td class="time">20:37:19</td>
+              <td class="what"><b>intake.accepted</b> · run_7f3a<span class="sub" style="font-family:var(--mono);font-size:12px;color:var(--steel);display:block">workspace read · src/billing/webhook.py · 212 lines</span></td>
+              <td class="hash">7f3a…1198 · c4b17e0f</td><td class="by">ahmad</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+          <span class="seal-tag verified">chain intact · genesis 0000…8f1c</span>
+          <button class="btn verify">Verify chain</button>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h2>Chain <span>sha-256</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Verified</dt><dd>1,204 entries · unbroken</dd>
+              <dt>Last check</dt><dd class="mono">20:41:12</dd>
+              <dt>Files</dt><dd>3 rotated · 2 archived</dd>
+              <dt>Anchor</dt><dd class="mono">genesis 0000…8f1c</dd>
+            </dl>
+            <p class="tiny" style="margin:10px 0 0">Editing a past entry breaks the chain at that line; the verifier names the first mismatch.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Policy classes <span>restricted</span></h2>
+          <div class="body">
+            <table class="policy">
+              <thead><tr><th>Action</th><th>R</th><th>E</th><th>F</th></tr></thead>
+              <tbody>
+                <tr><td>Write workspace</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+                <tr><td>Delete files</td><td class="gate2">gated</td><td class="gate2">gated</td><td class="yes">yes</td></tr>
+                <tr><td>Network</td><td class="no">none</td><td class="gate2">allowlist</td><td class="yes">full</td></tr>
+                <tr><td>Push branch</td><td class="no">no</td><td class="gate2">gated</td><td class="yes">yes</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Store <span>docker</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Restricted</dt><dd class="mono">a91c4e · current</dd>
+              <dt>Elevated</dt><dd class="mono" style="color:var(--amber)">02b7f1 · stale</dd>
+              <dt>Full access</dt><dd class="mono">7ce0aa · current</dd>
+              <dt>Bind</dt><dd class="mono">loopback only</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PROTOCOL ============ -->
+  <section class="view" data-view="protocol" hidden>
+    <div class="doc-head">
+      <div>
+        <h1>Protocol for the room.</h1>
+        <p class="lede">Providers, seals, caps, and the store. Everything here is local to this machine and loopback-only; keys are read from the environment, never written down.</p>
+      </div>
+      <div class="doc-meta">PROTOCOL · LOOPBACK ONLY<br />KEYS FROM ENV · NO TELEMETRY</div>
+    </div>
+    <div class="protocol-grid">
+      <div class="formsheet">
+        <div class="sec">
+          <h2>Providers</h2>
+          <table class="provider-table">
+            <thead><tr><th>Provider</th><th>Model</th><th>Route</th><th>Key</th></tr></thead>
+            <tbody>
+              <tr><td>LiteLLM proxy</td><td class="mono">127.0.0.1:4000</td><td>primary</td><td class="yes">ready</td></tr>
+              <tr><td>Anthropic</td><td class="mono">claude-sonnet-4</td><td>direct</td><td class="yes">env</td></tr>
+              <tr><td>Anthropic</td><td class="mono">claude-opus-4</td><td>direct</td><td class="yes">env</td></tr>
+              <tr><td>OpenRouter</td><td class="mono">minimax-m2</td><td>fallback</td><td class="no">no key</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="sec">
+          <h2>Seals</h2>
+          <div class="formrow">
+            <div class="what"><b>Destructive steps always need a release</b><small>delete · push · network egress · schema change</small></div>
+            <button class="toggle" aria-pressed="true"><span class="sw"></span> on</button>
+          </div>
+          <div class="formrow">
+            <div class="what"><b>Auto-seal diffs inside the workspace</b><small>release is written to the register without a human stop</small></div>
+            <button class="toggle" aria-pressed="false"><span class="sw"></span> off</button>
+          </div>
+          <div class="formrow">
+            <div class="what"><b>Stop the case on a failed test</b><small>the case is returned, never silently retried</small></div>
+            <button class="toggle" aria-pressed="true"><span class="sw"></span> on</button>
+          </div>
+          <div class="formrow">
+            <div class="what"><b>Rebuild a stale image before the next case</b><small>elevated image 02b7f1 is stale tonight</small></div>
+            <button class="toggle" aria-pressed="false"><span class="sw"></span> off</button>
+          </div>
+        </div>
+        <div class="sec">
+          <h2>Store paths</h2>
+          <div class="formrow"><div class="what"><b>Workspace root</b><small>~/work/orbit-api</small></div><button class="btn ghost">Change</button></div>
+          <div class="formrow"><div class="what"><b>Uploads</b><small>~/.local/share/smolcode/uploads</small></div><button class="btn ghost">Change</button></div>
+          <div class="formrow"><div class="what"><b>Register</b><small>~/.local/share/smolcode/audit</small></div><button class="btn ghost">Open</button></div>
+          <div class="formrow"><div class="what"><b>Bind</b><small>127.0.0.1:8765 · loopback only</small></div><span class="seal-tag verified">enforced</span></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h2>Caps <span>tonight</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Tonight</dt><dd class="mono">$3.84 / $12.00</dd>
+              <dt>Per case</dt><dd class="mono">$2.00</dd>
+              <dt>Steps</dt><dd class="mono">8</dd>
+              <dt>On cap</dt><dd>stop · keep evidence</dd>
+            </dl>
+            <div style="margin-top:12px"><button class="btn">Reset tonight</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Store <span>docker</span></h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Restricted</dt><dd class="mono">a91c4e · current</dd>
+              <dt>Elevated</dt><dd class="mono" style="color:var(--amber)">02b7f1 · stale</dd>
+              <dt>Full access</dt><dd class="mono">7ce0aa · current</dd>
+            </dl>
+            <div style="margin-top:12px"><button class="btn">Rebuild elevated</button></div>
+            <p class="tiny" style="margin:8px 0 0">A stale image is rebuilt before the next case at that tier, or the case is refused.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Register</h2>
+          <div class="body">
+            <dl class="kv">
+              <dt>Entries</dt><dd class="mono">1,204</dd>
+              <dt>Rotated</dt><dd class="mono">3 files</dd>
+              <dt>Archived</dt><dd class="mono">2 files</dd>
+              <dt>Last verify</dt><dd class="mono">20:41:12</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ RELEASE SHEETS ============ -->
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="modal" id="release" role="dialog" aria-modal="true" aria-labelledby="rt" hidden>
+  <div class="sealband"></div>
+  <div class="mh">
+    <div>
+      <h2 id="rt">Drop 12 legacy snapshot files?</h2>
+      <div class="case-id">Release authorization · case 2B9C · seal 4B21C9</div>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  </div>
+  <div class="mb">
+    <p>The elevated sandbox wants to remove <span class="mono">src/session/snapshots/</span> before writing the event log. Twelve files, 3.4 MB, no copy outside the image. This is the only irreversible step in the case.</p>
+    <div class="filebar"><span>src/session/store.py</span><span class="chg">+42 −11</span></div>
+    <div class="diffbox">
+      <div class="hd"><span>@@ -88,6 +88,9 @@ def migrate_session_store()</span><span style="color:var(--seal)">seal 4B21C9</span></div>
+      <div class="row del"><span class="ln">88</span><span class="sg">−</span><span class="code">     for path in SNAPSHOT_DIR.glob("*.json"):</span></div>
+      <div class="row del"><span class="ln">89</span><span class="sg">−</span><span class="code">         path.unlink()</span></div>
+      <div class="row add"><span class="ln">88</span><span class="sg">+</span><span class="code">     for path in SNAPSHOT_DIR.glob("*.json"):</span></div>
+      <div class="row add"><span class="ln">89</span><span class="sg">+</span><span class="code">         if path.stat().st_size == 0:</span></div>
+      <div class="row add"><span class="ln">90</span><span class="sg">+</span><span class="code">             path.unlink()</span></div>
+      <div class="row add"><span class="ln">91</span><span class="sg">+</span><span class="code">             continue</span></div>
+      <div class="row add"><span class="ln">92</span><span class="sg">+</span><span class="code">         archive(path)</span></div>
+    </div>
+    <label class="consent"><input type="checkbox" id="ack" /> I accept custody of this release. A copy of the diff and this signature go to the register.</label>
+    <p class="note">Release writes register entry 1205 and cannot be undone from this screen.</p>
+  </div>
+  <div class="mfoot">
+    <span class="sealed">seal intact</span>
+    <div class="right">
+      <button class="btn" data-close>Return to custody</button>
+      <button class="btn danger" data-release disabled>Break seal and release</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="release7" role="dialog" aria-modal="true" aria-labelledby="rt7" hidden>
+  <div class="sealband"></div>
+  <div class="mh">
+    <div>
+      <h2 id="rt7">Release the webhook patch?</h2>
+      <div class="case-id">Release authorization · case 7F3A · seal 9D07AA</div>
+    </div>
+    <button class="x" data-close aria-label="Close"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  </div>
+  <div class="mb">
+    <p>The restricted run proposes a diff against the Stripe handler. The seal keeps the working copy unchanged until you release it. Tests already passed inside the sandbox; nothing has touched the host workspace.</p>
+    <div class="filebar"><span>src/billing/webhook.py</span><span class="chg">+24 −3</span></div>
+    <div class="diffbox">
+      <div class="hd"><span>@@ -61,7 +61,12 @@ def handle_event(request: Request):</span><span style="color:var(--seal)">seal 9D07AA</span></div>
+      <div class="row"><span class="ln">61</span><span class="sg"></span><span class="code"> def handle_event(request: Request) -&gt; Response:</span></div>
+      <div class="row"><span class="ln">62</span><span class="sg"></span><span class="code">     event = stripe.Event.construct_from(request.json(), WEBHOOK_SECRET)</span></div>
+      <div class="row add"><span class="ln">63</span><span class="sg">+</span><span class="code">     existing = Charge.by_event_id(event.id)</span></div>
+      <div class="row add"><span class="ln">64</span><span class="sg">+</span><span class="code">     if existing is not None:</span></div>
+      <div class="row add"><span class="ln">65</span><span class="sg">+</span><span class="code">         return Response(status_code=200, body={"replayed": True})</span></div>
+      <div class="row del"><span class="ln">67</span><span class="sg">−</span><span class="code">     Charge.create(customer=event.customer, amount=event.amount)</span></div>
+      <div class="row add"><span class="ln">68</span><span class="sg">+</span><span class="code">     Charge.create(customer=event.customer, amount=event.amount, event_id=event.id)</span></div>
+    </div>
+    <label class="consent"><input type="checkbox" id="ack7" /> I accept the diff as written. The seal is broken and the register records the release.</label>
+    <p class="note">Release writes register entry 1205 with the diff hash 9d07aa.</p>
+  </div>
+  <div class="mfoot">
+    <span class="sealed">seal intact</span>
+    <div class="right">
+      <button class="btn" data-close>Return to custody</button>
+      <button class="btn danger" data-release7 disabled>Break seal and release</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden>Release written to register · entry 1205</div>
+
+<script>
+(function () {
+  var views = Array.prototype.slice.call(document.querySelectorAll('.view'));
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs button'));
+
+  function show(name) {
+    views.forEach(function (v) { v.hidden = v.getAttribute('data-view') !== name; });
+    tabs.forEach(function (b) {
+      if (b.getAttribute('data-go') === name) { b.setAttribute('aria-current', 'page'); }
+      else { b.removeAttribute('aria-current'); }
+    });
+    window.scrollTo(0, 0);
+  }
+
+  document.addEventListener('click', function (e) {
+    var go = e.target.closest('[data-go]');
+    if (go) { e.preventDefault(); show(go.getAttribute('data-go')); return; }
+    var row = e.target.closest('[data-to]');
+    if (row) { show(row.getAttribute('data-to')); return; }
+    var open = e.target.closest('[data-open]');
+    if (open) { openModal('release'); return; }
+    var open7 = e.target.closest('[data-open7]');
+    if (open7) { openModal('release7'); return; }
+    if (e.target.closest('[data-close]')) { closeModal(); return; }
+    if (e.target.id === 'scrim') { closeModal(); return; }
+    if (e.target.closest('[data-release]')) { closeModal(); toast(); return; }
+    if (e.target.closest('[data-release7]')) { closeModal(); toast(); return; }
+    var t = e.target.closest('.toggle');
+    if (t) {
+      var on = t.getAttribute('aria-pressed') === 'true';
+      t.setAttribute('aria-pressed', on ? 'false' : 'true');
+      t.lastChild.nodeValue = on ? ' off' : ' on';
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeModal(); }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault(); show('run');
+      var ta = document.querySelector('.view[data-view="run"] textarea');
+      if (ta) { ta.focus(); }
+    }
+    var row = e.target.closest('[data-to]');
+    if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); show(row.getAttribute('data-to')); }
+  });
+
+  var scrim = document.getElementById('scrim');
+  var modals = Array.prototype.slice.call(document.querySelectorAll('.modal'));
+  var lastFocus = null;
+
+  function openModal(id) {
+    var m = document.getElementById(id);
+    if (!m) { return; }
+    lastFocus = document.activeElement;
+    modals.forEach(function (x) { x.hidden = true; });
+    scrim.hidden = false;
+    m.hidden = false;
+    var first = m.querySelector('button');
+    if (first) { first.focus(); }
+  }
+  function closeModal() {
+    if (scrim.hidden) { return; }
+    scrim.hidden = true;
+    modals.forEach(function (x) { x.hidden = true; });
+    if (lastFocus && lastFocus.focus) { lastFocus.focus(); }
+  }
+
+  var ack = document.getElementById('ack');
+  var ack7 = document.getElementById('ack7');
+  var rel = document.querySelector('[data-release]');
+  var rel7 = document.querySelector('[data-release7]');
+  if (ack && rel) { ack.addEventListener('change', function () { rel.disabled = !ack.checked; }); }
+  if (ack7 && rel7) { ack7.addEventListener('change', function () { rel7.disabled = !ack7.checked; }); }
+
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+  function toast() {
+    if (!toastEl) { return; }
+    toastEl.hidden = false;
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 4000);
+  }
+
+  var hash = (location.hash || '').replace('#', '');
+  var map = { intake: 'intake', run: 'run', queue: 'queue', register: 'register', audit: 'register', protocol: 'protocol' };
+  if (hash === 'release7') { show('run'); openModal('release7'); }
+  else if (hash === 'release') { show('run'); openModal('release'); }
+  else if (map[hash]) { show(map[hash]); }
+})();
+</script>
+</body>
+</html>

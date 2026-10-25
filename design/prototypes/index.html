@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>smolcode frontend — three directions</title>
+<title>smolcode frontend — round two</title>
 <link rel="stylesheet" href="fonts/fonts.css" />
 <style>
   :root {
-    --bg: #f4f3ef;
+    --bg: #f3f2ed;
     --card: #fbfaf7;
-    --ink: #16150f;
-    --ink-2: #3d3b33;
-    --muted: #5f5c52;
-    --faint: #676357;
+    --ink: #15140f;
+    --ink-2: #3b3931;
+    --muted: #5e5b51;
+    --faint: #6b675b;
     --line: #d9d6cb;
-    --line-2: #bab6a8;
-    --sans: "Archivo", system-ui, sans-serif;
-    --body: "Public Sans", system-ui, sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --line-2: #b8b4a6;
+    --sans: 'Archivo', system-ui, sans-serif;
+    --body: 'Public Sans', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
   html { color-scheme: light; }
@@ -33,7 +33,7 @@
 
   .hero { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 50px; padding: 40px 0 30px; border-bottom: 1px solid var(--line-2); }
   h1 { margin: 0; font-family: var(--sans); font-size: clamp(38px, 5vw, 66px); line-height: 0.98; letter-spacing: -0.045em; font-weight: 800; max-width: 15ch; }
-  .hero .lede { margin: 18px 0 0; max-width: 58ch; font-size: 16.5px; line-height: 1.6; color: var(--ink-2); }
+  .hero .lede { margin: 18px 0 0; max-width: 60ch; font-size: 16.5px; line-height: 1.6; color: var(--ink-2); }
   .hero .side { border-left: 1px solid var(--line-2); padding-left: 24px; align-self: end; }
   .hero .side p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
   .hero .side p b { color: var(--ink); font-weight: 600; }
@@ -46,24 +46,26 @@
   .shot { display: block; border-bottom: 1px solid var(--line-2); background: #e9e7e0; aspect-ratio: 16 / 10.4; overflow: hidden; position: relative; }
   .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
   .shot:hover img { transform: scale(1.015); }
-  .shot .peek { position: absolute; left: 10px; bottom: 10px; background: #16150fe6; color: #f4f3ef; font-family: var(--mono); font-size: 12px; padding: 4px 7px; }
+  .shot .peek { position: absolute; left: 10px; bottom: 10px; background: #15140fe6; color: #f3f2ed; font-family: var(--mono); font-size: 12px; padding: 4px 7px; }
   .card .body { padding: 16px 16px 14px; display: flex; flex-direction: column; flex: 1; }
   .card .row { display: flex; align-items: baseline; gap: 10px; }
   .card h2 { margin: 0; font-family: var(--sans); font-size: 23px; font-weight: 800; letter-spacing: -0.03em; }
   .card .idx { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--faint); }
   .card .role { margin: 3px 0 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
-  .card .desc { margin: 0 0 12px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); min-height: 5.05em; }
+  .card.cue .role { color: #a52f19; }
+  .card.cust .role { color: #0d6159; }
+  .card.bond .role { color: #9b3c1b; }
+  .card .desc { margin: 0 0 12px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); min-height: 5.6em; }
   .spec { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 5px 10px; font-size: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
   .spec dt { font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); padding-top: 2px; }
   .spec dd { margin: 0; color: var(--ink-2); }
   .swatches { display: flex; gap: 4px; }
   .swatches i { width: 17px; height: 17px; border: 1px solid #00000022; display: block; }
   .type-demo { font-size: 15px; line-height: 1.2; }
-  .type-demo.cue { font-family: "Courier Prime", monospace; color: #b8341d; }
-  .type-demo.way { font-family: "Public Sans", sans-serif; font-weight: 900; letter-spacing: -0.04em; text-transform: uppercase; }
-  .type-demo.lex { font-family: "Source Serif 4", serif; font-size: 18px; }
+  .type-demo.cue { font-family: 'Courier Prime', monospace; color: #b8341d; }
+  .type-demo.cust { font-family: 'Instrument Sans', sans-serif; font-weight: 650; letter-spacing: -0.02em; }
+  .type-demo.bond { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 21px; text-transform: uppercase; letter-spacing: 0.045em; }
   .card .links { display: flex; gap: 6px; margin-top: auto; padding-top: 13px; flex-wrap: wrap; }
-  .glass { display: flex; gap: 6px; }
   .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ink); padding: 7px 10px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; background: transparent; }
   .btn:hover { background: var(--ink); color: var(--bg); }
   .btn.solid { background: var(--ink); color: var(--bg); flex: 1; justify-content: center; }
@@ -72,7 +74,7 @@
 
   .band { margin-top: 52px; padding-top: 18px; border-top: 2px solid var(--ink); }
   .band h2 { margin: 0 0 4px; font-family: var(--sans); font-size: 30px; font-weight: 800; letter-spacing: -0.04em; }
-  .band .sub { margin: 0 0 20px; font-size: 14px; color: var(--muted); max-width: 70ch; }
+  .band .sub { margin: 0 0 20px; font-size: 14px; color: var(--muted); max-width: 76ch; }
   .included { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; }
   .inc { border-top: 1px solid var(--line-2); padding-top: 10px; }
   .inc b { display: block; font-family: var(--sans); font-size: 13px; font-weight: 700; margin-bottom: 4px; }
@@ -125,32 +127,32 @@
 <div class="wrap">
   <div class="top">
     <div class="wordmark">smolcode</div>
-    <div class="meta"><b>Frontend directions</b><br />Design review · 24 October 2025</div>
+    <div class="meta"><b>Frontend directions · round two</b><br />Design review · 24 October 2026</div>
   </div>
 
   <div class="hero">
     <div>
-      <h1>Three ways to run the room.</h1>
-      <p class="lede">The same app, rebuilt three times: same screens, same data, same interactions, three committed visual worlds. Open each one, use it, and pick the room you would want to be in at 1am with a run on the sandbox and a destructive diff waiting on your judgment.</p>
+      <h1>Three rooms. One decision.</h1>
+      <p class="lede">Cuebook is still the benchmark. Beside it are two directions built from scratch for this product — not re-skins of the rejected worlds. Same screens, same data, same product truth: the tier ladder, the release gate, the audit chain, the composer. Only the room changes.</p>
       <div class="tagline"><span>STATIC HTML · CLICKABLE</span><span>1440 + 390</span><span>SYNTHETIC DATA</span><span>NO BUILD STEP</span></div>
     </div>
     <div class="side">
-      <p><b>What is fixed.</b> All three keep the same product truth: the tier ladder, the approval gate, the audit chain, the inspector, the composer. A direction changes the world, never the behaviour.</p>
-      <p><b>What is not real.</b> These are design prototypes, not the shipped app — no backend, no keys, all runs and costs are synthetic. Every screen is clickable: use the nav, open the approval sheet, switch inspector tabs.</p>
-      <p class="k">directions rolled with the impeccable skill · concept-seed key 71586e88</p>
+      <p><b>What is fixed.</b> Tier names, run states, the approval decision, the audit register, and the behavior of every control. A direction may rename a surface in its own language, never the destination or the action.</p>
+      <p><b>What is new.</b> Custody comes from an evidence intake bench; Bonded from a customs yard. Both are invented from the operator's world, not from the instruments the operator uses.</p>
+      <p><b>What is not real.</b> No backend, no keys, all runs and costs are synthetic. Open the nav, open both release sheets, check the register, narrow the window to 390px.</p>
     </div>
   </div>
 
   <div class="grid3">
-    <div class="card">
+    <div class="card cue">
       <a class="shot" href="cuebook/index.html" aria-label="Open the cuebook prototype">
         <img src="shots/cuebook-overview.png" alt="Cuebook direction: dark warm theatre desk with a run book table and a held approval" />
-        <span class="peek">01 · open prototype</span>
+        <span class="peek">01 · incumbent · open</span>
       </a>
       <div class="body">
         <div class="row"><h2>Cuebook</h2><span class="idx">I</span></div>
-        <div class="role">Concept-seed direction · assigned</div>
-        <p class="desc">A prompt book for a late show: warm black, typewriter annotations, and every step given a cue number. The run is a performance; the approval is a held cue waiting for GO.</p>
+        <div class="role">Incumbent · round 01</div>
+        <p class="desc">A prompt book for a late show: warm black, typewriter annotations, every step given a cue number. The run is a performance; the approval is a held cue waiting for GO.</p>
         <dl class="spec">
           <dt>Palette</dt><dd class="swatches" aria-label="Cue black, ivory, cue red, standby amber"><i style="background:#100e0c"></i><i style="background:#ede6da"></i><i style="background:#e2452f"></i><i style="background:#d9a441"></i></dd>
           <dt>Type</dt><dd><span class="type-demo cue">Q12 GO</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Courier Prime · Archivo</span></dd>
@@ -166,50 +168,50 @@
       </div>
     </div>
 
-    <div class="card">
-      <a class="shot" href="wayfinding/index.html" aria-label="Open the wayfinding prototype">
-        <img src="shots/wayfinding-overview.png" alt="Wayfinding direction: saturated yellow signage hero over a departure board of runs" />
-        <span class="peek">02 · open prototype</span>
+    <div class="card cust">
+      <a class="shot" href="custody/index.html" aria-label="Open the custody prototype">
+        <img src="shots/custody-overview.png" alt="Custody direction: pale evidence bench with a case register and a held release under an oxblood seal" />
+        <span class="peek">02 · new · open</span>
       </a>
       <div class="body">
-        <div class="row"><h2>Wayfinding</h2><span class="idx">II</span></div>
-        <div class="role">Concept-seed pick · airport signage</div>
-        <p class="desc">A terminal that tells you where you stand. Poster yellow, heavy grotesque numerals, tier gates R / E / F, and one huge state band that answers “what is happening?” before you read a word.</p>
+        <div class="row"><h2>Custody</h2><span class="idx">II</span></div>
+        <div class="role">New · evidence intake</div>
+        <p class="desc">An evidence bench for agent work: cool paper, steel rules, oxblood seals. Every diff is taken into custody and released only when a person signs for it. The audit register is not a log viewer; it is the point.</p>
         <dl class="spec">
-          <dt>Palette</dt><dd class="swatches" aria-label="Paper, ink, signal yellow, danger red"><i style="background:#f2f0e9"></i><i style="background:#131210"></i><i style="background:#ffd400"></i><i style="background:#c01d12"></i></dd>
-          <dt>Type</dt><dd><span class="type-demo way">Gate R</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Public Sans 900 · JetBrains Mono</span></dd>
-          <dt>Signature</dt><dd>The state band: run number, state, and sandbox posture as one piece of signage.</dd>
-          <dt>Navigation</dt><dd>Top tabs · wide departure board · the decision sits in a black gate panel</dd>
+          <dt>Palette</dt><dd class="swatches" aria-label="Bench grey, sheet white, oxblood seal, verify teal"><i style="background:#e8ece9"></i><i style="background:#fbfcf9"></i><i style="background:#8c2f2a"></i><i style="background:#0d6159"></i></dd>
+          <dt>Type</dt><dd><span class="type-demo cust">Case 12</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Instrument Sans · IBM Plex Mono</span></dd>
+          <dt>Signature</dt><dd>The tamper-evident seal: one diff, one case, broken only by a written release.</dd>
+          <dt>Navigation</dt><dd>Bench tabs · case file with a custody rail · numbered clauses</dd>
         </dl>
         <div class="links">
-          <a class="btn" href="wayfinding/index.html">Overview</a>
-          <a class="btn" href="wayfinding/index.html#run">Live run</a>
-          <a class="btn" href="wayfinding/index.html#audit">Audit</a>
-          <a class="btn solid" href="wayfinding/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
+          <a class="btn" href="custody/index.html">Intake</a>
+          <a class="btn" href="custody/index.html#run">Case</a>
+          <a class="btn" href="custody/index.html#register">Register</a>
+          <a class="btn solid" href="custody/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
         </div>
       </div>
     </div>
 
-    <div class="card">
-      <a class="shot" href="lexicon/index.html" aria-label="Open the lexicon prototype">
-        <img src="shots/lexicon-overview.png" alt="Lexicon direction: cream editorial index of runs with a guide-word rule and shoulder index" />
-        <span class="peek">03 · open prototype</span>
+    <div class="card bond">
+      <a class="shot" href="bonded/index.html" aria-label="Open the bonded prototype">
+        <img src="shots/bonded-overview.png" alt="Bonded direction: kraft customs yard with a stencilled red yard plate, a manifest table and a held gate card" />
+        <span class="peek">03 · new · open</span>
       </a>
       <div class="body">
-        <div class="row"><h2>Lexicon</h2><span class="idx">III</span></div>
-        <div class="role">Challenger · reference book</div>
-        <p class="desc">A working reference book: cream paper, serif argument, hanging annotations, and diffs set as printer's corrections. The audit register reads like a real register, not a log viewer.</p>
+        <div class="row"><h2>Bonded</h2><span class="idx">III</span></div>
+        <div class="role">New · customs yard</div>
+        <p class="desc">A bonded yard for containers of work: tarpaulin paper, stencilled plates, navy gates. Runs queue in slots, leave on a signed gate pass, and every movement lands in the manifest. Physical, but not a costume.</p>
         <dl class="spec">
-          <dt>Palette</dt><dd class="swatches" aria-label="Cream, ink, vermilion, olive"><i style="background:#f3edde"></i><i style="background:#1c170e"></i><i style="background:#a8321c"></i><i style="background:#4d5c35"></i></dd>
-          <dt>Type</dt><dd><span class="type-demo lex">The register.</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Source Serif 4 · Karla</span></dd>
-          <dt>Signature</dt><dd>Guide words and marginal annotations; corrections in vermilion and olive.</dd>
-          <dt>Navigation</dt><dd>Shoulder index · editorial column · apparatus criticus on the right</dd>
+          <dt>Palette</dt><dd class="swatches" aria-label="Tarpaulin, navy, container orange, customs green"><i style="background:#e6dcc7"></i><i style="background:#152c3e"></i><i style="background:#ad441f"></i><i style="background:#2b5945"></i></dd>
+          <dt>Type</dt><dd><span class="type-demo bond">Cont. 7F3A</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Barlow Condensed · JetBrains Mono</span></dd>
+          <dt>Signature</dt><dd>The container plate and the gate pass: one cargo, one seal, one release.</dd>
+          <dt>Navigation</dt><dd>Port tabs · manifest sheet with a dark index edge · release rail</dd>
         </dl>
         <div class="links">
-          <a class="btn" href="lexicon/index.html">Overview</a>
-          <a class="btn" href="lexicon/index.html#run">Live run</a>
-          <a class="btn" href="lexicon/index.html#audit">Audit</a>
-          <a class="btn solid" href="lexicon/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
+          <a class="btn" href="bonded/index.html">Yard</a>
+          <a class="btn" href="bonded/index.html#container">Container</a>
+          <a class="btn" href="bonded/index.html#manifest">Manifest</a>
+          <a class="btn solid" href="bonded/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
         </div>
       </div>
     </div>
@@ -217,12 +219,12 @@
 
   <div class="band">
     <h2>Every prototype carries the whole product.</h2>
-    <p class="sub">No direction is a skin of one screen. Each one contains the four places you actually live, with working navigation, a real approval sheet, inspector tabs, and responsive composition down to 390px.</p>
+    <p class="sub">No direction is a skin of one screen. Each contains the places you actually live, with working navigation, both release sheets, a real audit register, responsive composition down to 390px, keyboard focus, and reduced-motion behavior.</p>
     <div class="included">
-      <div class="inc"><div class="n">01</div><b>Runs overview + queue + history</b><p>The night's runs, their tiers, states, spend, the open decision, and the queue behind it.</p></div>
-      <div class="inc"><div class="n">02</div><b>Live run console</b><p>Streamed plan, tool calls, command output, sub-agent line, the held diff, and a composer that stays in reach.</p></div>
-      <div class="inc"><div class="n">03</div><b>Inspector</b><p>Run evidence, cost and budget, workspace tree with changed files, tier policy matrix.</p></div>
-      <div class="inc"><div class="n">04</div><b>Approval + audit</b><p>A full approval sheet bound to a diff, and the hash-chained register with its verification state.</p></div>
+      <div class="inc"><div class="n">01</div><b>Intake / yard overview + queue</b><p>The night's cases, tiers, seals, states, spend, the open decision, and what waits behind it.</p></div>
+      <div class="inc"><div class="n">02</div><b>Live run console</b><p>Plan, tool calls, command output, sub-agent line, the proposed diff, and a composer that stays in reach.</p></div>
+      <div class="inc"><div class="n">03</div><b>Decision sheets</b><p>Two full releases bound to real diffs — the held destructive step and the webhook patch — with consent and a disabled release until acknowledged.</p></div>
+      <div class="inc"><div class="n">04</div><b>Register + protocol</b><p>The hash-chained register with verification state, tier policy matrix, providers, caps, and the sandbox store.</p></div>
     </div>
   </div>
 
@@ -230,15 +232,15 @@
     <h2>What actually differs.</h2>
     <p class="sub">The product is identical. The world changes how quickly you read state, where the decision sits, and what the tool feels like when nothing is happening.</p>
     <table class="cmp">
-      <thead><tr><th></th><th>Cuebook</th><th>Wayfinding</th><th>Lexicon</th></tr></thead>
+      <thead><tr><th></th><th>Cuebook</th><th>Custody</th><th>Bonded</th></tr></thead>
       <tbody>
-        <tr><th>Room</th><td>Dark theatre desk, one lamp</td><td>Bright terminal, daylight</td><td>Reading room, north light</td></tr>
-        <tr><th>Reads as</th><td>A performance being called</td><td>A destination being tracked</td><td>A record being kept</td></tr>
-        <tr><th>State at a glance</th><td>GO / HOLD / STRUCK on the cue rail</td><td>Signage band + gate letter</td><td>Running head + margin status</td></tr>
-        <tr><th>Where the decision sits</th><td>Inside the held cue, plus a side hold card</td><td>A black gate panel that interrupts the board</td><td>A proof slip, opened from the margin</td></tr>
-        <tr><th>Strongest screen</th><td>The cue sheet under load</td><td>The overview, at a distance</td><td>The register and the diff as correction</td></tr>
-        <tr><th>Cost of the world</th><td>Most dramatic; longest visual step from typical dev tools</td><td>Loudest colour; needs discipline to stay calm</td><td>Least “app-like”; density assumes a patient reader</td></tr>
-        <tr><th>Best fit when</th><td>You want the run to feel authored and supervised</td><td>You want status legible across the room</td><td>You want the audit trail to feel like the product</td></tr>
+        <tr><th>Room</th><td>Dark theatre desk, one lamp</td><td>Pale evidence bench, north light</td><td>Kraft customs yard, open gate</td></tr>
+        <tr><th>Reads as</th><td>A performance being called</td><td>A case being taken into custody</td><td>Cargo moving through a gate</td></tr>
+        <tr><th>State at a glance</th><td>GO / HOLD / STRUCK on the cue rail</td><td>Seal intact / held / released, in oxblood</td><td>Running / held / cleared / refused, in the manifest</td></tr>
+        <tr><th>Where the decision sits</th><td>Inside the held cue, plus a side hold card</td><td>A release sheet under the seal, opened from the case or the register</td><td>A gate pass at gate 01, opened from the yard card or the container</td></tr>
+        <tr><th>Strongest screen</th><td>The cue sheet under load</td><td>The custody register with the release sheet open</td><td>The container manifest with the dark index edge</td></tr>
+        <tr><th>Cost of the world</th><td>Most dramatic; longest visual step from typical dev tools</td><td>Clinical density; more mono and more rules than a dashboard</td><td>Heaviest header and display type; the yard metaphor must stay operational</td></tr>
+        <tr><th>Best fit when</th><td>You want the run to feel authored and supervised</td><td>You want approval and audit to feel like the product's promise</td><td>You want queue and gate state to feel physical at a glance</td></tr>
       </tbody>
     </table>
   </div>
@@ -247,23 +249,23 @@
     <div>
       <h2>How to choose.</h2>
       <ol>
-        <li><b>Open all three live runs.</b> Leave each one open for a minute with the approval sheet closed, then open it.</li>
-        <li><b>Find the decision.</b> In each world, how long did it take you to see that something needs your signature?</li>
+        <li><b>Open all three live runs.</b> Leave each one open for a minute with the release closed, then open it.</li>
+        <li><b>Find the decision.</b> How long did it take you to see that something needs your signature — and did the world make it feel consequential?</li>
         <li><b>Read the register.</b> The audit trail is the product's promise; whichever register you would actually verify is the honest answer.</li>
         <li><b>Pick the room, not the screenshot.</b> The chosen direction will be rebuilt in React against the real components — density, keyboard, and states included.</li>
       </ol>
-      <p class="note"><b>My read:</b> Cuebook has the strongest identity and makes approval feel consequential; Wayfinding is the fastest to read and the easiest to defend to another operator; Lexicon makes the audit chain feel like the point of the product. All three pass the same craft floor — contrast, motion, states, responsiveness.</p>
+      <p class="note"><b>My read:</b> Cuebook still has the strongest identity and the cleanest emotional read of the gate. Custody is the most honest to the product: it makes custody, seal, and register into the interface rather than decoration. Bonded is the most legible at a distance and gives the queue a physical place. None of them is a re-skin; the rejected worlds are archived on disk, not linked here.</p>
     </div>
     <div>
       <h2>What happens after.</h2>
       <p>Pick one and it becomes the design contract: tokens, type scale, spacing, component shapes, and the one signature move get written down, then applied to the React app in <span style="font-family:var(--mono);font-size:12px">smolcode/web</span>. The other two are archived as alternatives, not merged.</p>
-      <p>If none of them is right, say what is wrong with each — the useful note is usually “too loud”, “too editorial”, or “too much chrome” — and I will roll again from the same product truth.</p>
+      <p>If none of them is right, say what is wrong with each — the useful note is usually “too theatrical”, “too clinical”, or “too much metaphor” — and I will roll again from the same product truth.</p>
       <p class="note"><b>Deliberately not included:</b> provider API-key entry, upload drag-and-drop, and the MCP tool browser. Those are real product surfaces, but they would have been three more screens of the same argument in each world. They come back in the chosen build.</p>
     </div>
   </div>
 
   <footer>
-    <span><b>Artifacts</b> design/prototypes/{cuebook,wayfinding,lexicon}/index.html</span>
+    <span><b>Artifacts</b> design/prototypes/{cuebook,custody,bonded}/index.html</span>
     <span><b>Screens</b> design/prototypes/shots/</span>
     <span><b>Product truth</b> PRODUCT.md</span>
     <span style="margin-left:auto">static prototype · synthetic data · not shipped</span>
