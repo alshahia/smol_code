@@ -1,275 +1,161 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>smolcode frontend — round two</title>
-<link rel="stylesheet" href="fonts/fonts.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1719">
+<title>smolcode frontend — round three</title>
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
   :root {
-    --bg: #f3f2ed;
-    --card: #fbfaf7;
-    --ink: #15140f;
-    --ink-2: #3b3931;
-    --muted: #5e5b51;
-    --faint: #6b675b;
-    --line: #d9d6cb;
-    --line-2: #b8b4a6;
-    --sans: 'Archivo', system-ui, sans-serif;
-    --body: 'Public Sans', system-ui, sans-serif;
-    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --ink: #0f1719; --vellum: #e8eae2; --paper: #f4f4ee; --white: #f7f7f1;
+    --muted: #59645c; --muted-2: #5f6a61; --line: #cbd2ca; --line-strong: #aab5ad;
+    --blue: #2d4bcc; --amber: #b97812; --amber-ink: #7a4408; --red: #a93831; --green: #23674d;
+    --sans: 'Archivo', system-ui, sans-serif; --body: 'Archivo', system-ui, sans-serif;
+    --serif: 'Source Serif 4', Georgia, serif; --mono: 'Courier Prime', ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
   html { color-scheme: light; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
-  ::selection { background: var(--ink); color: #fbfaf7; }
-  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  body { margin: 0; background: var(--vellum); color: var(--ink); font: 14px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--ink); color: var(--vellum); }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   a { color: inherit; }
-  .wrap { max-width: 1420px; margin: 0 auto; padding: 0 34px 70px; }
-  .top { display: flex; align-items: baseline; gap: 16px; padding: 20px 0 12px; border-bottom: 2px solid var(--ink); }
-  .wordmark { font-family: var(--sans); font-size: 20px; font-weight: 800; letter-spacing: -0.03em; }
-  .top .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; line-height: 1.6; }
-  .top .meta b { color: var(--ink); font-weight: 500; }
-
-  .hero { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 50px; padding: 40px 0 30px; border-bottom: 1px solid var(--line-2); }
-  h1 { margin: 0; font-family: var(--sans); font-size: clamp(38px, 5vw, 66px); line-height: 0.98; letter-spacing: -0.045em; font-weight: 800; max-width: 15ch; }
-  .hero .lede { margin: 18px 0 0; max-width: 60ch; font-size: 16.5px; line-height: 1.6; color: var(--ink-2); }
-  .hero .side { border-left: 1px solid var(--line-2); padding-left: 24px; align-self: end; }
-  .hero .side p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
-  .hero .side p b { color: var(--ink); font-weight: 600; }
-  .hero .side .k { font-family: var(--mono); font-size: 12px; letter-spacing: 0.04em; color: var(--faint); }
-  .tagline { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-  .tagline span { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line-2); padding: 3px 7px; color: var(--muted); }
-
-  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 22px; margin-top: 26px; }
-  .card { background: var(--card); border: 1px solid var(--line-2); display: flex; flex-direction: column; }
-  .shot { display: block; border-bottom: 1px solid var(--line-2); background: #e9e7e0; aspect-ratio: 16 / 10.4; overflow: hidden; position: relative; }
-  .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
-  .shot:hover img { transform: scale(1.015); }
-  .shot .peek { position: absolute; left: 10px; bottom: 10px; background: #15140fe6; color: #f3f2ed; font-family: var(--mono); font-size: 12px; padding: 4px 7px; }
-  .card .body { padding: 16px 16px 14px; display: flex; flex-direction: column; flex: 1; }
-  .card .row { display: flex; align-items: baseline; gap: 10px; }
-  .card h2 { margin: 0; font-family: var(--sans); font-size: 23px; font-weight: 800; letter-spacing: -0.03em; }
-  .card .idx { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--faint); }
-  .card .role { margin: 3px 0 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
-  .card.cue .role { color: #a52f19; }
-  .card.cust .role { color: #0d6159; }
-  .card.bond .role { color: #9b3c1b; }
-  .card .desc { margin: 0 0 12px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); min-height: 5.6em; }
-  .spec { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 5px 10px; font-size: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
-  .spec dt { font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); padding-top: 2px; }
-  .spec dd { margin: 0; color: var(--ink-2); }
-  .swatches { display: flex; gap: 4px; }
-  .swatches i { width: 17px; height: 17px; border: 1px solid #00000022; display: block; }
-  .type-demo { font-size: 15px; line-height: 1.2; }
-  .type-demo.cue { font-family: 'Courier Prime', monospace; color: #b8341d; }
-  .type-demo.cust { font-family: 'Instrument Sans', sans-serif; font-weight: 650; letter-spacing: -0.02em; }
-  .type-demo.bond { font-family: 'Barlow Condensed', sans-serif; font-weight: 600; font-size: 21px; text-transform: uppercase; letter-spacing: 0.045em; }
-  .card .links { display: flex; gap: 6px; margin-top: auto; padding-top: 13px; flex-wrap: wrap; }
-  .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ink); padding: 7px 10px; font-family: var(--sans); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; background: transparent; }
-  .btn:hover { background: var(--ink); color: var(--bg); }
-  .btn.solid { background: var(--ink); color: var(--bg); flex: 1; justify-content: center; }
-  .btn.solid:hover { background: #3a382f; }
-  .btn svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
-
-  .band { margin-top: 52px; padding-top: 18px; border-top: 2px solid var(--ink); }
-  .band h2 { margin: 0 0 4px; font-family: var(--sans); font-size: 30px; font-weight: 800; letter-spacing: -0.04em; }
-  .band .sub { margin: 0 0 20px; font-size: 14px; color: var(--muted); max-width: 76ch; }
-  .included { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px; }
-  .inc { border-top: 1px solid var(--line-2); padding-top: 10px; }
-  .inc b { display: block; font-family: var(--sans); font-size: 13px; font-weight: 700; margin-bottom: 4px; }
-  .inc p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
-  .inc .n { font-family: var(--mono); font-size: 12px; color: var(--faint); }
-
-  table.cmp { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
-  table.cmp th, table.cmp td { text-align: left; vertical-align: top; padding: 12px 14px 12px 0; border-bottom: 1px solid var(--line); }
-  table.cmp thead th { font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); font-weight: 400; border-bottom: 1px solid var(--ink); }
-  table.cmp tbody th { font-family: var(--sans); font-size: 12px; font-weight: 700; width: 150px; color: var(--muted); }
-  table.cmp td { color: var(--ink-2); width: 30%; line-height: 1.5; }
-  table.cmp td b { color: var(--ink); font-weight: 600; }
-  table.cmp tr:last-child th, table.cmp tr:last-child td { border-bottom: 0; }
-
-  .choose { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 52px; padding-top: 18px; border-top: 2px solid var(--ink); }
-  .choose h2 { margin: 0 0 10px; font-family: var(--sans); font-size: 26px; font-weight: 800; letter-spacing: -0.04em; }
-  .choose p { margin: 0 0 10px; font-size: 14px; color: var(--ink-2); }
-  .choose ol { margin: 0; padding-left: 20px; font-size: 14px; color: var(--ink-2); }
-  .choose li { margin-bottom: 8px; }
-  .choose .note { font-size: 12px; color: var(--muted); border-left: 1px solid var(--line-2); padding: 2px 0 2px 14px; margin-top: 14px; }
-  .choose .note b { color: var(--ink-2); }
-  footer { margin-top: 44px; padding-top: 12px; border-top: 1px solid var(--line-2); display: flex; gap: 20px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; color: var(--faint); }
-  footer b { color: var(--muted); font-weight: 500; }
-
-  @media (max-width: 1100px) {
-    .grid3 { grid-template-columns: 1fr; }
-    .shot { aspect-ratio: 16 / 8.6; }
-    .hero { grid-template-columns: 1fr; gap: 26px; }
-    .hero .side { border-left: 0; border-top: 1px solid var(--line-2); padding: 16px 0 0; }
-    .included { grid-template-columns: 1fr 1fr; }
-    .choose { grid-template-columns: 1fr; gap: 26px; }
-    table.cmp tbody th { width: 110px; }
+  .topbar { height: 48px; background: var(--ink); color: var(--white); display: flex; align-items: center; gap: 16px; padding: 0 26px; border-bottom: 1px solid #273230; }
+  .brand { font-size: 15px; font-weight: 800; letter-spacing: -.03em; }
+  .brand span { color: #9dab9f; font-weight: 450; margin-left: 8px; letter-spacing: .02em; }
+  .topbar .meta { margin-left: auto; font-family: var(--mono); font-size: 12px; color: #aab5ad; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 26px 64px; }
+  .lede { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr); gap: 44px; padding: 54px 0 38px; border-bottom: 1px solid var(--line-strong); }
+  h1 { margin: 0; font-family: var(--serif); font-size: clamp(42px, 5.2vw, 78px); line-height: .95; font-weight: 600; letter-spacing: -.035em; max-width: 12ch; }
+  .lede-copy { max-width: 72ch; }
+  .lede-copy p { margin: 0 0 14px; font-size: 16px; line-height: 1.62; color: #26302c; }
+  .lede-copy p:first-child { font-size: 18px; }
+  .lede-copy b { font-weight: 700; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: 700 12px/1 var(--sans); text-decoration: none; letter-spacing: .02em; }
+  .btn:hover { background: var(--ink); color: var(--vellum); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover { background: #213a9f; border-color: #213a9f; }
+  .proof { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 24px; padding: 34px 0 40px; border-bottom: 1px solid var(--line-strong); align-items: start; }
+  .shot { display: block; border: 1px solid var(--line-strong); background: var(--paper); text-decoration: none; }
+  .shot picture { display: block; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot small { display: block; padding: 8px 10px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .shot:hover { border-color: var(--ink); }
+  .proof-copy p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.6; color: #33403a; }
+  .proof-copy h2 { margin: 0 0 10px; font: 650 21px/1.15 var(--serif); letter-spacing: -.02em; }
+  .proof-copy ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+  .proof-copy li { padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.45; }
+  .proof-copy li b { display: block; font: 700 12px/1.3 var(--sans); color: var(--ink); margin-bottom: 2px; }
+  .band { padding: 38px 0 0; border-bottom: 1px solid var(--line-strong); }
+  .band:last-child { border-bottom: 0; }
+  h2.band-title { margin: 0 0 18px; font: 600 32px/1 var(--serif); letter-spacing: -.025em; }
+  .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; padding-bottom: 34px; }
+  .col { border-top: 2px solid var(--ink); padding-top: 11px; }
+  .col .n { font-family: var(--mono); font-size: 12px; color: var(--amber-ink); display: block; margin-bottom: 7px; }
+  .col h3 { margin: 0 0 6px; font: 700 15px/1.25 var(--sans); letter-spacing: -.01em; }
+  .col p { margin: 0; font-size: 13px; line-height: 1.55; color: #3a463f; }
+  .changed { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px; padding-bottom: 36px; }
+  .changed div { border-top: 1px solid var(--line-strong); padding-top: 10px; }
+  .changed b { display: block; font: 700 12px/1.3 var(--mono); margin-bottom: 5px; }
+  .changed span { font-size: 13px; line-height: 1.5; color: #3a463f; }
+  .archive { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 34px; }
+  .archive a { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line-strong); padding: 6px 8px; text-decoration: none; color: var(--muted); }
+  .archive a:hover { color: var(--ink); border-color: var(--ink); }
+  .sources { padding-bottom: 40px; max-width: 76ch; }
+  .sources p { font-size: 12px; line-height: 1.6; color: var(--muted); }
+  .sources a { color: var(--ink); }
+  @media (max-width: 900px) {
+    .lede, .proof { grid-template-columns: 1fr; gap: 24px; padding-top: 34px; }
+    h1 { font-size: clamp(40px, 10vw, 64px); }
+    .cols { grid-template-columns: 1fr; gap: 20px; }
+    .changed { grid-template-columns: 1fr 1fr; }
+    .topbar { padding: 0 16px; }
+    .topbar .meta { display: none; }
+    .wrap { padding: 0 16px 48px; }
   }
-  @media (max-width: 640px) {
-    .wrap { padding: 0 16px 50px; }
-    .top .meta { display: none; }
-    h1 { font-size: 40px; }
-    .hero { padding: 26px 0 20px; }
-    .card .desc { min-height: 0; }
-    .shot { aspect-ratio: 16 / 11; }
-    .included { grid-template-columns: 1fr; }
-    table.cmp { display: block; overflow-x: auto; white-space: nowrap; }
-    table.cmp td { white-space: normal; min-width: 190px; }
-    .band h2, .choose h2 { font-size: 24px; }
-    .choose ol { padding-left: 18px; }
+  @media (max-width: 560px) {
+    .changed { grid-template-columns: 1fr; }
+    .lede { padding-top: 28px; }
+    h1 { font-size: 42px; }
   }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <div class="wordmark">smolcode</div>
-    <div class="meta"><b>Frontend directions · round two</b><br />Design review · 24 October 2026</div>
-  </div>
+<header class="topbar">
+  <div class="brand">smolcode <span>frontend directions</span></div>
+  <div class="meta">round three · workbench · 25 oct 2026</div>
+</header>
 
-  <div class="hero">
-    <div>
-      <h1>Three rooms. One decision.</h1>
-      <p class="lede">Cuebook is still the benchmark. Beside it are two directions built from scratch for this product — not re-skins of the rejected worlds. Same screens, same data, same product truth: the tier ladder, the release gate, the audit chain, the composer. Only the room changes.</p>
-      <div class="tagline"><span>STATIC HTML · CLICKABLE</span><span>1440 + 390</span><span>SYNTHETIC DATA</span><span>NO BUILD STEP</span></div>
-    </div>
-    <div class="side">
-      <p><b>What is fixed.</b> Tier names, run states, the approval decision, the audit register, and the behavior of every control. A direction may rename a surface in its own language, never the destination or the action.</p>
-      <p><b>What is new.</b> Custody comes from an evidence intake bench; Bonded from a customs yard. Both are invented from the operator's world, not from the instruments the operator uses.</p>
-      <p><b>What is not real.</b> No backend, no keys, all runs and costs are synthetic. Open the nav, open both release sheets, check the register, narrow the window to 390px.</p>
-    </div>
-  </div>
-
-  <div class="grid3">
-    <div class="card cue">
-      <a class="shot" href="cuebook/index.html" aria-label="Open the cuebook prototype">
-        <img src="shots/cuebook-overview.png" alt="Cuebook direction: dark warm theatre desk with a run book table and a held approval" />
-        <span class="peek">01 · incumbent · open</span>
-      </a>
-      <div class="body">
-        <div class="row"><h2>Cuebook</h2><span class="idx">I</span></div>
-        <div class="role">Incumbent · round 01</div>
-        <p class="desc">A prompt book for a late show: warm black, typewriter annotations, every step given a cue number. The run is a performance; the approval is a held cue waiting for GO.</p>
-        <dl class="spec">
-          <dt>Palette</dt><dd class="swatches" aria-label="Cue black, ivory, cue red, standby amber"><i style="background:#100e0c"></i><i style="background:#ede6da"></i><i style="background:#e2452f"></i><i style="background:#d9a441"></i></dd>
-          <dt>Type</dt><dd><span class="type-demo cue">Q12 GO</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Courier Prime · Archivo</span></dd>
-          <dt>Signature</dt><dd>The cue sheet: numbered cues, GO and HOLD states, a red rail down the active step.</dd>
-          <dt>Navigation</dt><dd>Left rail · three panes · sticky composer at the foot</dd>
-        </dl>
-        <div class="links">
-          <a class="btn" href="cuebook/index.html">Overview</a>
-          <a class="btn" href="cuebook/index.html#run">Live run</a>
-          <a class="btn" href="cuebook/index.html#audit">Audit</a>
-          <a class="btn solid" href="cuebook/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
-        </div>
+<main class="wrap">
+  <section class="lede">
+    <h1>The shell changed.</h1>
+    <div class="lede-copy">
+      <p><b>Cuebook, Custody, and Bonded were three worlds on the same dashboard.</b> Top navigation, a left pane, a summary strip, a table of runs, a right-hand card stack, and a modal approval. The palettes were different. The product model was not.</p>
+      <p>Round three starts from the run instead: one stage, one trace spine, one gate bound to the diff, and drawers for everything that is navigation rather than work. This is a structural change, not another skin.</p>
+      <div class="links">
+        <a class="btn primary" href="workbench/index.html#trace">Open the Workbench prototype</a>
+        <a class="btn" href="../WORKBENCH.md">Read the direction</a>
       </div>
     </div>
+  </section>
 
-    <div class="card cust">
-      <a class="shot" href="custody/index.html" aria-label="Open the custody prototype">
-        <img src="shots/custody-overview.png" alt="Custody direction: pale evidence bench with a case register and a held release under an oxblood seal" />
-        <span class="peek">02 · new · open</span>
-      </a>
-      <div class="body">
-        <div class="row"><h2>Custody</h2><span class="idx">II</span></div>
-        <div class="role">New · evidence intake</div>
-        <p class="desc">An evidence bench for agent work: cool paper, steel rules, oxblood seals. Every diff is taken into custody and released only when a person signs for it. The audit register is not a log viewer; it is the point.</p>
-        <dl class="spec">
-          <dt>Palette</dt><dd class="swatches" aria-label="Bench grey, sheet white, oxblood seal, verify teal"><i style="background:#e8ece9"></i><i style="background:#fbfcf9"></i><i style="background:#8c2f2a"></i><i style="background:#0d6159"></i></dd>
-          <dt>Type</dt><dd><span class="type-demo cust">Case 12</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Instrument Sans · IBM Plex Mono</span></dd>
-          <dt>Signature</dt><dd>The tamper-evident seal: one diff, one case, broken only by a written release.</dd>
-          <dt>Navigation</dt><dd>Bench tabs · case file with a custody rail · numbered clauses</dd>
-        </dl>
-        <div class="links">
-          <a class="btn" href="custody/index.html">Intake</a>
-          <a class="btn" href="custody/index.html#run">Case</a>
-          <a class="btn" href="custody/index.html#register">Register</a>
-          <a class="btn solid" href="custody/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
-        </div>
-      </div>
+  <section class="proof">
+    <a class="shot" href="workbench/index.html#trace">
+      <picture>
+        <source media="(max-width: 900px)" srcset="shots/workbench-trace-390.png">
+        <img src="shots/workbench-trace-1440.png" alt="Workbench trace view: dark run rail, vellum stage, continuous run spine, inline approval dock, and composer.">
+      </picture>
+      <small>Trace — one run owns the screen; the gate sits where the diff is.</small>
+    </a>
+    <div class="proof-copy">
+      <h2>What changed in the skeleton</h2>
+      <ul>
+        <li><b>No permanent three panes</b>The old 320 / 1fr / 360 shell is gone. The rail is navigation; the stage is the work.</li>
+        <li><b>Trace is the home screen</b>Not a log tab behind a table. The run's evidence is the primary surface.</li>
+        <li><b>Approval is a gate, not a modal</b>The dock names the diff, sha, tier, and image before releasing it.</li>
+        <li><b>Everything else is a drawer</b>Runs, launch, audit, context, and queue stay temporary and keyboard-reachable.</li>
+      </ul>
     </div>
+  </section>
 
-    <div class="card bond">
-      <a class="shot" href="bonded/index.html" aria-label="Open the bonded prototype">
-        <img src="shots/bonded-overview.png" alt="Bonded direction: kraft customs yard with a stencilled red yard plate, a manifest table and a held gate card" />
-        <span class="peek">03 · new · open</span>
-      </a>
-      <div class="body">
-        <div class="row"><h2>Bonded</h2><span class="idx">III</span></div>
-        <div class="role">New · customs yard</div>
-        <p class="desc">A bonded yard for containers of work: tarpaulin paper, stencilled plates, navy gates. Runs queue in slots, leave on a signed gate pass, and every movement lands in the manifest. Physical, but not a costume.</p>
-        <dl class="spec">
-          <dt>Palette</dt><dd class="swatches" aria-label="Tarpaulin, navy, container orange, customs green"><i style="background:#e6dcc7"></i><i style="background:#152c3e"></i><i style="background:#ad441f"></i><i style="background:#2b5945"></i></dd>
-          <dt>Type</dt><dd><span class="type-demo bond">Cont. 7F3A</span> <span style="font-family:var(--sans);font-size:12px;color:var(--muted)">Barlow Condensed · JetBrains Mono</span></dd>
-          <dt>Signature</dt><dd>The container plate and the gate pass: one cargo, one seal, one release.</dd>
-          <dt>Navigation</dt><dd>Port tabs · manifest sheet with a dark index edge · release rail</dd>
-        </dl>
-        <div class="links">
-          <a class="btn" href="bonded/index.html">Yard</a>
-          <a class="btn" href="bonded/index.html#container">Container</a>
-          <a class="btn" href="bonded/index.html#manifest">Manifest</a>
-          <a class="btn solid" href="bonded/index.html">Open <svg viewBox="0 0 16 16"><path d="M3 8h9M8 3l5 5-5 5"/></svg></a>
-        </div>
-      </div>
+  <section class="band">
+    <h2 class="band-title">Why round two failed</h2>
+    <div class="cols">
+      <div class="col"><span class="n">01</span><h3>Same IA</h3><p>The three worlds changed type, palette, and metaphor, but kept the same navigation, summary band, run table, and inspector. A different skin on one skeleton reads as one design.</p></div>
+      <div class="col"><span class="n">02</span><h3>No product object</h3><p>smolcode's unit is a run. In the old shell, a run was a row and a selected detail; the page was still organised around the dashboard.</p></div>
+      <div class="col"><span class="n">03</span><h3>Chrome won</h3><p>Plan, composer, inspector, and stats were permanent, so the evidence had to compete for space. The review surface could never be the main thing.</p></div>
     </div>
-  </div>
+  </section>
 
-  <div class="band">
-    <h2>Every prototype carries the whole product.</h2>
-    <p class="sub">No direction is a skin of one screen. Each contains the places you actually live, with working navigation, both release sheets, a real audit register, responsive composition down to 390px, keyboard focus, and reduced-motion behavior.</p>
-    <div class="included">
-      <div class="inc"><div class="n">01</div><b>Intake / yard overview + queue</b><p>The night's cases, tiers, seals, states, spend, the open decision, and what waits behind it.</p></div>
-      <div class="inc"><div class="n">02</div><b>Live run console</b><p>Plan, tool calls, command output, sub-agent line, the proposed diff, and a composer that stays in reach.</p></div>
-      <div class="inc"><div class="n">03</div><b>Decision sheets</b><p>Two full releases bound to real diffs — the held destructive step and the webhook patch — with consent and a disabled release until acknowledged.</p></div>
-      <div class="inc"><div class="n">04</div><b>Register + protocol</b><p>The hash-chained register with verification state, tier policy matrix, providers, caps, and the sandbox store.</p></div>
+  <section class="band">
+    <h2 class="band-title">The new contract</h2>
+    <div class="changed">
+      <div><b>ONE STAGE</b><span>Trace, changes, console, files are modes of the same working surface.</span></div>
+      <div><b>ONE SPINE</b><span>Time notches, gate cut, and audit chain share one visual rhythm.</span></div>
+      <div><b>ONE GATE</b><span>Approve, hold, or reject the diff that is on screen; the audit follows.</span></div>
+      <div><b>ONE FAST PATH</b><span>⌘K, S, N, G, A, F, Q, 1–4, ?, Esc; the keyboard is the operator's route.</span></div>
     </div>
-  </div>
+  </section>
 
-  <div class="band" style="margin-top:40px">
-    <h2>What actually differs.</h2>
-    <p class="sub">The product is identical. The world changes how quickly you read state, where the decision sits, and what the tool feels like when nothing is happening.</p>
-    <table class="cmp">
-      <thead><tr><th></th><th>Cuebook</th><th>Custody</th><th>Bonded</th></tr></thead>
-      <tbody>
-        <tr><th>Room</th><td>Dark theatre desk, one lamp</td><td>Pale evidence bench, north light</td><td>Kraft customs yard, open gate</td></tr>
-        <tr><th>Reads as</th><td>A performance being called</td><td>A case being taken into custody</td><td>Cargo moving through a gate</td></tr>
-        <tr><th>State at a glance</th><td>GO / HOLD / STRUCK on the cue rail</td><td>Seal intact / held / released, in oxblood</td><td>Running / held / cleared / refused, in the manifest</td></tr>
-        <tr><th>Where the decision sits</th><td>Inside the held cue, plus a side hold card</td><td>A release sheet under the seal, opened from the case or the register</td><td>A gate pass at gate 01, opened from the yard card or the container</td></tr>
-        <tr><th>Strongest screen</th><td>The cue sheet under load</td><td>The custody register with the release sheet open</td><td>The container manifest with the dark index edge</td></tr>
-        <tr><th>Cost of the world</th><td>Most dramatic; longest visual step from typical dev tools</td><td>Clinical density; more mono and more rules than a dashboard</td><td>Heaviest header and display type; the yard metaphor must stay operational</td></tr>
-        <tr><th>Best fit when</th><td>You want the run to feel authored and supervised</td><td>You want approval and audit to feel like the product's promise</td><td>You want queue and gate state to feel physical at a glance</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="choose">
-    <div>
-      <h2>How to choose.</h2>
-      <ol>
-        <li><b>Open all three live runs.</b> Leave each one open for a minute with the release closed, then open it.</li>
-        <li><b>Find the decision.</b> How long did it take you to see that something needs your signature — and did the world make it feel consequential?</li>
-        <li><b>Read the register.</b> The audit trail is the product's promise; whichever register you would actually verify is the honest answer.</li>
-        <li><b>Pick the room, not the screenshot.</b> The chosen direction will be rebuilt in React against the real components — density, keyboard, and states included.</li>
-      </ol>
-      <p class="note"><b>My read:</b> Cuebook still has the strongest identity and the cleanest emotional read of the gate. Custody is the most honest to the product: it makes custody, seal, and register into the interface rather than decoration. Bonded is the most legible at a distance and gives the queue a physical place. None of them is a re-skin; the rejected worlds are archived on disk, not linked here.</p>
+  <section class="band">
+    <h2 class="band-title">Archived round two</h2>
+    <div class="archive">
+      <a href="cuebook/index.html">Cuebook — round two</a>
+      <a href="custody/index.html">Custody — round two</a>
+      <a href="bonded/index.html">Bonded — round two</a>
+      <a href="wayfinding/index.html">Wayfinding — archived</a>
+      <a href="lexicon/index.html">Lexicon — archived</a>
     </div>
-    <div>
-      <h2>What happens after.</h2>
-      <p>Pick one and it becomes the design contract: tokens, type scale, spacing, component shapes, and the one signature move get written down, then applied to the React app in <span style="font-family:var(--mono);font-size:12px">smolcode/web</span>. The other two are archived as alternatives, not merged.</p>
-      <p>If none of them is right, say what is wrong with each — the useful note is usually “too theatrical”, “too clinical”, or “too much metaphor” — and I will roll again from the same product truth.</p>
-      <p class="note"><b>Deliberately not included:</b> provider API-key entry, upload drag-and-drop, and the MCP tool browser. Those are real product surfaces, but they would have been three more screens of the same argument in each world. They come back in the chosen build.</p>
-    </div>
-  </div>
+  </section>
 
-  <footer>
-    <span><b>Artifacts</b> design/prototypes/{cuebook,custody,bonded}/index.html</span>
-    <span><b>Screens</b> design/prototypes/shots/</span>
-    <span><b>Product truth</b> PRODUCT.md</span>
-    <span style="margin-left:auto">static prototype · synthetic data · not shipped</span>
-  </footer>
-</div>
+  <section class="band">
+    <h2 class="band-title">Sources</h2>
+    <div class="sources">
+      <p>Claude Code desktop <a href="https://claude.com/resources/articles/claude-code-desktop-redesign">redesign</a> and <a href="https://code.claude.com/docs/en/desktop">docs</a> · <a href="https://openai.com/index/introducing-the-codex-app/">OpenAI Codex app</a> · <a href="https://cursor.com/docs/agent/agents-window">Cursor Agents Window</a> · <a href="https://beamline.io/components/run-trace">Beamline Run trace</a> · <a href="https://github.com/caseyrtalbot/Mandatum">Mandatum</a> · <a href="https://github.com/wikieden/viden">Viden</a> · <a href="https://uxpatternsguide.com/patterns/agent-progress-trace/">agent progress trace</a> · <a href="https://limecloud.github.io/agentui/en/authoring/best-practices">agent UI best practices</a>.</p>
+    </div>
+  </section>
+</main>
 </body>
 </html>

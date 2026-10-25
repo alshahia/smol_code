@@ -1,0 +1,2151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f1719">
+  <meta name="description" content="smolcode workbench — a single-run glass cockpit for local, Docker-sandboxed coding agents.">
+  <title>smolcode · workbench</title>
+  <link rel="stylesheet" href="../fonts/fonts.css">
+  <style>
+/* smolcode workbench — revision direction
+   Palette: vellum, ink, ultramarine, revision red, live amber.
+   Type: Archivo (UI), Source Serif 4 (run thesis), Courier Prime (data/code).
+   Signature: the run spine — one continuous evidence line from start to gate to audit. */
+
+:root {
+  --ink: #171c19;
+  --ink-2: #11181a;
+  --rail: #0f1719;
+  --rail-2: #131f20;
+  --ground: #e8eae2;
+  --ground-2: #e1e4da;
+  --paper: #f4f4ee;
+  --paper-2: #eef0e8;
+  --line: #c9cec4;
+  --line-strong: #9ea79d;
+  --muted: #59645c;
+  --muted-2: #5f6a61;
+  --white: #f7f7f1;
+  --blue: #2d4bcc;
+  --blue-deep: #213ba8;
+  --blue-soft: #dfe5ff;
+  --amber: #a75f0b;
+  --amber-ink: #7a4408;
+  --amber-bright: #d99a2a;
+  --amber-soft: #f2e7d1;
+  --red: #a93831;
+  --red-soft: #f2ddd7;
+  --green: #23674d;
+  --green-soft: #dceade;
+  --code-bg: #11191b;
+  --code-fg: #e3e7df;
+  --sans: 'Archivo', 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Source Serif 4', Georgia, serif;
+  --mono: 'Courier Prime', 'JetBrains Mono', ui-monospace, monospace;
+  --r: 6px;
+  --topbar: 46px;
+  --composer: 86px;
+  --rail-w: 72px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+html { color-scheme: light; }
+body {
+  background: var(--rail);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+a { color: var(--blue); text-underline-offset: 3px; }
+::selection { background: var(--blue-soft); color: var(--ink); }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* Browser surfaces belong to the design */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line-strong); border: 3px solid transparent; background-clip: padding-box; border-radius: 99px; }
+.rail * { scrollbar-color: #3b4a45 transparent; }
+.rail *::-webkit-scrollbar-thumb { background: #3b4a45; border: 3px solid transparent; background-clip: padding-box; }
+input, textarea { caret-color: var(--blue); }
+input::placeholder, textarea::placeholder { color: var(--muted-2); opacity: 1; }
+
+/* ---------- shell ---------- */
+.app { height: 100dvh; display: flex; flex-direction: column; background: var(--rail); }
+.topbar {
+  height: var(--topbar); flex: 0 0 var(--topbar);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 14px 0 16px;
+  background: var(--rail); color: var(--white);
+  border-bottom: 1px solid #273230;
+  position: relative; z-index: 30;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; min-width: 132px; }
+.brand b { font-size: 15px; font-weight: 700; letter-spacing: -0.035em; }
+.brand span { font-family: var(--mono); font-size: 12px; color: #91a097; letter-spacing: 0.02em; }
+.project-btn {
+  height: 28px; display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid #34423e; background: #141f20; color: #d7ded7;
+  border-radius: 4px; padding: 0 9px; font-size: 12px;
+}
+.project-btn:hover { border-color: #5a6c65; background: #172526; }
+.project-btn .path { color: #91a097; font-family: var(--mono); }
+.project-btn svg { color: #91a097; }
+.daemon {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 12px; color: #91a097;
+  white-space: nowrap;
+}
+.daemon .dot, .needs .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green-soft); }
+.local-tag { border: 1px solid #34423e; color: #aab5ad; border-radius: 3px; padding: 1px 4px; font-size: 12px; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.needs {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px;
+  border: 1px solid #5c4722; background: #241c11; color: #eac37c;
+  border-radius: 4px; padding: 0 9px; font-size: 12px;
+}
+.needs:hover { border-color: #8d6a2c; background: #2b2114; }
+.needs .dot { background: var(--amber-bright); }
+.needs b { color: #f4d79c; }
+.needs.is-clear { border-color: #34423e; background: transparent; color: #aab5ad; }
+.needs.is-clear .dot { background: #5e6d66; }
+.usage {
+  height: 28px; display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: transparent; color: #c8d2ca; padding: 0 2px;
+  font-family: var(--mono); font-size: 12px; white-space: nowrap;
+}
+.usage:hover { color: var(--white); }
+.usage .cap { color: #7f8e85; }
+.meter { width: 52px; height: 3px; background: #2b3733; display: inline-block; position: relative; overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; background: var(--amber-bright); }
+.kbd {
+  height: 28px; min-width: 34px; border: 1px solid #34423e; background: transparent;
+  color: #aab5ad; border-radius: 4px; font-family: var(--mono); font-size: 12px; padding: 0 7px;
+}
+.kbd:hover { border-color: #5a6c65; color: var(--white); }
+.avatar {
+  width: 27px; height: 27px; border-radius: 50%; border: 0;
+  background: #d9d3c3; color: #171c19; font-size: 12px; font-weight: 600;
+}
+.avatar:hover { background: #e8e4d7; }
+
+.frame {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  position: relative; background: var(--ground);
+}
+.rail {
+  background: var(--rail); border-right: 1px solid #273230;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 9px 0 10px; gap: 9px; position: relative; z-index: 20;
+}
+.rail-menu, .rail-tool {
+  width: 40px; height: 40px; border: 1px solid transparent; border-radius: var(--r);
+  background: transparent; color: #a6b2aa; display: grid; place-items: center;
+  position: relative;
+}
+.rail-menu:hover, .rail-tool:hover { background: #172526; color: var(--white); border-color: #34423e; }
+.rail-menu { border-color: #34423e; color: #d7ded7; }
+.rail-runs { display: flex; flex-direction: column; gap: 8px; width: 100%; align-items: center; overflow: visible; }
+.rail-sep { width: 24px; height: 1px; background: #2d3936; margin: 3px 0; }
+.run-chip {
+  width: 44px; height: 44px; border: 1px solid #33413d; border-radius: var(--r);
+  background: #141f20; color: #c5d0c8; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px; position: relative;
+}
+.run-chip:hover { border-color: #64776e; background: #172526; color: var(--white); }
+.run-chip .chip-id { font-family: var(--mono); font-size: 12px; line-height: 1; letter-spacing: 0.02em; }
+.run-chip .chip-dot { width: 5px; height: 5px; border-radius: 50%; background: #738178; }
+.run-chip[data-status="awaiting"] .chip-dot { background: var(--amber-bright); }
+.run-chip[data-status="running"] .chip-dot { background: #7fb7cf; }
+.run-chip[data-status="done"] .chip-dot { background: #75b492; }
+.run-chip[data-status="queued"] .chip-dot { background: #8a9690; }
+.run-chip[data-status="returned"] .chip-dot { background: #cf7c73; }
+.run-chip.is-active { background: var(--ground); border-color: var(--ground); color: var(--ink); }
+.run-chip.is-active .chip-dot { box-shadow: 0 0 0 2px var(--ground); }
+.run-chip::after {
+  content: attr(data-tip); position: absolute; left: 51px; top: 50%; transform: translateY(-50%);
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line-strong);
+  padding: 6px 8px; border-radius: 4px; font-family: var(--sans); font-size: 12px;
+  white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+  box-shadow: 0 4px 12px rgba(10,16,16,.16); z-index: 70;
+}
+.run-chip:hover::after, .run-chip:focus-visible::after { opacity: 1; }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.rail-tool .badge {
+  position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px;
+  display: grid; place-items: center; border-radius: 99px; background: var(--amber-bright);
+  color: #201708; font-family: var(--mono); font-size: 12px; line-height: 1; padding: 0 3px;
+}
+.rail-tool .chain-count { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 12px; color: #7f8e85; }
+
+/* ---------- stage ---------- */
+.stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--ground); position: relative; }
+.run-shell { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.stage-head { position: relative; padding: 15px 26px 13px 28px; border-bottom: 1px solid var(--line); flex: none; }
+.stage-crumb { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); min-width: 0; flex-wrap: wrap; }
+.stage-crumb .slash { color: var(--line-strong); }
+.stage-crumb code { font-family: var(--mono); color: var(--ink); font-size: 12px; background: transparent; padding: 0; }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong);
+  border-radius: 99px; padding: 2px 7px; font-family: var(--sans); font-size: 12px;
+  color: var(--muted); background: var(--paper); white-space: nowrap;
+}
+.status-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status-pill.awaiting { color: var(--amber-ink); background: var(--amber-soft); border-color: #ccaa6a; }
+.status-pill.running { color: #1c5773; background: #dfeef3; border-color: #9ec3d1; }
+.status-pill.done { color: var(--green); background: var(--green-soft); border-color: #a9c9b7; }
+.status-pill.queued { color: var(--muted); background: var(--paper-2); }
+.status-pill.returned { color: var(--red); background: var(--red-soft); border-color: #dba9a4; }
+.objective {
+  font-family: var(--serif); font-size: 29px; line-height: 1.08; font-weight: 600;
+  letter-spacing: -0.025em; margin: 10px 0 9px; max-width: 44ch; text-wrap: balance;
+}
+.meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.meta-row b { color: var(--ink); font-weight: 700; }
+.meta-row .sep { width: 1px; height: 10px; background: var(--line-strong); }
+.tier-tag { border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); border-radius: 3px; padding: 1px 5px; font-family: var(--mono); font-size: 12px; }
+.tier-tag[data-tier="elevated"] { border-color: #c5a76e; background: #f4ebd8; }
+.tier-tag[data-tier="full_access"] { border-color: #d3a5a0; background: #f4ded9; color: #7f2b24; }
+.stage-actions { position: absolute; right: 22px; top: 15px; display: flex; align-items: center; gap: 5px; }
+.icon-btn {
+  width: 28px; height: 28px; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; color: var(--muted); display: grid; place-items: center;
+}
+.icon-btn:hover { background: var(--paper); border-color: var(--line); color: var(--ink); }
+.stage-modes {
+  display: flex; align-items: center; gap: 2px; padding: 0 26px; flex: none;
+  border-bottom: 1px solid var(--line); min-height: 42px; background: var(--ground);
+}
+.stage-modes button {
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--muted); padding: 12px 10px 10px; font-family: var(--sans); font-size: 12.5px;
+  font-weight: 500; display: inline-flex; align-items: center; gap: 7px; margin-bottom: -1px;
+}
+.stage-modes button:hover { color: var(--ink); }
+.stage-modes button.on { color: var(--ink); border-bottom-color: var(--ink); }
+.stage-modes button:disabled { opacity: .45; }
+.count { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+.count.alert { color: var(--red); background: var(--red-soft); border: 1px solid #d9b1a9; border-radius: 3px; padding: 0 4px; line-height: 1.4; }
+.modes-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.link-btn { border: 0; background: transparent; color: var(--blue); font-size: 12px; padding: 4px 2px; }
+.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.stage-body { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.view { min-height: 100%; }
+.view[hidden] { display: none !important; }
+.view-enter { animation: view-in 160ms ease-out both; }
+@keyframes view-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- trace ---------- */
+.trace { padding: 12px 28px 22px 18px; max-width: 1180px; }
+.trace-summary {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  border-bottom: 1px solid var(--line); padding: 0 0 9px 51px; margin-bottom: 2px;
+}
+.trace-summary b { color: var(--ink); font-weight: 700; }
+.trace-summary .tail { margin-left: auto; color: var(--muted-2); }
+.trace-list { list-style: none; }
+.trace-row { display: grid; grid-template-columns: 63px 24px minmax(0, 1fr); position: relative; }
+.trace-row > time { padding: 15px 12px 0 0; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.trace-node { position: relative; display: flex; justify-content: center; padding-top: 17px; z-index: 1; }
+.trace-node::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line-strong); transform: translateX(-.5px); }
+.trace-row:first-child .trace-node::before { top: 21px; }
+.trace-row:last-child .trace-node::before { bottom: 0; }
+.trace-node i {
+  width: 9px; height: 9px; border: 1.5px solid var(--line-strong); border-radius: 50%;
+  background: var(--ground); position: relative; z-index: 1; display: block;
+}
+.trace-row.sub .trace-node i { border-radius: 1px; width: 7px; height: 7px; }
+.trace-row.current .trace-node i { border-color: var(--amber-ink); background: var(--amber-bright); box-shadow: 0 0 0 3px var(--amber-soft); }
+.trace-row.error .trace-node i { border-color: var(--red); background: var(--red); }
+.trace-row.gate .trace-node i { width: 10px; height: 10px; border-radius: 1px; border-color: var(--amber-ink); background: var(--amber-bright); transform: rotate(45deg); }
+.trace-row.gate .trace-node::before { bottom: 50%; }
+.trace-row.gate::after { content: ""; position: absolute; left: 75px; right: 0; top: 50%; height: 1px; background: var(--line-strong); pointer-events: none; }
+.trace-row.gate .trace-content { border-bottom: 0; }
+.trace-row.gate.approved .trace-node i { border-color: var(--green); background: var(--green); }
+.trace-content { min-width: 0; padding: 12px 10px 13px 13px; border-bottom: 1px solid var(--line); }
+.trace-row:hover .trace-content { background: rgba(255,255,255,.36); }
+.trace-row.gate .trace-content { background: var(--amber-soft); margin: 7px 0; border: 1px solid #d8bc83; border-radius: 4px; padding: 11px 13px 12px; }
+.trace-row.gate .trace-content:hover { background: #f5ecd9; }
+.trace-row.gate.approved .trace-content { background: var(--green-soft); border-color: #b1cdbb; }
+.trace-kicker { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+.kind { font-family: var(--mono); font-size: 12px; color: var(--blue); text-transform: lowercase; }
+.kind.gate { color: var(--amber-ink); }
+.kind.ok { color: var(--green); }
+.kind.bad { color: var(--red); }
+.trace-kicker .mono { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+.trace-title { font-family: var(--sans); font-size: 14px; font-weight: 600; line-height: 1.35; letter-spacing: -0.005em; }
+.trace-title code { font-family: var(--mono); font-size: 12.5px; font-weight: 400; background: transparent; padding: 0; color: var(--ink); }
+.trace-meta { margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.trace-meta .add { color: var(--green); }
+.trace-meta .del { color: var(--red); }
+.trace-text { margin-top: 6px; color: var(--muted); max-width: 75ch; }
+.trace-actions { display: flex; align-items: center; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.trace-details { margin-top: 10px; border-top: 1px solid rgba(23,28,25,.12); }
+.trace-details summary { cursor: pointer; list-style: none; padding: 7px 0 0; font-family: var(--mono); font-size: 12px; color: var(--muted); width: fit-content; }
+.trace-details summary::-webkit-details-marker { display: none; }
+.trace-details summary::before { content: "›"; display: inline-block; margin-right: 6px; transition: transform 140ms ease; }
+.trace-details[open] summary::before { transform: rotate(90deg); }
+.codebox {
+  margin-top: 8px; background: var(--code-bg); color: var(--code-fg);
+  border-radius: 4px; padding: 10px 12px; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.62; white-space: pre;
+}
+.codebox .dim { color: #8f9c92; }
+.codebox .ok { color: #9ed0af; }
+.codebox .warn { color: #e4bc75; }
+.now-line { display: flex; align-items: center; gap: 12px; margin: 4px 0 0 87px; color: var(--amber-ink); font-family: var(--mono); font-size: 12px; }
+.now-line .bar { flex: 1; height: 1px; background: #c9a25b; }
+.now-line b { font-weight: 700; }
+
+/* ---------- buttons & controls ---------- */
+.btn {
+  height: 30px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink);
+  border-radius: 5px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center;
+  gap: 7px; font-family: var(--sans); font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.btn:hover { background: #fff; border-color: var(--ink); }
+.btn:disabled { opacity: .48; }
+.btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn-primary:hover { background: var(--blue-deep); border-color: var(--blue-deep); }
+.btn-danger { background: transparent; border-color: #c99a94; color: var(--red); }
+.btn-danger:hover { background: var(--red-soft); border-color: var(--red); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--paper); color: var(--ink); border-color: var(--line); }
+.btn-sm { height: 26px; padding: 0 8px; font-size: 12px; }
+.btn svg { flex: none; }
+.kbd-inline { font-family: var(--mono); font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-bottom-color: var(--line-strong); border-radius: 3px; padding: 1px 4px; background: var(--paper); }
+
+/* ---------- gate dock ---------- */
+.gate-dock {
+  flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 10px 24px 10px 28px; background: var(--paper);
+  border-top: 1px solid var(--line-strong); position: relative;
+  box-shadow: 0 -7px 18px rgba(23,28,25,.055);
+}
+.gate-dock::before { content: ""; position: absolute; top: -1px; left: 0; width: 100%; height: 2px; background: var(--amber-bright); transform-origin: left; }
+.gate-dock.approved::before { background: var(--green); }
+.gate-mark {
+  width: 34px; height: 34px; flex: none; border: 1px solid #c9a25b; border-radius: 4px;
+  background: var(--amber-soft); color: var(--amber-ink); display: grid; place-items: center;
+}
+.gate-dock.approved .gate-mark { border-color: #a9c9b7; background: var(--green-soft); color: var(--green); }
+.gate-copy { min-width: 0; flex: 1; }
+.gate-copy strong { display: block; font-size: 12.5px; font-weight: 600; }
+.gate-copy span { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.gate-actions { display: flex; align-items: center; gap: 7px; flex: none; }
+.gate-note { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.approved-copy strong { color: var(--green); }
+.approved-copy span { color: var(--muted); }
+
+/* ---------- changes ---------- */
+.changes { padding: 16px 26px 24px 28px; max-width: 1320px; }
+.changes-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 14px; }
+.changes-head h2 { font-family: var(--serif); font-size: 23px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
+.changes-head p { margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.changes-actions { display: flex; gap: 6px; }
+.review-grid { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+.file-list { border-right: 1px solid var(--line); padding-right: 13px; }
+.file-list h3 { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.file {
+  width: 100%; border: 0; background: transparent; text-align: left; border-radius: 4px;
+  padding: 6px 7px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px;
+  font-family: var(--mono); font-size: 12px; color: var(--ink); margin-bottom: 2px;
+}
+.file:hover { background: rgba(255,255,255,.55); }
+.file.on { background: var(--blue-soft); }
+.file .fstats { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.file .fstats .add { color: var(--green); }
+.file .fstats .del { color: var(--red); }
+.file-note { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); line-height: 1.45; }
+.diff-pane { min-width: 0; }
+.diff-head {
+  display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-bottom: 0;
+  background: var(--paper); padding: 7px 9px; font-family: var(--mono); font-size: 12px; color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.diff-head b { color: var(--ink); font-weight: 700; }
+.diff-head .right { margin-left: auto; display: flex; gap: 10px; white-space: nowrap; }
+.diff {
+  border: 1px solid var(--line); background: #fbfbf6; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  max-height: calc(100vh - 430px); min-height: 220px;
+}
+.diff-line { display: grid; grid-template-columns: 42px 42px 18px minmax(0,1fr); min-width: 620px; }
+.diff-line > span { padding: 0 8px; }
+.diff-line .ln { text-align: right; color: var(--muted-2); background: rgba(23,28,25,.025); user-select: none; font-size: 12px; padding-right: 7px; }
+.diff-line .mark { text-align: center; color: var(--muted); user-select: none; }
+.diff-line .code { white-space: pre; padding-left: 4px; color: var(--ink); }
+.diff-line.add { background: #e2efe2; }
+.diff-line.add .mark { color: var(--green); }
+.diff-line.del { background: #f4dfd9; }
+.diff-line.del .mark { color: var(--red); }
+.diff-line.comment { background: #e6ebff; border-top: 1px solid #bfc9ee; border-bottom: 1px solid #bfc9ee; }
+.diff-line.comment .ln { background: transparent; }
+.comment-body { grid-column: 1 / -1; padding: 7px 10px 8px 100px; color: #263463; font-family: var(--sans); font-size: 12px; }
+.comment-body b { font-weight: 600; }
+.comment-body .mono { font-family: var(--mono); font-size: 12px; }
+.risk-line { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.risk-line svg { color: var(--green); }
+.patch-note { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 9px; font-family: var(--serif); font-size: 15px; line-height: 1.45; color: var(--ink); max-width: 72ch; }
+
+/* ---------- console ---------- */
+.console-wrap { padding: 16px 26px 24px 28px; max-width: 1200px; }
+.console-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
+.console-head h2 { font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -0.02em; }
+.console-head p { margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.console-box { background: var(--code-bg); color: var(--code-fg); border-radius: 5px; padding: 13px 15px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.65; white-space: pre-wrap; max-height: calc(100vh - 330px); }
+.console-box .dim { color: #8f9c92; }
+.console-box .ok { color: #9ed0af; }
+.console-box .warn { color: #e4bc75; }
+.console-box .path { color: #c7d2ff; }
+
+/* ---------- files ---------- */
+.files-wrap { padding: 16px 26px 24px 28px; max-width: 1280px; }
+.files-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
+.files-head h2 { font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -0.02em; }
+.files-head p { margin-top: 4px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.files-grid { display: grid; grid-template-columns: 252px minmax(0,1fr); gap: 18px; align-items: start; }
+.tree { border-right: 1px solid var(--line); padding-right: 12px; font-size: 12px; }
+.tree .folder { display: flex; align-items: center; gap: 6px; padding: 5px 5px; color: var(--muted); font-family: var(--mono); }
+.tree .folder svg { color: var(--muted); }
+.tree button { width: 100%; border: 0; background: transparent; text-align: left; font-family: var(--mono); font-size: 12px; color: var(--ink); padding: 5px 5px 5px 23px; border-radius: 3px; }
+.tree button:hover { background: var(--paper); }
+.tree button.on { background: var(--blue-soft); }
+.tree .tree-note { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 9px; color: var(--muted); line-height: 1.45; }
+.preview { min-width: 0; border: 1px solid var(--line); background: #fbfbf6; }
+.preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); background: var(--paper); padding: 7px 10px; font-family: var(--mono); font-size: 12px; }
+.preview-head b { font-weight: 700; }
+.preview-code { font-family: var(--mono); font-size: 12px; line-height: 1.62; overflow: auto; max-height: calc(100vh - 390px); }
+.pl { display: grid; grid-template-columns: 46px minmax(0,1fr); }
+.pl .n { text-align: right; padding-right: 10px; color: var(--muted-2); background: rgba(23,28,25,.025); user-select: none; }
+.pl .c { white-space: pre; padding-left: 9px; color: var(--ink); }
+.pl.hl { background: #e6ebff; }
+
+/* ---------- queue ---------- */
+.queue-view { padding: 22px 28px; max-width: 1120px; }
+.queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.queue-head h1 { font-family: var(--serif); font-size: 32px; line-height: 1; font-weight: 600; letter-spacing: -0.025em; }
+.queue-head p { margin-top: 7px; color: var(--muted); max-width: 62ch; }
+.queue-actions { display: flex; gap: 7px; align-items: center; }
+.queue-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.queue-table th { text-align: left; font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; padding: 10px 8px; border-bottom: 1px solid var(--line-strong); }
+.queue-table td { padding: 12px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.queue-table .pos { font-family: var(--serif); font-size: 21px; color: var(--amber-ink); font-weight: 600; width: 40px; }
+.queue-table .task { font-weight: 600; }
+.queue-table .task small { display: block; margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 400; }
+.queue-table .mono { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.queue-table .row-actions { display: flex; gap: 4px; }
+.queue-foot { margin-top: 14px; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.queue-foot svg { color: var(--amber-ink); }
+.queue-empty { padding: 44px 8px; text-align: center; color: var(--muted); }
+.queue-empty strong { display: block; font-family: var(--serif); font-size: 22px; color: var(--ink); font-weight: 600; margin-bottom: 5px; }
+
+/* ---------- sheets / drawers ---------- */
+.scrim { position: fixed; inset: var(--topbar) 0 var(--composer) var(--rail-w); background: rgba(8,13,13,.3); z-index: 34; }
+.scrim[hidden] { display: none !important; }
+.sheet {
+  position: fixed; top: var(--topbar); bottom: var(--composer); left: var(--rail-w);
+  width: 364px; background: var(--rail); color: var(--white);
+  border-right: 1px solid #34413d; z-index: 42; display: flex; flex-direction: column;
+  box-shadow: 18px 0 44px rgba(7,12,12,.3);
+}
+.sheet[hidden] { display: none !important; }
+.sheet-head { padding: 14px 16px 12px; border-bottom: 1px solid #2c3734; display: flex; align-items: flex-start; gap: 10px; }
+.sheet-head h2 { font-family: var(--serif); font-size: 26px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
+.sheet-head .sub { margin-top: 5px; font-family: var(--mono); font-size: 12px; color: #91a097; }
+.sheet-head .close { margin-left: auto; }
+.close {
+  width: 29px; height: 29px; border: 1px solid #34423e; background: transparent; color: #aab5ad;
+  border-radius: 4px; display: grid; place-items: center; flex: none;
+}
+.close:hover { background: #172526; color: var(--white); }
+.sheet-search { padding: 10px 12px 8px; }
+.sheet-search input {
+  width: 100%; height: 32px; border: 1px solid #34423e; background: #131f20; color: var(--white);
+  border-radius: 4px; padding: 0 9px; font-family: var(--sans); font-size: 12px;
+}
+.sheet-search input::placeholder { color: #7f8e85; }
+.sheet-filters { display: flex; gap: 4px; padding: 0 12px 10px; flex-wrap: wrap; }
+.filter {
+  border: 1px solid #34423e; background: transparent; color: #aab5ad; border-radius: 3px;
+  font-size: 12px; padding: 3px 7px;
+}
+.filter.on { background: var(--white); border-color: var(--white); color: var(--rail); }
+.session-list { overflow: auto; padding: 4px 8px 14px; }
+.session-group { font-family: var(--mono); font-size: 12px; color: #7f8e85; padding: 10px 7px 5px; }
+.session-row {
+  width: 100%; border: 1px solid transparent; background: transparent; color: #d7ded7;
+  text-align: left; border-radius: 4px; padding: 9px 9px 8px; margin-bottom: 2px;
+  display: grid; grid-template-columns: 8px minmax(0,1fr); gap: 8px;
+}
+.session-row:hover { background: #172526; }
+.session-row.on { background: var(--ground); color: var(--ink); }
+.session-row .sdot { width: 6px; height: 6px; border-radius: 50%; background: #738178; margin-top: 5px; }
+.session-row[data-status="awaiting"] .sdot { background: var(--amber-bright); }
+.session-row[data-status="running"] .sdot { background: #7fb7cf; }
+.session-row[data-status="done"] .sdot { background: #75b492; }
+.session-row[data-status="queued"] .sdot { background: #8a9690; }
+.session-row[data-status="returned"] .sdot { background: #cf7c73; }
+.session-row .stitle { font-size: 12.5px; font-weight: 500; line-height: 1.35; }
+.session-row .smeta { margin-top: 3px; font-family: var(--mono); font-size: 12px; color: #91a097; display: flex; gap: 8px; flex-wrap: wrap; }
+.session-row.on .smeta { color: var(--muted); }
+.session-row .smeta .alert { color: #eac37c; }
+.session-row.on .smeta .alert { color: var(--amber-ink); }
+.sheet-foot { margin-top: auto; border-top: 1px solid #2c3734; padding: 10px 12px; display: flex; align-items: center; gap: 8px; }
+.sheet-foot .btn { border-color: #43534d; background: #172526; color: var(--white); }
+.sheet-foot .btn:hover { border-color: #6b8076; background: #1b2b2b; }
+.sheet-foot .hint { margin-left: auto; font-family: var(--mono); font-size: 12px; color: #7f8e85; }
+
+/* launch sheet */
+.launch {
+  position: fixed; left: 50%; bottom: var(--composer); transform: translateX(-50%);
+  width: min(840px, calc(100vw - 140px)); max-height: calc(100vh - 150px); overflow: auto;
+  background: var(--paper); border: 1px solid var(--line-strong); border-bottom: 0;
+  z-index: 52; box-shadow: 0 -12px 42px rgba(8,13,13,.24); padding: 16px 18px 14px;
+}
+.launch[hidden] { display: none !important; }
+.launch-head { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 12px; }
+.launch-head h2 { font-family: var(--serif); font-size: 27px; line-height: 1; font-weight: 600; letter-spacing: -0.025em; }
+.launch-head p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.launch-head .close { margin-left: auto; border-color: var(--line); color: var(--muted); }
+.launch-head .close:hover { background: var(--paper-2); color: var(--ink); }
+.launch-task { width: 100%; min-height: 54px; resize: vertical; border: 1px solid var(--line-strong); background: #fbfbf6; border-radius: 4px; padding: 9px 10px; font-family: var(--sans); font-size: 13px; line-height: 1.4; }
+.launch-task:focus { outline: 2px solid var(--blue); outline-offset: 1px; border-color: var(--blue); }
+.launch-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.field { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: #fbfbf6; border-radius: 4px; padding: 0 8px; height: 31px; font-size: 12px; color: var(--muted); }
+.field b { font-family: var(--mono); font-size: 12px; color: var(--ink); font-weight: 700; }
+.field select { border: 0; background: transparent; font-family: var(--mono); font-size: 12px; color: var(--ink); padding: 0; }
+.tier-ladder { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.tier-ladder h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.tier-option {
+  width: 100%; display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 9px; align-items: start;
+  text-align: left; background: transparent; border: 1px solid transparent; border-radius: 4px;
+  padding: 8px 9px; margin-bottom: 2px;
+}
+.tier-option:hover { background: #fbfbf6; border-color: var(--line); }
+.tier-option.on { background: var(--blue-soft); border-color: #b7c3ef; }
+.tier-option .radio { width: 14px; height: 14px; border: 1.5px solid var(--line-strong); border-radius: 50%; margin-top: 1px; position: relative; }
+.tier-option.on .radio { border-color: var(--blue); }
+.tier-option.on .radio::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--blue); }
+.tier-option .tname { font-weight: 600; font-size: 12.5px; }
+.tier-option .tdesc { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.4; max-width: 62ch; }
+.tier-option .tflag { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tier-option.on .tflag { color: var(--blue-deep); }
+.launch-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 8px 9px; border: 1px solid #d8bc83; background: var(--amber-soft); color: var(--amber-ink); border-radius: 4px; font-size: 12px; line-height: 1.45; }
+.launch-note svg { flex: none; margin-top: 1px; }
+.launch-foot { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); margin-top: 12px; padding-top: 11px; }
+.launch-cost { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.launch-cost b { color: var(--ink); }
+.launch-foot .primary { margin-left: auto; }
+.checkline { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.checkline input { accent-color: var(--blue); }
+
+/* ---------- audit / context drawer ---------- */
+.drawer {
+  position: fixed; top: var(--topbar); right: 0; bottom: var(--composer); width: 392px;
+  background: var(--paper); border-left: 1px solid var(--line-strong); z-index: 44;
+  box-shadow: -18px 0 44px rgba(7,12,12,.2); display: flex; flex-direction: column;
+}
+.drawer[hidden] { display: none !important; }
+.drawer-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; gap: 10px; }
+.drawer-head h2 { font-family: var(--serif); font-size: 25px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; }
+.drawer-head p { margin-top: 5px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.drawer-head .close { margin-left: auto; border-color: var(--line); color: var(--muted); }
+.drawer-head .close:hover { background: var(--paper-2); color: var(--ink); }
+.drawer-body { overflow: auto; padding: 12px 16px 20px; }
+.audit-summary { border: 1px solid var(--line); background: #fbfbf6; padding: 10px; border-radius: 4px; display: flex; align-items: center; gap: 10px; }
+.audit-summary .big { font-family: var(--serif); font-size: 28px; line-height: 1; font-weight: 600; }
+.audit-summary .lbl { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.audit-summary .ok { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-size: 12px; }
+.chain { margin-top: 12px; position: relative; }
+.chain-row { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; position: relative; padding: 7px 0 7px 18px; }
+.chain-row::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.chain-row::after { content: ""; position: absolute; left: 2px; top: 17px; width: 7px; height: 7px; border: 1px solid var(--line-strong); background: var(--paper); border-radius: 50%; }
+.chain-row:first-child::before { top: 17px; }
+.chain-row:last-child::before { bottom: 17px; }
+.chain-row:first-child::after { background: var(--green); border-color: var(--green); }
+.chain-row .seq { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.chain-row .what { font-size: 12px; }
+.chain-row .what b { font-family: var(--mono); font-weight: 700; font-size: 12px; }
+.chain-row .when { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.chain-row .hash { grid-column: 2 / -1; font-family: var(--mono); font-size: 12px; color: var(--muted-2); margin-top: 1px; overflow-wrap: anywhere; }
+.audit-foot { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; display: flex; align-items: center; gap: 8px; }
+.context-block { border-bottom: 1px solid var(--line); padding: 11px 0; }
+.context-block:first-child { padding-top: 0; }
+.context-block h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; margin-bottom: 4px; }
+.kv span { color: var(--muted); }
+.kv b { font-family: var(--mono); font-size: 12px; font-weight: 400; text-align: right; overflow-wrap: anywhere; }
+.usage-bar { height: 4px; background: var(--ground-2); margin: 8px 0 5px; }
+.usage-bar i { display: block; height: 100%; background: var(--amber-bright); }
+.subagent { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 4px 0; }
+.subagent .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.mini-list { list-style: none; }
+.mini-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 4px 0; border-bottom: 1px solid rgba(201,206,196,.55); }
+.mini-list li:last-child { border-bottom: 0; }
+.mini-list .mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+/* ---------- palette ---------- */
+.palette {
+  position: fixed; top: 108px; left: 50%; transform: translateX(-50%);
+  width: min(620px, calc(100vw - 40px)); max-height: calc(100vh - 200px);
+  background: var(--paper); border: 1px solid var(--line-strong); z-index: 62;
+  box-shadow: 0 22px 70px rgba(7,12,12,.32); display: flex; flex-direction: column;
+}
+.palette[hidden] { display: none !important; }
+.palette-input { display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-bottom: 1px solid var(--line); }
+.palette-input svg { color: var(--muted); }
+.palette-input input { flex: 1; border: 0; background: transparent; height: 34px; font-size: 14px; outline: 0; }
+.palette-input .esc { font-family: var(--mono); font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+.palette-list { overflow: auto; padding: 6px; }
+.palette-group { font-family: var(--mono); font-size: 12px; color: var(--muted); padding: 8px 8px 4px; }
+.palette-item { width: 100%; border: 0; background: transparent; border-radius: 4px; display: flex; align-items: center; gap: 10px; padding: 8px; text-align: left; font-size: 12.5px; }
+.palette-item:hover, .palette-item.on { background: var(--blue-soft); }
+.palette-item svg { color: var(--muted); }
+.palette-item .short { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.palette-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* ---------- composer ---------- */
+.composer {
+  height: var(--composer); flex: 0 0 var(--composer); background: var(--rail);
+  border-top: 1px solid #2b3733; padding: 10px 18px 10px 16px;
+  display: flex; align-items: flex-end; gap: 12px; position: relative; z-index: 35;
+}
+.composer-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.composer-top { display: flex; align-items: center; gap: 10px; }
+.composer-label { font-family: var(--mono); font-size: 12px; color: #8e9c93; letter-spacing: 0.02em; white-space: nowrap; }
+.composer-kbd { margin-left: auto; font-family: var(--mono); font-size: 12px; color: #7f8e85; white-space: nowrap; }
+.composer-input {
+  width: 100%; height: 34px; border: 1px solid #35443f; background: #131f20; color: var(--white);
+  border-radius: 4px; padding: 0 10px; font-family: var(--sans); font-size: 13px;
+}
+.composer-input::placeholder { color: #87958c; }
+.composer-input:focus { outline: 2px solid var(--amber-bright); outline-offset: 1px; border-color: #6b5a37; }
+.composer-side { display: flex; align-items: center; gap: 7px; flex: none; }
+.attach {
+  width: 32px; height: 32px; border: 1px solid #35443f; background: transparent; color: #a6b2aa;
+  border-radius: 4px; display: grid; place-items: center;
+}
+.attach:hover { background: #172526; color: var(--white); }
+.composer-chip {
+  height: 32px; border: 1px solid #35443f; background: transparent; color: #d7ded7;
+  border-radius: 4px; padding: 0 9px; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 12px; white-space: nowrap;
+}
+.composer-chip:hover { border-color: #5a6c65; background: #172526; }
+.composer-chip b { font-weight: 700; }
+.composer-run { height: 34px; border: 1px solid var(--blue); background: var(--blue); color: #fff; border-radius: 4px; padding: 0 13px; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+.composer-run:hover { background: var(--blue-deep); border-color: var(--blue-deep); }
+.composer-run:disabled { opacity: .45; }
+.composer-hint { font-family: var(--mono); font-size: 12px; color: #7f8e85; margin-left: 4px; }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--composer) + 16px); transform: translateX(-50%) translateY(8px);
+  background: var(--ink); color: var(--white); border: 1px solid #3d4a45; border-radius: 5px;
+  padding: 9px 13px; font-size: 12px; z-index: 80; box-shadow: 0 8px 26px rgba(7,12,12,.3);
+  opacity: 0; pointer-events: none; transition: opacity 160ms ease, transform 180ms ease;
+  max-width: min(560px, calc(100vw - 32px));
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast b { color: #f4d79c; font-weight: 600; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1120px) {
+  .objective { font-size: 25px; }
+  .review-grid { grid-template-columns: 178px minmax(0,1fr); }
+  .gate-note { display: none; }
+  .brand { min-width: 110px; }
+}
+@media (max-width: 900px) {
+  :root { --composer: 124px; --rail-w: 0px; }
+  .topbar { gap: 10px; padding: 0 10px; }
+  .brand { min-width: 0; }
+  .brand span, .daemon, .usage .cap, .usage .meter, .kbd, .avatar { display: none; }
+  .project-btn .path { display: none; }
+  .needs { padding: 0 7px; }
+  .frame { grid-template-columns: 1fr; grid-template-rows: 55px minmax(0,1fr); }
+  .rail {
+    grid-row: 1; flex-direction: row; justify-content: flex-start; align-items: center;
+    padding: 6px 8px; gap: 6px; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid #273230;
+  }
+  .rail-menu { width: 34px; height: 38px; flex: none; }
+  .rail-runs { flex-direction: row; gap: 6px; width: auto; overflow: visible; }
+  .run-chip { width: 40px; height: 38px; flex: none; }
+  .run-chip::after { display: none; }
+  .run-chip .chip-id { font-size: 12px; }
+  .rail-sep { width: 1px; height: 22px; margin: 0 2px; }
+  .rail-foot { margin: 0 0 0 auto; flex-direction: row; gap: 4px; }
+  .rail-tool { width: 34px; height: 38px; flex: none; }
+  .rail-tool .chain-count { display: none; }
+  .stage-head { padding: 12px 15px 11px 15px; }
+  .objective { font-size: 22px; max-width: 26ch; margin: 8px 0 8px; }
+  .stage-actions { top: 10px; right: 10px; }
+  .stage-actions .icon-btn:last-child { display: none; }
+  .meta-row { gap: 6px; font-size: 12px; }
+  .meta-row .sep { display: none; }
+  .stage-modes { padding: 0 9px; min-height: 40px; overflow-x: auto; }
+  .stage-modes button { padding: 11px 8px 9px; white-space: nowrap; }
+  .modes-right { display: none; }
+  .trace { padding: 8px 12px 18px 6px; }
+  .trace-summary { padding-left: 57px; gap: 10px; font-size: 12px; }
+  .trace-summary .tail { display: none; }
+  .trace-row { grid-template-columns: 58px 20px minmax(0,1fr); }
+  .trace-row > time { font-size: 12px; padding-right: 5px; padding-top: 14px; }
+  .trace-content { padding: 11px 6px 12px 9px; }
+  .trace-node { padding-top: 16px; }
+  .trace-row.gate::after { left: 78px; }
+  .trace-title { font-size: 12.5px; }
+  .trace-text { font-size: 12px; }
+  .now-line { margin-left: 78px; font-size: 12px; }
+  .gate-dock { padding: 9px 12px; gap: 9px; flex-wrap: wrap; }
+  .gate-mark { width: 30px; height: 30px; }
+  .gate-copy { flex: 1 1 calc(100% - 48px); }
+  .gate-actions { flex: 1 1 100%; justify-content: flex-end; }
+  .gate-note { display: none; }
+  .changes { padding: 12px 12px 18px; }
+  .changes-head { flex-direction: column; gap: 8px; }
+  .changes-actions { width: 100%; }
+  .review-grid { grid-template-columns: 1fr; gap: 10px; }
+  .file-list { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; }
+  .file-list h3 { display: none; }
+  .file { display: none; }
+  .file.on { display: flex; align-items: center; }
+  .file-note { display: none; }
+  .diff { max-height: calc(100vh - 470px); min-height: 180px; }
+  .diff-line { min-width: 580px; }
+  .comment-body { padding-left: 10px; }
+  .console-wrap, .files-wrap { padding: 12px 12px 18px; }
+  .console-box { max-height: calc(100vh - 450px); }
+  .files-grid { grid-template-columns: 1fr; gap: 10px; }
+  .tree { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 8px; }
+  .tree .folder { display: none; }
+  .tree button { padding-left: 5px; }
+  .preview-code { max-height: calc(100vh - 520px); }
+  .queue-view { padding: 16px 12px 20px; }
+  .queue-head { flex-direction: column; gap: 10px; }
+  .queue-table th:nth-child(4), .queue-table td:nth-child(4) { display: none; }
+  .queue-table .row-actions { flex-direction: column; }
+  .sheet { left: 0; width: 100%; bottom: var(--composer); top: var(--topbar); border-right: 0; }
+  .scrim { left: 0; }
+  .launch { width: calc(100vw - 20px); bottom: 0; max-height: calc(100vh - var(--topbar)); padding-bottom: 18px; }
+  .launch-row .field { flex: 1 1 auto; }
+  .tier-option { grid-template-columns: 20px minmax(0,1fr); }
+  .tier-option .tflag { display: none; }
+  .drawer { width: 100%; }
+  .composer { flex-wrap: wrap; padding: 8px 10px; align-items: flex-start; gap: 8px; }
+  .composer-main { flex: 1 1 100%; }
+  .composer-side { width: 100%; justify-content: flex-end; }
+  .composer-label { display: none; }
+  .composer-kbd { display: none; }
+  .composer-chip { height: 30px; }
+  .composer-run { height: 32px; }
+  .palette { top: 72px; }
+}
+@media (max-width: 560px) {
+  .topbar { padding: 0 8px; gap: 8px; }
+  .brand b { font-size: 14px; }
+  .project-btn { padding: 0 6px; font-size: 12px; }
+  .needs { font-size: 12px; }
+  .objective { font-size: 20px; max-width: 24ch; }
+  .stage-crumb { font-size: 12px; gap: 5px; }
+  .status-pill { font-size: 12px; }
+  .stage-actions .icon-btn { display: none; }
+  .trace-title { font-size: 12px; }
+  .trace-kicker .mono { display: none; }
+  .gate-copy span { font-size: 12px; }
+  .gate-actions .btn { padding: 0 9px; }
+  .gate-actions .btn-ghost { display: none; }
+  .queue-table .mono { font-size: 12px; }
+  .queue-table th:nth-child(5), .queue-table td:nth-child(5) { display: none; }
+  .launch-head h2 { font-size: 23px; }
+  .launch-foot { flex-wrap: wrap; }
+  .launch-foot .primary { margin-left: 0; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .run-chip, .status-pill, .btn, .filter, .gate-mark { forced-color-adjust: auto; }
+  .trace-node i { forced-color-adjust: none; }
+}
+
+
+/* ---------- additions ---------- */
+.diff-hunk {
+  grid-column: 1 / -1;
+  padding: 5px 10px;
+  background: #eef0e8;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.diff-line.comment .code {
+  grid-column: 1 / -1;
+  padding: 7px 10px 8px 100px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: #263463;
+  white-space: normal;
+}
+.diff-line.comment .code b { font-weight: 600; }
+.trace-queued {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 6px 0 0 51px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.trace-queued-mark {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.trace-queued .trace-title { color: var(--ink); font-size: 13px; }
+.now-line.running { color: #1c5773; }
+.now-line.running .bar { background: #9ec3d1; }
+.now-line.done { color: var(--green); }
+.now-line.done .bar { background: #a9c9b7; }
+.now-line.queued { color: var(--muted); }
+.now-line.queued .bar { background: var(--line-strong); }
+.now-line.returned { color: var(--red); }
+.now-line.returned .bar { background: #dba9a4; }
+.trace-row.gate.rejected .trace-node i { border-color: var(--red); background: var(--red); }
+.trace-row.gate.rejected .trace-content { background: var(--red-soft); border-color: #dba9a4; }
+.trace-row.gate.rejected .trace-content:hover { background: #f5e4df; }
+.trace-row.gate.rejected .kind.bad { color: var(--red); }
+.chain-row .hash { display: block; }
+@media (max-width: 900px) {
+  .diff-line.comment .code { padding-left: 10px; }
+  .trace-queued { margin-left: 45px; }
+}
+
+
+/* icon system: every glyph is a 1.6px line drawing */
+svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+svg use { pointer-events: none; }
+
+
+/* ---------- corrections after review ---------- */
+.file span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rail-tool .chain-count { display: none; }
+.scrim { background: rgba(8, 13, 13, .38); }
+.btn svg { margin-right: 1px; }
+@media (max-width: 900px) {
+  .frame { grid-template-rows: 57px minmax(0, 1fr); }
+  .run-chip { width: 44px; height: 44px; }
+  .rail-menu, .rail-tool { width: 38px; height: 40px; }
+  .rail { padding: 6px 8px; }
+  .btn { height: 36px; padding: 0 12px; }
+  .btn-sm { height: 34px; }
+  .gate-actions .btn { height: 40px; min-height: 40px; }
+  .gate-actions .btn-primary { min-width: 130px; }
+  .composer-chip, .composer-run, .attach { height: 36px; }
+  .filter { padding: 6px 8px; }
+  .diff-head {
+    display: block;
+    padding: 8px 9px;
+    line-height: 1.5;
+  }
+  .diff-head > span { display: none; }
+  .diff-head b { display: block; overflow-wrap: anywhere; }
+  .diff-head .right { display: none; }
+  .file.on { min-width: 0; }
+  .file span:first-child { min-width: 0; }
+}
+@media (max-width: 560px) {
+  .gate-actions .btn { padding: 0 9px; }
+  .gate-actions .btn-primary { min-width: 124px; }
+  .composer-side { gap: 5px; }
+  .composer-chip { padding: 0 7px; }
+  .attach { width: 36px; }
+}
+
+@media (max-width: 900px) {
+  .diff { max-height: none; }
+  .launch-task { min-height: 84px; }
+  .filter { min-height: 32px; }
+  .composer-input { height: 36px; }
+  .sheet-search input { height: 36px; }
+}
+
+  </style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M8 10l4 4 4-4"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5h6l2 2h9v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M3.5 7.5v-1a2 2 0 0 1 2-2h4l2 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5A1.5 1.5 0 0 1 6.5 3.5z"/><path d="M13 3.5V9h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.2-2.9 7.4-7 8.9-4.1-1.5-7-4.7-7-8.9V6.3z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-attach" viewBox="0 0 24 24"><path d="M8.5 12.5l6.6-6.6a3 3 0 0 1 4.2 4.2l-8.2 8.2a4.5 4.5 0 0 1-6.4-6.4l8-8"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M18 15l2 2-2 2"/></symbol>
+  <symbol id="i-chain" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M7.8 16.2l-1.2 1.2a3.8 3.8 0 0 1-5.4-5.4l2.4-2.4a3.8 3.8 0 0 1 5.4 0"/><path d="M16.2 7.8l1.2-1.2a3.8 3.8 0 0 1 5.4 5.4l-2.4 2.4a3.8 3.8 0 0 1-5.4 0"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M14.5 4.5v15"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.2a2.6 2.6 0 1 1 3.4 2.5c-.8.3-1 .8-1 1.6"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M6 15.5H5A1.5 1.5 0 0 1 3.5 14V5A1.5 1.5 0 0 1 5 3.5h9A1.5 1.5 0 0 1 15.5 5v1"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+</svg>
+
+<div class="app" data-app>
+  <header class="topbar">
+    <div class="brand"><b>smolcode</b><span>workbench</span></div>
+    <button class="project-btn" type="button" data-open="project" title="Switch project">
+      <svg width="14" height="14"><use href="#i-folder"/></svg>
+      <span>orbit-api</span>
+      <span class="path">~/work/orbit-api</span>
+      <svg width="12" height="12"><use href="#i-chevron"/></svg>
+    </button>
+    <div class="daemon"><span class="dot"></span>127.0.0.1:8765 <span class="local-tag">local</span></div>
+    <div class="top-actions">
+      <button class="needs" id="needs-btn" type="button" data-open="sessions" aria-live="polite">
+        <span class="dot"></span><b id="needs-count">1</b><span id="needs-label">needs you</span>
+      </button>
+      <button class="usage" type="button" data-open="usage" title="Cost and usage">
+        <span id="spend">$3.84</span><span class="cap">/ $12.00</span>
+        <span class="meter" aria-hidden="true"><i style="width:32%"></i></span>
+      </button>
+      <button class="kbd" type="button" data-open="palette" aria-label="Open command palette">⌘K</button>
+      <button class="avatar" type="button" data-open="palette" aria-label="Account and settings">AM</button>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="rail" aria-label="Run rail">
+      <button class="rail-menu" type="button" data-open="sessions" aria-label="All runs and sessions" title="All runs  S">
+        <svg width="18" height="18"><use href="#i-menu"/></svg>
+      </button>
+      <div class="rail-runs" id="rail-runs"></div>
+      <div class="rail-sep"></div>
+      <button class="rail-tool" type="button" data-route="queue" aria-label="Queue, 1 waiting" title="Queue">
+        <svg width="18" height="18"><use href="#i-queue"/></svg>
+        <span class="badge" id="queue-badge">1</span>
+      </button>
+      <div class="rail-foot">
+        <button class="rail-tool" type="button" data-open="audit" aria-label="Audit chain, 1204 entries" title="Audit chain">
+          <svg width="18" height="18"><use href="#i-chain"/></svg>
+          <span class="chain-count" id="rail-chain">1.2k</span>
+        </button>
+        <button class="rail-tool" type="button" data-open="help" aria-label="Help and shortcuts" title="Shortcuts  ?">
+          <svg width="17" height="17"><use href="#i-help"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="stage" id="stage">
+      <div class="run-shell" id="run-shell">
+        <section class="stage-head">
+          <div class="stage-crumb">
+            <span id="crumb-project">orbit-api</span><span class="slash">/</span>
+            <code id="crumb-run">run_7f3a</code>
+            <span class="status-pill awaiting" id="status-pill"><i></i><span id="status-text">Awaiting approval</span></span>
+          </div>
+          <h1 class="objective" id="objective">Stop duplicate webhook deliveries</h1>
+          <div class="meta-row">
+            <span class="tier-tag" id="tier-tag" data-tier="restricted">restricted</span>
+            <span id="model">claude-sonnet-4</span><span class="sep"></span>
+            <span id="workspace">~/work/orbit-api</span><span class="sep"></span>
+            <span><b id="elapsed">04:12</b> elapsed</span><span class="sep"></span>
+            <span><b id="cost">$0.38</b> spent</span>
+          </div>
+          <div class="stage-actions">
+            <button class="icon-btn" type="button" title="Pause run" aria-label="Pause run" data-toast="Run paused after the current step."><svg width="15" height="15"><use href="#i-pause"/></svg></button>
+            <button class="icon-btn" type="button" title="Stop run" aria-label="Stop run" data-toast="Stop requested; the sandbox will finish its current command."><svg width="15" height="15"><use href="#i-stop"/></svg></button>
+            <button class="icon-btn" type="button" title="More run actions" aria-label="More run actions" data-open="palette"><svg width="16" height="16"><use href="#i-dots"/></svg></button>
+          </div>
+        </section>
+
+        <nav class="stage-modes" aria-label="Run views">
+          <button type="button" data-view="trace" class="on">Trace <span class="count" id="trace-count">10</span></button>
+          <button type="button" data-view="changes">Changes <span class="count alert" id="changes-count">1</span></button>
+          <button type="button" data-view="console">Console</button>
+          <button type="button" data-view="files">Files</button>
+          <span class="modes-right"><button class="link-btn" type="button" data-open="context">Context</button></span>
+        </nav>
+
+        <div class="stage-body" id="stage-body">
+          <section class="view" data-view-panel="trace" id="view-trace">
+            <div class="trace">
+              <div class="trace-summary">
+                <span><b id="sum-events">10</b> events</span>
+                <span><b id="sum-tools">4</b> tools</span>
+                <span><b id="sum-approvals">1</b> approval</span>
+                <span class="tail" id="sum-started">started 09:41:02</span>
+              </div>
+              <ol class="trace-list" id="trace-list"></ol>
+              <div class="now-line" id="now-line"><span>waiting on you</span><span class="bar"></span><b>04:12</b></div>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="changes" id="view-changes" hidden>
+            <div class="changes">
+              <div class="changes-head">
+                <div>
+                  <h2>Changes</h2>
+                  <p>src/billing/webhook.py · +24 −3 · sha 9d07aa</p>
+                </div>
+                <div class="changes-actions">
+                  <button class="btn btn-sm" type="button" data-toast="Opening the workspace diff in your editor is not wired in this prototype.">Open in editor</button>
+                  <button class="btn btn-sm" type="button" data-toast="Patch copied to the clipboard.">Copy patch</button>
+                </div>
+              </div>
+              <div class="review-grid">
+                <nav class="file-list" aria-label="Changed files">
+                  <h3>1 changed file</h3>
+                  <button class="file on" type="button"><span>src/billing/webhook.py</span><span class="fstats"><span class="add">+24</span> <span class="del">−3</span></span></button>
+                  <p class="file-note">Only this file moved. The workspace tree is unchanged outside the patch.</p>
+                </nav>
+                <article class="diff-pane">
+                  <div class="diff-head">
+                    <b>src/billing/webhook.py</b>
+                    <span>unified</span>
+                    <span class="right"><span>sha 9d07aa</span><span>restricted</span></span>
+                  </div>
+                  <div class="diff" aria-label="Unified diff for src/billing/webhook.py">
+                    <div class="diff-hunk">@@ -41,7 +41,28 @@ def handle_event(event: dict) -&gt; Response:</div>
+                    <div class="diff-line"><span class="ln">41</span><span class="ln">41</span><span class="mark"> </span><span class="code">    signature = request.headers.get("stripe-signature")</span></div>
+                    <div class="diff-line"><span class="ln">42</span><span class="ln">42</span><span class="mark"> </span><span class="code">    if not _verify(signature, request.data):</span></div>
+                    <div class="diff-line"><span class="ln">43</span><span class="ln">43</span><span class="mark"> </span><span class="code">        return Response(status_code=400)</span></div>
+                    <div class="diff-line del"><span class="ln">44</span><span class="ln"></span><span class="mark">−</span><span class="code">    event = stripe.Event.construct_from(</span></div>
+                    <div class="diff-line del"><span class="ln">45</span><span class="ln"></span><span class="mark">−</span><span class="code">        request.data, stripe.api_key</span></div>
+                    <div class="diff-line del"><span class="ln">46</span><span class="ln"></span><span class="mark">−</span><span class="code">    )</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">44</span><span class="mark">+</span><span class="code">    event = _parse_event(request.data)</span></div>
+                    <div class="diff-line"><span class="ln">47</span><span class="ln">45</span><span class="mark"> </span><span class="code"> </span></div>
+                    <div class="diff-line"><span class="ln">48</span><span class="ln">46</span><span class="mark"> </span><span class="code">    if event["type"] == "invoice.paid":</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">47</span><span class="mark">+</span><span class="code">        key = _delivery_key(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">48</span><span class="mark">+</span><span class="code">        if _already_delivered(key):</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">49</span><span class="mark">+</span><span class="code">            audit("webhook.duplicate", key=key)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">50</span><span class="mark">+</span><span class="code">            return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">51</span><span class="mark">+</span><span class="code">        _send_receipt(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">52</span><span class="mark">+</span><span class="code">        _mark_delivered(key)</span></div>
+                    <div class="diff-line comment"><span class="ln"></span><span class="ln"></span><span class="mark"></span><span class="code comment-body"><b>Review note</b> · The early return happens before any side effect, so a duplicate delivery cannot send a second receipt. The same guard is repeated for payment failures below.</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">53</span><span class="mark">+</span><span class="code">    elif event["type"] == "invoice.payment_failed":</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">54</span><span class="mark">+</span><span class="code">        key = _delivery_key(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">55</span><span class="mark">+</span><span class="code">        if _already_delivered(key):</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">56</span><span class="mark">+</span><span class="code">            return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">57</span><span class="mark">+</span><span class="code">        _send_dunning(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">58</span><span class="mark">+</span><span class="code">        _mark_delivered(key)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">59</span><span class="mark">+</span><span class="code">    return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">60</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">61</span><span class="mark">+</span><span class="code">def _delivery_key(event: dict) -&gt; str:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">62</span><span class="mark">+</span><span class="code">    payload = json.dumps(event, sort_keys=True)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">63</span><span class="mark">+</span><span class="code">    return hashlib.sha256(payload.encode()).hexdigest()</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">64</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">65</span><span class="mark">+</span><span class="code">def _already_delivered(key: str) -&gt; bool:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">66</span><span class="mark">+</span><span class="code">    return _DELIVERY_KEYS.get(key) is not None</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">67</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">68</span><span class="mark">+</span><span class="code">def _mark_delivered(key: str) -&gt; None:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">69</span><span class="mark">+</span><span class="code">    _DELIVERY_KEYS.set(key, time.time(), ttl=86400)</span></div>
+                  </div>
+                  <p class="risk-line"><svg width="14" height="14"><use href="#i-shield"/></svg>Writes inside the workspace. No network. Stays restricted.</p>
+                  <p class="patch-note">The run replaces a raw Stripe object with a parsed event, then checks an idempotency key before every receipt or dunning side effect.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="console" id="view-console" hidden>
+            <div class="console-wrap">
+              <div class="console-head">
+                <div><h2>Console</h2><p>run_7f3a · restricted image a91c4e · read-only capture</p></div>
+                <button class="btn btn-sm" type="button" data-toast="Console capture copied.">Copy output</button>
+              </div>
+              <pre class="console-box"><span class="dim">09:41:44</span>  <span class="warn">$</span> pytest -q tests/billing/test_webhook.py
+<span class="dim">09:41:45</span>  <span class="ok">12 passed</span> in 1.82s
+
+<span class="dim">09:41:46</span>  <span class="warn">$</span> python - &lt;&lt;'PY'
+<span class="dim">09:41:46</span>  from billing.webhook import _delivery_key
+<span class="dim">09:41:46</span>  key = _delivery_key({"id": "evt_1P", "type": "invoice.paid"})
+<span class="dim">09:41:46</span>  print(key)
+<span class="dim">09:41:46</span>  PY
+<span class="dim">09:41:46</span>  <span class="ok">7f3a9c0e5e4b2a18</span>
+
+<span class="dim">09:41:58</span>  git status --short
+<span class="dim">09:41:58</span>  <span class="path"> M src/billing/webhook.py</span>
+
+<span class="dim">09:42:07</span>  diff.proposed  1 file  +24 −3  sha 9d07aa
+<span class="dim">09:42:07</span>  <span class="warn">approval.requested  hold  src/billing/webhook.py</span>
+<span class="dim">09:42:11</span>  awaiting human signature; sandbox stays alive
+</pre>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="files" id="view-files" hidden>
+            <div class="files-wrap">
+              <div class="files-head">
+                <div><h2>Files</h2><p>orbit-api · ~/work/orbit-api · read-only preview</p></div>
+                <button class="btn btn-sm" type="button" data-toast="Workspace opened in the host editor.">Open workspace</button>
+              </div>
+              <div class="files-grid">
+                <nav class="tree" aria-label="Workspace tree">
+                  <div class="folder"><svg width="13" height="13"><use href="#i-folder"/></svg>orbit-api</div>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>src</div>
+                  <button type="button">billing/</button>
+                  <button type="button" class="on">billing/webhook.py</button>
+                  <button type="button">billing/receipts.py</button>
+                  <button type="button">session/store.py</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>tests</div>
+                  <button type="button">billing/test_webhook.py</button>
+                  <button type="button">session/test_store.py</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>docs</div>
+                  <button type="button">security.md</button>
+                  <button type="button">operations.md</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>root</div>
+                  <button type="button">README.md</button>
+                  <button type="button">pyproject.toml</button>
+                  <p class="tree-note">Snapshot from the restricted sandbox at 09:42:11. Paths outside the workspace are never mounted.</p>
+                </nav>
+                <article class="preview">
+                  <div class="preview-head"><b>src/billing/webhook.py</b><span>148 lines · sha 9d07aa</span></div>
+                  <div class="preview-code" aria-label="File preview">
+                    <div class="pl"><span class="n">1</span><span class="c">import hashlib</span></div>
+                    <div class="pl"><span class="n">2</span><span class="c">import json</span></div>
+                    <div class="pl"><span class="n">3</span><span class="c">import time</span></div>
+                    <div class="pl"><span class="n">4</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">5</span><span class="c">from fastapi import Request, Response</span></div>
+                    <div class="pl"><span class="n">6</span><span class="c">from billing.audit import audit</span></div>
+                    <div class="pl"><span class="n">7</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">8</span><span class="c">_DELIVERY_KEYS = Store("webhook.delivery")</span></div>
+                    <div class="pl"><span class="n">9</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">10</span><span class="c">def _verify(signature: str | None, payload: bytes) -&gt; bool:</span></div>
+                    <div class="pl"><span class="n">11</span><span class="c">    if not signature:</span></div>
+                    <div class="pl"><span class="n">12</span><span class="c">        return False</span></div>
+                    <div class="pl"><span class="n">13</span><span class="c">    expected = hmac.new(</span></div>
+                    <div class="pl"><span class="n">14</span><span class="c">        settings.WEBHOOK_SECRET.encode(),</span></div>
+                    <div class="pl"><span class="n">15</span><span class="c">        payload,</span></div>
+                    <div class="pl"><span class="n">16</span><span class="c">        hashlib.sha256,</span></div>
+                    <div class="pl"><span class="n">17</span><span class="c">    ).hexdigest()</span></div>
+                    <div class="pl"><span class="n">18</span><span class="c">    return hmac.compare_digest(expected, signature)</span></div>
+                    <div class="pl"><span class="n">19</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">20</span><span class="c">def _parse_event(payload: bytes) -&gt; dict:</span></div>
+                    <div class="pl"><span class="n">21</span><span class="c">    return json.loads(payload.decode("utf-8"))</span></div>
+                    <div class="pl"><span class="n">22</span><span class="c"></span></div>
+                    <div class="pl hl"><span class="n">23</span><span class="c">def _delivery_key(event: dict) -&gt; str:</span></div>
+                    <div class="pl hl"><span class="n">24</span><span class="c">    payload = json.dumps(event, sort_keys=True)</span></div>
+                    <div class="pl hl"><span class="n">25</span><span class="c">    return hashlib.sha256(payload.encode()).hexdigest()</span></div>
+                    <div class="pl"><span class="n">26</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">27</span><span class="c">def _already_delivered(key: str) -&gt; bool:</span></div>
+                    <div class="pl"><span class="n">28</span><span class="c">    return _DELIVERY_KEYS.get(key) is not None</span></div>
+                    <div class="pl"><span class="n">29</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">30</span><span class="c">def _mark_delivered(key: str) -&gt; None:</span></div>
+                    <div class="pl"><span class="n">31</span><span class="c">    _DELIVERY_KEYS.set(key, time.time(), ttl=86400)</span></div>
+                    <div class="pl"><span class="n">32</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">33</span><span class="c">async def handle_event(request: Request) -&gt; Response:</span></div>
+                    <div class="pl"><span class="n">34</span><span class="c">    signature = request.headers.get("stripe-signature")</span></div>
+                    <div class="pl"><span class="n">35</span><span class="c">    if not _verify(signature, await request.body()):</span></div>
+                    <div class="pl"><span class="n">36</span><span class="c">        return Response(status_code=400)</span></div>
+                    <div class="pl"><span class="n">37</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">38</span><span class="c">    event = _parse_event(await request.body())</span></div>
+                    <div class="pl"><span class="n">39</span><span class="c">    if event["type"] == "invoice.paid":</span></div>
+                    <div class="pl"><span class="n">40</span><span class="c">        key = _delivery_key(event)</span></div>
+                    <div class="pl"><span class="n">41</span><span class="c">        if _already_delivered(key):</span></div>
+                    <div class="pl"><span class="n">42</span><span class="c">            return Response(status_code=200)</span></div>
+                    <div class="pl"><span class="n">43</span><span class="c">        _send_receipt(event)</span></div>
+                    <div class="pl"><span class="n">44</span><span class="c">        _mark_delivered(key)</span></div>
+                    <div class="pl"><span class="n">45</span><span class="c">    return Response(status_code=200)</span></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="gate-dock" id="gate-dock">
+          <div class="gate-mark"><svg width="17" height="17"><use href="#i-shield"/></svg></div>
+          <div class="gate-copy">
+            <strong id="gate-title">One change is waiting for your signature.</strong>
+            <span id="gate-sub">src/billing/webhook.py · +24 −3 · sha 9d07aa · restricted image a91c4e</span>
+          </div>
+          <div class="gate-actions">
+            <span class="gate-note" id="gate-note">Approval releases this diff once.</span>
+            <button class="btn btn-sm" type="button" id="gate-hold">Hold</button>
+            <button class="btn btn-sm btn-danger" type="button" id="gate-reject">Reject</button>
+            <button class="btn btn-sm btn-primary" type="button" id="gate-approve">Approve change</button>
+          </div>
+        </div>
+      </div>
+
+      <section class="view" data-view-panel="queue" id="view-queue" hidden>
+        <div class="queue-view">
+          <div class="queue-head">
+            <div>
+              <h1>Queue</h1>
+              <p>One run is waiting. New directives join the end of the queue; they do not start until the gate is clear.</p>
+            </div>
+            <div class="queue-actions">
+              <button class="btn" type="button" id="drain-btn">Drain queue</button>
+              <button class="btn btn-primary" type="button" data-open="launch"><svg width="14" height="14"><use href="#i-plus"/></svg>New run</button>
+            </div>
+          </div>
+          <table class="queue-table">
+            <thead><tr><th>#</th><th>Directive</th><th>Tier</th><th>Waiting</th><th>Estimate</th><th></th></tr></thead>
+            <tbody id="queue-body">
+              <tr>
+                <td class="pos">1</td>
+                <td class="task">Migrate the audit chain to v2 with rotation<small>run_04aa · opus-4 · requested 09:38</small></td>
+                <td><span class="tier-tag" data-tier="full_access">full_access</span></td>
+                <td class="mono">02:14</td>
+                <td class="mono">~$0.60</td>
+                <td><div class="row-actions"><button class="btn btn-sm" type="button" data-toast="run_04aa moved to the front of the queue.">Move up</button><button class="btn btn-sm btn-ghost" type="button" data-toast="run_04aa removed from the queue.">Remove</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="queue-foot"><svg width="14" height="14"><use href="#i-shield"/></svg>Queue drain is off. Runs wait for a human; nothing starts silently.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="composer" aria-label="New run">
+    <div class="composer-main">
+      <div class="composer-top">
+        <span class="composer-label">New run</span>
+        <span class="composer-kbd">⌘↵ to start · ⌘K commands</span>
+      </div>
+      <input class="composer-input" id="composer-input" type="text" autocomplete="off" placeholder="Describe the change, or paste a failing test…" aria-label="Describe a new run">
+    </div>
+    <div class="composer-side">
+      <input type="file" id="file-input" multiple hidden>
+      <button class="attach" type="button" id="attach-btn" aria-label="Attach files" title="Attach files"><svg width="16" height="16"><use href="#i-attach"/></svg></button>
+      <button class="composer-chip" type="button" data-open="launch" title="Set tier, model, and workspace"><span id="composer-tier">restricted</span><svg width="11" height="11"><use href="#i-chevron"/></svg></button>
+      <button class="composer-chip" type="button" data-open="launch" title="Set model"><span id="composer-model">sonnet-4</span></button>
+      <button class="composer-run" type="button" id="run-btn"><svg width="13" height="13"><use href="#i-play"/></svg>Run</button>
+    </div>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="sheet" id="sessions" role="dialog" aria-modal="true" aria-labelledby="sessions-title" hidden>
+  <div class="sheet-head">
+    <div><h2 id="sessions-title">Runs</h2><p class="sub">orbit-api · 5 sessions · 1 needs you</p></div>
+    <button class="close" type="button" data-close aria-label="Close runs"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="sheet-search"><input type="search" id="session-search" placeholder="Filter by run, task, or model" aria-label="Filter runs"></div>
+  <div class="sheet-filters" id="session-filters">
+    <button class="filter on" type="button" data-filter="all">All</button>
+    <button class="filter" type="button" data-filter="awaiting">Needs you</button>
+    <button class="filter" type="button" data-filter="running">Running</button>
+    <button class="filter" type="button" data-filter="queued">Queued</button>
+    <button class="filter" type="button" data-filter="done">Done</button>
+  </div>
+  <div class="session-list" id="session-list"></div>
+  <div class="sheet-foot"><button class="btn" type="button" data-open="launch">New run</button><span class="hint">S closes</span></div>
+</aside>
+
+<aside class="launch" id="launch" role="dialog" aria-modal="true" aria-labelledby="launch-title" hidden>
+  <div class="launch-head">
+    <div><h2 id="launch-title">New run</h2><p>Name the outcome. smolcode stays in the tier you choose, and every diff returns here for review.</p></div>
+    <button class="close" type="button" data-close aria-label="Close new run"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <textarea class="launch-task" id="launch-task" placeholder="Describe the change, or paste a failing test…">Stop duplicate webhook deliveries in src/billing/webhook.py. Keep the retry behavior for genuine failures.</textarea>
+  <div class="launch-row">
+    <span class="field"><svg width="14" height="14"><use href="#i-folder"/></svg><b>~/work/orbit-api</b></span>
+    <span class="field">Provider <b>anthropic</b></span>
+    <span class="field">Model <select id="launch-model"><option>claude-sonnet-4</option><option>claude-opus-4</option><option>minimax-m2</option></select></span>
+    <span class="field">Attach <b>none</b></span>
+  </div>
+  <div class="tier-ladder">
+    <h3>Clearance</h3>
+    <button class="tier-option on" type="button" data-tier-choice="restricted" aria-pressed="true">
+      <span class="radio"></span>
+      <span><span class="tname">restricted</span><span class="tdesc">Workspace only. Allowlisted commands, no network, read-only mounts outside the project.</span></span>
+      <span class="tflag">default</span>
+    </button>
+    <button class="tier-option" type="button" data-tier-choice="elevated" aria-pressed="false">
+      <span class="radio"></span>
+      <span><span class="tname">elevated</span><span class="tdesc">Adds named paths and allowlisted hosts. Every extra mount is visible in the run.</span></span>
+      <span class="tflag">opt-in</span>
+    </button>
+    <button class="tier-option" type="button" data-tier-choice="full_access" aria-pressed="false">
+      <span class="radio"></span>
+      <span><span class="tname">full_access</span><span class="tdesc">Broader host access for specialist work. Still containerized, still audited, still gated.</span></span>
+      <span class="tflag">explicit</span>
+    </button>
+  </div>
+  <div class="launch-note" id="tier-note"><svg width="14" height="14"><use href="#i-shield"/></svg><span><b>Restricted is the default.</b> The run can read and write only inside ~/work/orbit-api. A tier change never happens mid-run.</span></div>
+  <div class="launch-foot">
+    <span class="launch-cost">Estimated ceiling <b>~$0.40</b></span>
+    <label class="checkline"><input type="checkbox" id="auto-approve"> Auto-approve safe diffs</label>
+    <button class="btn btn-primary primary" type="button" id="launch-start"><svg width="13" height="13"><use href="#i-play"/></svg>Start run</button>
+  </div>
+</aside>
+
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-labelledby="palette-title" hidden>
+  <div class="palette-input">
+    <svg width="17" height="17"><use href="#i-search"/></svg>
+    <input id="palette-search" type="text" placeholder="Type a command or a run id…" aria-labelledby="palette-title">
+    <span class="esc">esc</span>
+  </div>
+  <div class="palette-list" id="palette-list"></div>
+</div>
+
+<aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-title" hidden>
+  <div class="drawer-head">
+    <div><h2 id="drawer-title">Audit chain</h2><p id="drawer-sub">1,204 entries · verified</p></div>
+    <button class="close" type="button" data-close aria-label="Close panel"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const esc = (value) => String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const icon = (name, size = 14) => '<svg width="' + size + '" height="' + size + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+
+  const RUNS = {
+    run_7f3a: {
+      id: 'run_7f3a', short: '7f3a', project: 'orbit-api',
+      objective: 'Stop duplicate webhook deliveries',
+      tier: 'restricted', model: 'claude-sonnet-4', elapsed: '04:12', cost: '$0.38',
+      status: 'awaiting', statusText: 'Awaiting approval', started: '09:41:02',
+      tools: 5, approvals: 1, changesCount: 1,
+      gate: {
+        title: 'One change is waiting for your signature.',
+        sub: 'src/billing/webhook.py · +24 −3 · sha 9d07aa · restricted image a91c4e',
+        approved: false, rejected: false
+      },
+      consoleText: '',
+      trace: [
+        { time: '09:41:02', kind: 'run.started', title: 'Run started in the <code>restricted</code> sandbox', meta: 'image a91c4e · workspace ~/work/orbit-api' },
+        { time: '09:41:03', kind: 'plan.ready', title: 'Planned four steps', meta: 'inspect · reproduce · patch · verify', details: { label: 'plan', code: '1  read src/billing/webhook.py\n2  reproduce a duplicate delivery\n3  add an idempotency guard\n4  run tests/billing/test_webhook.py' } },
+        { time: '09:41:08', kind: 'read_file', title: 'Read <code>src/billing/webhook.py</code>', meta: '148 lines · 4.2 KB', details: { label: 'first 8 lines', code: 'import hashlib\nimport json\nimport time\n\nfrom fastapi import Request, Response\nfrom billing.audit import audit\n\n_DELIVERY_KEYS = Store("webhook.delivery")' } },
+        { time: '09:41:19', kind: 'search', title: 'Found the duplicate path', meta: '3 matches for "delivery" · src/billing/webhook.py', details: { label: 'matches', code: '42:  if event["type"] == "invoice.paid":\n43:      _send_receipt(event)\n67:  def _send_receipt(event: dict) -> None:' } },
+        { time: '09:41:31', kind: 'code', title: 'Wrote an idempotency guard', meta: 'python · 14 lines', details: { label: 'sandbox execution', code: 'def _delivery_key(event: dict) -> str:\n    payload = json.dumps(event, sort_keys=True)\n    return hashlib.sha256(payload.encode()).hexdigest()\n\n# guard before side effects\nkey = _delivery_key(event)\nif _already_delivered(key):\n    return Response(status_code=200)' } },
+        { time: '09:41:44', kind: 'test', title: 'Ran the webhook test file', meta: 'pytest -q tests/billing/test_webhook.py · 12 passed in 1.82s', ok: true, details: { label: 'pytest output', code: '................                                                        [100%]\n12 passed in 1.82s' } },
+        { time: '09:41:52', kind: 'lint', title: 'ruff check passed', meta: 'no findings in 1 changed file', ok: true },
+        { time: '09:42:07', kind: 'diff.proposed', title: 'Proposed one file change', meta: 'src/billing/webhook.py · +24 −3 · sha 9d07aa', details: { label: 'diff summary', code: 'src/billing/webhook.py | 27 +++++++++++++++++++++++----\n1 file changed, 24 insertions(+), 3 deletions(-)' } },
+        { time: '09:42:07', kind: 'approval.requested', gate: true },
+        { time: '09:42:11', kind: 'sandbox.held', title: 'Sandbox held at the gate', meta: 'no commands have run since 09:42:11', current: true, sub: true }
+      ],
+      consoleHtml: ''
+    },
+    run_2b9c: {
+      id: 'run_2b9c', short: '2b9c', project: 'orbit-api',
+      objective: 'Drop 12 legacy snapshot files',
+      tier: 'elevated', model: 'claude-opus-4', elapsed: '06:48', cost: '$0.91',
+      status: 'running', statusText: 'Running', started: '09:35:24',
+      tools: 4, approvals: 0, changesCount: 0,
+      gate: null,
+      consoleText: '09:35:24  run.started   elevated image 02b7f1\n09:35:31  read_file     src/session/store.py  312 lines\n09:35:52  search        "snapshot" in tests/  8 matches\n09:36:18  code          removal plan for 12 files\n09:36:44  pytest        tests/session/test_store.py  19 passed\n09:37:02  running       validating migration note\n',
+      trace: [
+        { time: '09:35:24', kind: 'run.started', title: 'Run started in the <code>elevated</code> sandbox', meta: 'image 02b7f1 · workspace ~/work/orbit-api · 2 extra paths' },
+        { time: '09:35:31', kind: 'read_file', title: 'Read <code>src/session/store.py</code>', meta: '312 lines · 9.1 KB' },
+        { time: '09:35:52', kind: 'search', title: 'Found the snapshot footprint', meta: '8 matches in tests/session · 12 files referenced', details: { label: 'plan', code: 'inspect 12 legacy snapshots\nverify no runtime references\nremove fixtures and migration note' } },
+        { time: '09:36:18', kind: 'code', title: 'Prepared the removal plan', meta: '12 files · tests still reference 3' },
+        { time: '09:36:44', kind: 'test', title: 'Ran the session store tests', meta: 'pytest -q tests/session/test_store.py · 19 passed in 2.10s', ok: true },
+        { time: '09:37:02', kind: 'sandbox.exec', title: 'Checking migration notes', meta: 'no commands outside the workspace', current: true, sub: true }
+      ],
+      consoleHtml: ''
+    },
+    run_6d1e: {
+      id: 'run_6d1e', short: '6d1e', project: 'orbit-api',
+      objective: 'Fix flaky billing snapshot test',
+      tier: 'restricted', model: 'claude-sonnet-4', elapsed: '02:03', cost: '$0.14',
+      status: 'done', statusText: 'Done', started: '08:52:10',
+      tools: 3, approvals: 0, changesCount: 0,
+      gate: null,
+      consoleText: '08:52:10  run.started   restricted image a91c4e\n08:52:21  pytest        tests/billing/test_snapshot.py  1 failed\n08:52:49  code          pinned the clock fixture\n08:53:04  pytest        tests/billing/test_snapshot.py  1 passed\n08:53:13  done          no diff required\n',
+      trace: [
+        { time: '08:52:10', kind: 'run.started', title: 'Run started in the <code>restricted</code> sandbox', meta: 'image a91c4e · workspace ~/work/orbit-api' },
+        { time: '08:52:21', kind: 'test', title: 'Reproduced the flaky snapshot test', meta: '1 failed in 0.74s', error: true },
+        { time: '08:52:49', kind: 'code', title: 'Pinned the clock fixture', meta: 'tests/billing/conftest.py · 2 lines' },
+        { time: '08:53:04', kind: 'test', title: 'Test passes with the fixture', meta: '1 passed in 0.63s', ok: true },
+        { time: '08:53:13', kind: 'run.completed', title: 'Run completed', meta: 'no diff · 1 test fixed · $0.14 spent', ok: true }
+      ],
+      consoleHtml: ''
+    },
+    run_04aa: {
+      id: 'run_04aa', short: '04aa', project: 'orbit-api',
+      objective: 'Migrate the audit chain to v2 with rotation',
+      tier: 'full_access', model: 'claude-opus-4', elapsed: '00:00', cost: '$0.00',
+      status: 'queued', statusText: 'Queued · #1', started: '—',
+      tools: 0, approvals: 0, changesCount: 0,
+      gate: null, consoleText: 'Waiting for a runner. No commands have run.\n',
+      trace: []
+    },
+    run_9c31: {
+      id: 'run_9c31', short: '9c31', project: 'orbit-api',
+      objective: 'Document the tier policy matrix',
+      tier: 'restricted', model: 'claude-sonnet-4', elapsed: '01:12', cost: '$0.02',
+      status: 'returned', statusText: 'Returned', started: '09:21:44',
+      tools: 2, approvals: 0, changesCount: 0,
+      gate: null,
+      consoleText: '09:21:44  run.started   restricted image a91c4e\n09:21:51  read_file     docs/security.md  84 lines\n09:22:08  note          policy matrix already current\n09:22:56  returned      no change proposed\n',
+      trace: [
+        { time: '09:21:44', kind: 'run.started', title: 'Run started in the <code>restricted</code> sandbox', meta: 'image a91c4e · workspace ~/work/orbit-api' },
+        { time: '09:21:51', kind: 'read_file', title: 'Read <code>docs/security.md</code>', meta: '84 lines · 3.7 KB' },
+        { time: '09:22:08', kind: 'note', title: 'The policy matrix is already current', meta: 'no safe change to propose' },
+        { time: '09:22:56', kind: 'returned', title: 'Returned without a diff', meta: 'run_9c31 · $0.02 spent', bad: true }
+      ],
+      consoleHtml: ''
+    }
+  };
+
+  const overlayKinds = ['sessions', 'launch', 'palette', 'audit', 'usage', 'context', 'project', 'help'];
+  const views = ['trace', 'changes', 'console', 'files', 'queue'];
+  const state = {
+    currentRun: 'run_7f3a',
+    view: 'trace',
+    sessionFilter: 'all',
+    sessionQuery: '',
+    paletteIndex: 0,
+    auditSeq: 1204,
+    auditEntries: [
+      { seq: 1204, action: 'approval.requested', detail: 'sha 9d07aa · src/billing/webhook.py', actor: 'run_7f3a', time: '09:42:07' },
+      { seq: 1203, action: 'diff.proposed', detail: '+24 −3 · src/billing/webhook.py', actor: 'run_7f3a', time: '09:42:07' },
+      { seq: 1202, action: 'tool.completed', detail: 'pytest · 12 passed', actor: 'run_7f3a', time: '09:41:44' },
+      { seq: 1201, action: 'tool.completed', detail: 'ruff · no findings', actor: 'run_7f3a', time: '09:41:52' },
+      { seq: 1200, action: 'policy.check', detail: 'restricted · image a91c4e', actor: 'run_7f3a', time: '09:41:02' },
+      { seq: 1199, action: 'approval.granted', detail: 'sha 4b21c9 · src/session/store.py', actor: 'you', time: '09:14:38' }
+    ],
+    drainOn: false,
+    lastFocus: null
+  };
+
+  const el = {
+    app: $('[data-app]'),
+    railRuns: $('#rail-runs'),
+    queueBadge: $('#queue-badge'),
+    railChain: $('#rail-chain'),
+    needsBtn: $('#needs-btn'),
+    needsCount: $('#needs-count'),
+    needsLabel: $('#needs-label'),
+    statusPill: $('#status-pill'),
+    crumbRun: $('#crumb-run'),
+    objective: $('#objective'),
+    tierTag: $('#tier-tag'),
+    model: $('#model'),
+    workspace: $('#workspace'),
+    elapsed: $('#elapsed'),
+    cost: $('#cost'),
+    traceList: $('#trace-list'),
+    traceCount: $('#trace-count'),
+    changesCount: $('#changes-count'),
+    sumEvents: $('#sum-events'),
+    sumTools: $('#sum-tools'),
+    sumApprovals: $('#sum-approvals'),
+    sumStarted: $('#sum-started'),
+    nowLine: $('#now-line'),
+    gateDock: $('#gate-dock'),
+    gateTitle: $('#gate-title'),
+    gateSub: $('#gate-sub'),
+    gateApprove: $('#gate-approve'),
+    gateHold: $('#gate-hold'),
+    gateReject: $('#gate-reject'),
+    gateNote: $('#gate-note'),
+    runShell: $('#run-shell'),
+    viewQueue: $('#view-queue'),
+    stageBody: $('#stage-body'),
+    composerInput: $('#composer-input'),
+    composerTier: $('#composer-tier'),
+    composerModel: $('#composer-model'),
+    sessions: $('#sessions'),
+    launch: $('#launch'),
+    palette: $('#palette'),
+    drawer: $('#drawer'),
+    scrim: $('#scrim'),
+    sessionList: $('#session-list'),
+    sessionSearch: $('#session-search'),
+    sessionFilters: $('#session-filters'),
+    launchTask: $('#launch-task'),
+    launchModel: $('#launch-model'),
+    tierNote: $('#tier-note'),
+    toast: $('#toast'),
+    paletteSearch: $('#palette-search'),
+    paletteList: $('#palette-list'),
+    drawerTitle: $('#drawer-title'),
+    drawerSub: $('#drawer-sub'),
+    drawerBody: $('#drawer-body'),
+    consoleBox: $('#view-console .console-box'),
+    consoleSub: $('#view-console .console-head p')
+  };
+
+  const defaultConsoleHtml = el.consoleBox ? el.consoleBox.innerHTML : '';
+  let toastTimer = null;
+  let selectedTier = 'restricted';
+
+  const tierNotes = {
+    restricted: '<b>Restricted is the default.</b> The run can read and write only inside ~/work/orbit-api. A tier change never happens mid-run.',
+    elevated: '<b>Elevated is opt-in.</b> Adds the named extra paths and allowlisted hosts for this run only. Every extra mount is listed in the trace.',
+    full_access: '<b>Full access is explicit and audited.</b> Broader host reach for specialist work. The gate still applies to every proposed diff.'
+  };
+
+  const runList = () => Object.values(RUNS);
+
+  function toast(message) {
+    if (!el.toast) return;
+    el.toast.innerHTML = message;
+    el.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.toast.classList.remove('show'), 3400);
+  }
+
+  function statusClass(run) {
+    return run.status;
+  }
+
+  function updateNeeds() {
+    const awaiting = runList().filter((run) => run.status === 'awaiting').length;
+    el.needsCount.textContent = String(awaiting);
+    el.needsLabel.textContent = awaiting ? 'needs you' : 'clear';
+    el.needsBtn.classList.toggle('is-clear', awaiting === 0);
+    const dot = el.needsBtn.querySelector('.dot');
+    if (dot) dot.style.background = awaiting ? 'var(--amber-bright)' : '#5e6d66';
+  }
+
+  function renderRail() {
+    el.railRuns.innerHTML = runList().map((run) => {
+      const active = run.id === state.currentRun;
+      return '<button class="run-chip' + (active ? ' is-active' : '') + '" type="button" data-run="' + run.id + '" data-status="' + statusClass(run) + '" data-tip="' + esc(run.id + ' · ' + run.objective) + '" aria-label="' + esc(run.id + ' · ' + run.objective + ' · ' + run.statusText) + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
+        '<span class="chip-id">' + run.short + '</span><span class="chip-dot"></span></button>';
+    }).join('');
+    el.queueBadge.textContent = state.drainOn ? '0' : '1';
+    el.queueBadge.hidden = state.drainOn;
+    el.railChain.textContent = state.auditSeq >= 1000 ? (state.auditSeq / 1000).toFixed(1) + 'k' : String(state.auditSeq);
+    updateNeeds();
+  }
+
+  function traceSummary(run) {
+    el.sumEvents.textContent = run.trace.length;
+    el.sumTools.textContent = run.tools;
+    el.sumApprovals.textContent = run.approvals;
+    el.sumStarted.textContent = run.started === '—' ? 'not started' : 'started ' + run.started;
+    el.traceCount.textContent = run.trace.length;
+  }
+
+  function gateRow(run) {
+    const gate = run.gate || {};
+    if (gate.approved) {
+      return '<li class="trace-row gate approved"><time>09:42:40</time><span class="trace-node"><i></i></span><div class="trace-content">' +
+        '<div class="trace-kicker"><span class="kind ok">approval.granted</span><span class="mono">09:42:40</span></div>' +
+        '<div class="trace-title">Signature recorded · run resumed</div>' +
+        '<div class="trace-meta">sha 9d07aa · audit 1,205 · approval bound to this diff</div>' +
+        '</div></li>';
+    }
+    if (gate.rejected) {
+      return '<li class="trace-row gate rejected"><time>09:42:40</time><span class="trace-node"><i></i></span><div class="trace-content">' +
+        '<div class="trace-kicker"><span class="kind bad">approval.rejected</span><span class="mono">hold</span></div>' +
+        '<div class="trace-title">Change rejected · run returned</div>' +
+        '<div class="trace-meta">sha 9d07aa · no change released · audit 1,205</div>' +
+        '</div></li>';
+    }
+    return '<li class="trace-row gate"><time>09:42:07</time><span class="trace-node"><i></i></span><div class="trace-content">' +
+      '<div class="trace-kicker"><span class="kind gate">approval.requested</span><span class="mono">hold</span></div>' +
+      '<div class="trace-title">' + esc(gate.title || 'One change is waiting for your signature.') + '</div>' +
+      '<div class="trace-meta">' + esc(gate.sub || '') + '</div>' +
+      '<div class="trace-actions"><button class="btn btn-sm btn-primary" type="button" data-view="changes">Review change</button><button class="btn btn-sm" type="button" data-toast="Held. The sandbox stays alive at the gate.">Hold</button></div>' +
+      '</div></li>';
+  }
+
+  function traceRow(event) {
+    if (event.gate) return gateRow(RUNS[state.currentRun]);
+    const classes = ['trace-row'];
+    if (event.sub) classes.push('sub');
+    if (event.current) classes.push('current');
+    if (event.error) classes.push('error');
+    const detail = event.details ? '<details class="trace-details"><summary>' + esc(event.details.label) + '</summary><pre class="codebox">' + esc(event.details.code) + '</pre></details>' : '';
+    const actions = event.kind === 'diff.proposed' && RUNS[state.currentRun].changesCount ? '<div class="trace-actions"><button class="btn btn-sm" type="button" data-view="changes">Open diff</button></div>' : '';
+    return '<li class="' + classes.join(' ') + '"><time>' + esc(event.time) + '</time><span class="trace-node"><i></i></span><div class="trace-content">' +
+      '<div class="trace-kicker"><span class="kind ' + (event.ok ? 'ok' : event.bad ? 'bad' : '') + '">' + esc(event.kind) + '</span><span class="mono">' + (event.current ? 'now' : '') + '</span></div>' +
+      '<div class="trace-title">' + event.title + '</div>' +
+      '<div class="trace-meta">' + event.meta + '</div>' + detail + actions + '</div></li>';
+  }
+
+  function renderTrace(run) {
+    traceSummary(run);
+    el.traceList.innerHTML = run.trace.length ? run.trace.map(traceRow).join('') : queuedRow();
+    if (el.nowLine) {
+      el.nowLine.className = 'now-line';
+      if (run.status === 'awaiting') {
+        el.nowLine.innerHTML = '<span>waiting on you</span><span class="bar"></span><b>' + run.elapsed + '</b>';
+      } else if (run.status === 'running') {
+        el.nowLine.classList.add('running');
+        el.nowLine.innerHTML = '<span>run in progress</span><span class="bar"></span><b>' + run.elapsed + '</b>';
+      } else if (run.status === 'done') {
+        el.nowLine.classList.add('done');
+        el.nowLine.innerHTML = '<span>run complete · audit ' + state.auditSeq.toLocaleString() + '</span><span class="bar"></span><b>done</b>';
+      } else if (run.status === 'queued') {
+        el.nowLine.classList.add('queued');
+        el.nowLine.innerHTML = '<span>queued · waiting for a slot</span><span class="bar"></span><b>#1</b>';
+      } else {
+        el.nowLine.classList.add('returned');
+        el.nowLine.innerHTML = '<span>returned to you</span><span class="bar"></span><b>no release</b>';
+      }
+    }
+  }
+
+  function queuedRow() {
+    return '<li class="trace-queued"><span class="trace-queued-mark">' + icon('queue', 18) + '</span><div><div class="trace-title">Queued behind run_7f3a</div><div class="trace-meta">No sandbox has started. Draining the queue is manual.</div></div></li>';
+  }
+
+  function renderGate(run) {
+    const gate = run.gate;
+    const show = Boolean(gate && !gate.approved && !gate.rejected && run.status === 'awaiting');
+    el.gateDock.hidden = !show;
+    if (!show) return;
+    el.gateDock.classList.remove('approved');
+    el.gateTitle.textContent = gate.title;
+    el.gateSub.textContent = gate.sub;
+    el.gateApprove.textContent = state.view === 'changes' ? 'Approve change' : 'Review change';
+    el.gateNote.textContent = 'Approval releases this diff once.';
+  }
+
+  function applyRun(id) {
+    const run = RUNS[id];
+    if (!run) return;
+    state.currentRun = id;
+    el.crumbRun.textContent = run.id;
+    el.statusPill.className = 'status-pill ' + run.status;
+    el.statusPill.innerHTML = '<i></i><span id="status-text">' + esc(run.statusText) + '</span>';
+    el.objective.textContent = run.objective;
+    el.tierTag.textContent = run.tier;
+    el.tierTag.dataset.tier = run.tier;
+    el.model.textContent = run.model;
+    el.elapsed.textContent = run.elapsed;
+    el.cost.textContent = run.cost;
+    el.changesCount.textContent = run.changesCount || '';
+    el.changesCount.hidden = !run.changesCount;
+    el.changesCount.classList.toggle('alert', Boolean(run.changesCount));
+    const changesBtn = $('[data-view="changes"]');
+    if (changesBtn) {
+      changesBtn.disabled = !run.changesCount;
+      changesBtn.title = run.changesCount ? 'Review the proposed diff' : 'No proposed changes for this run';
+    }
+    renderTrace(run);
+    renderGate(run);
+    renderRail();
+    renderSessions();
+    updateConsole(run);
+    if (state.view === 'changes' && !run.changesCount) setView('trace', false);
+    document.title = 'smolcode · ' + run.objective;
+  }
+
+  function updateConsole(run) {
+    if (!el.consoleBox) return;
+    if (run.id === 'run_7f3a' && defaultConsoleHtml) {
+      el.consoleBox.innerHTML = defaultConsoleHtml;
+    } else {
+      el.consoleBox.textContent = run.consoleText || 'No console capture for this run yet.';
+    }
+    if (el.consoleSub) el.consoleSub.textContent = run.id + ' · ' + run.tier + ' image ' + (run.tier === 'restricted' ? 'a91c4e' : run.tier === 'elevated' ? '02b7f1' : '7ce0aa') + ' · read-only capture';
+  }
+
+  function setView(view, updateHash = true) {
+    const run = RUNS[state.currentRun];
+    if (view === 'changes' && !run.changesCount) view = 'trace';
+    state.view = view;
+    const isQueue = view === 'queue';
+    el.runShell.hidden = isQueue;
+    el.viewQueue.hidden = !isQueue;
+    if (!isQueue) {
+      $$('.stage-modes [data-view]').forEach((button) => button.classList.toggle('on', button.dataset.view === view));
+      $$('[data-view-panel]').forEach((panel) => {
+        const visible = panel.dataset.viewPanel === view;
+        panel.hidden = !visible;
+        panel.classList.remove('view-enter');
+        if (visible) requestAnimationFrame(() => panel.classList.add('view-enter'));
+      });
+      renderGate(run);
+      el.stageBody.scrollTop = 0;
+    }
+    if (updateHash) history.replaceState(null, '', '#' + view);
+  }
+
+  function renderSessions() {
+    if (!el.sessionList) return;
+    const query = state.sessionQuery.trim().toLowerCase();
+    const filter = state.sessionFilter;
+    const matches = runList().filter((run) => {
+      const filterOk = filter === 'all' || run.status === filter;
+      const haystack = (run.id + ' ' + run.objective + ' ' + run.model + ' ' + run.tier).toLowerCase();
+      return filterOk && (!query || haystack.includes(query));
+    });
+    if (!matches.length) {
+      el.sessionList.innerHTML = '<div class="palette-empty">No run matches that filter.</div>';
+      return;
+    }
+    el.sessionList.innerHTML = '<div class="session-group">orbit-api · ' + matches.length + ' shown</div>' + matches.map((run) => {
+      const active = run.id === state.currentRun;
+      const alert = run.status === 'awaiting';
+      return '<button class="session-row' + (active ? ' on' : '') + '" type="button" data-run="' + run.id + '" data-status="' + statusClass(run) + '">' +
+        '<span class="sdot"></span><span><span class="stitle">' + esc(run.objective) + '</span>' +
+        '<span class="smeta"><span>' + run.id + '</span><span>' + run.tier + '</span><span>' + run.model + '</span>' + (alert ? '<span class="alert">needs you</span>' : '') + '</span></span></button>';
+    }).join('');
+  }
+
+  function openOverlay(kind, remember = true) {
+    if (remember) state.lastFocus = document.activeElement;
+    closeAllOverlays(false);
+    if (kind === 'sessions') {
+      renderSessions();
+      el.sessions.hidden = false;
+      el.scrim.hidden = false;
+      el.sessionSearch.value = state.sessionQuery;
+      setTimeout(() => el.sessionSearch.focus(), 20);
+    } else if (kind === 'launch') {
+      el.launch.hidden = false;
+      el.scrim.hidden = false;
+      setTimeout(() => el.launchTask.focus(), 20);
+    } else if (kind === 'palette') {
+      el.palette.hidden = false;
+      el.scrim.hidden = false;
+      el.paletteSearch.value = '';
+      state.paletteIndex = 0;
+      renderPalette('');
+      setTimeout(() => el.paletteSearch.focus(), 20);
+    } else {
+      renderDrawer(kind);
+      el.drawer.hidden = false;
+    }
+    history.replaceState(null, '', '#' + kind);
+  }
+
+  function closeAllOverlays(updateHash = true) {
+    [el.sessions, el.launch, el.palette, el.drawer].forEach((node) => { if (node) node.hidden = true; });
+    if (el.scrim) el.scrim.hidden = true;
+    if (updateHash) history.replaceState(null, '', '#' + state.view);
+    if (state.lastFocus && typeof state.lastFocus.focus === 'function') {
+      const last = state.lastFocus;
+      state.lastFocus = null;
+      setTimeout(() => last.focus(), 20);
+    }
+  }
+
+  function selectRun(id) {
+    if (!RUNS[id]) return;
+    const wasQueue = state.view === 'queue';
+    state.currentRun = id;
+    closeAllOverlays(false);
+    if (wasQueue) {
+      state.view = 'trace';
+      setView('trace', true);
+    } else {
+      applyRun(id);
+      if (state.view === 'changes' && !RUNS[id].changesCount) setView('trace', true);
+      else history.replaceState(null, '', '#' + state.view);
+    }
+    applyRun(id);
+    toast('<b>' + RUNS[id].id + '</b> · ' + esc(RUNS[id].objective));
+  }
+
+  function approveGate() {
+    const run = RUNS[state.currentRun];
+    if (!run.gate || run.gate.approved || run.gate.rejected) return;
+    if (state.view !== 'changes') {
+      setView('changes');
+      toast('Review the diff, then approve. The gate stays open.');
+      return;
+    }
+    run.gate.approved = true;
+    run.status = 'done';
+    run.statusText = 'Done';
+    run.approvals = 0;
+    run.changesCount = 0;
+    run.elapsed = '04:41';
+    run.trace = run.trace.map((event) => event.current ? Object.assign({}, event, { current: false }) : event);
+    run.trace.push({ time: '09:42:40', kind: 'approval.granted', title: 'Signature recorded · run resumed', meta: 'sha 9d07aa · audit 1,205 · approval bound to this diff', ok: true });
+    run.trace.push({ time: '09:42:52', kind: 'run.completed', title: 'Run completed', meta: '1 file changed · 12 tests passed · $0.41 spent', ok: true });
+    state.auditSeq = 1205;
+    state.auditEntries.unshift({ seq: 1205, action: 'approval.granted', detail: 'sha 9d07aa · src/billing/webhook.py', actor: 'you', time: '09:42:40' });
+    applyRun(state.currentRun);
+    setView('trace', true);
+    toast('<b>Approved</b> · run_7f3a resumed · audit 1,205');
+  }
+
+  function rejectGate() {
+    const run = RUNS[state.currentRun];
+    if (!run.gate || run.gate.approved || run.gate.rejected) return;
+    run.gate.rejected = true;
+    run.status = 'returned';
+    run.statusText = 'Returned';
+    run.approvals = 0;
+    run.changesCount = 0;
+    run.trace = run.trace.map((event) => event.current ? Object.assign({}, event, { current: false }) : event);
+    run.trace.push({ time: '09:42:40', kind: 'approval.rejected', title: 'Change rejected · run returned', meta: 'sha 9d07aa · no change released · audit 1,205', bad: true });
+    state.auditSeq = 1205;
+    state.auditEntries.unshift({ seq: 1205, action: 'approval.rejected', detail: 'sha 9d07aa · src/billing/webhook.py', actor: 'you', time: '09:42:40' });
+    applyRun(state.currentRun);
+    setView('trace', true);
+    toast('<b>Rejected</b> · no change released · audit 1,205');
+  }
+
+  function renderPalette(query) {
+    const q = query.trim().toLowerCase();
+    const commands = [
+      { group: 'Run', label: 'Open runs', meta: 'All sessions in orbit-api', short: 'S', action: () => openOverlay('sessions') },
+      { group: 'Run', label: 'New run', meta: 'Name the outcome, choose a tier', short: 'N', action: () => openOverlay('launch') },
+      { group: 'Run', label: 'Review pending change', meta: 'run_7f3a · sha 9d07aa', short: 'A', action: () => setView('changes') },
+      { group: 'Run', label: 'Copy run id', meta: 'run_7f3a', short: '⌘⇧C', action: () => copyRunId() },
+      { group: 'View', label: 'Open queue', meta: '1 waiting', short: 'Q', action: () => setView('queue') },
+      { group: 'View', label: 'Open workspace files', meta: '~/work/orbit-api', short: 'F', action: () => setView('files') },
+      { group: 'View', label: 'Open audit chain', meta: state.auditSeq.toLocaleString() + ' entries', short: 'G', action: () => openOverlay('audit') },
+      { group: 'View', label: 'Show usage and budget', meta: '$3.84 / $12.00', short: '', action: () => openOverlay('usage') },
+      { group: 'System', label: 'Change clearance', meta: 'restricted is the default', short: '', action: () => openOverlay('launch') },
+      { group: 'System', label: 'Keyboard shortcuts', meta: 'Every action has a key path', short: '?', action: () => openOverlay('help') }
+    ];
+    const visible = commands.filter((command) => (command.label + ' ' + command.meta + ' ' + command.group).toLowerCase().includes(q));
+    state.paletteCommands = visible;
+    if (!visible.length) {
+      el.paletteList.innerHTML = '<div class="palette-empty">No command matches “' + esc(query) + '”.</div>';
+      return;
+    }
+    let html = '';
+    let lastGroup = '';
+    visible.forEach((command, index) => {
+      if (command.group !== lastGroup) {
+        html += '<div class="palette-group">' + command.group + '</div>';
+        lastGroup = command.group;
+      }
+      html += '<button class="palette-item' + (index === state.paletteIndex ? ' on' : '') + '" type="button" data-cmd-index="' + index + '">' +
+        icon('arrow', 13) + '<span>' + esc(command.label) + '</span><span class="short">' + (command.short ? esc(command.short) : '') + '</span></button>';
+    });
+    el.paletteList.innerHTML = html;
+  }
+
+  function executeCommand(command) {
+    if (!command) return;
+    closeAllOverlays(false);
+    command.action();
+  }
+
+  function copyRunId() {
+    const id = RUNS[state.currentRun].id;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(id).then(() => toast('Copied <b>' + id + '</b>.')).catch(() => toast('Run id: <b>' + id + '</b>'));
+    } else {
+      toast('Run id: <b>' + id + '</b>');
+    }
+  }
+
+  function renderDrawer(kind) {
+    const run = RUNS[state.currentRun];
+    el.drawer.className = 'drawer';
+    if (kind === 'audit') {
+      el.drawerTitle.textContent = 'Audit chain';
+      el.drawerSub.textContent = state.auditSeq.toLocaleString() + ' entries · verified';
+      el.drawerBody.innerHTML = '<div class="audit-summary"><div><div class="big">' + state.auditSeq.toLocaleString() + '</div><div class="lbl">entries<br>hash-chained</div></div><span class="ok">' + icon('shield', 14) + 'verified</span></div>' +
+        '<div class="chain">' + state.auditEntries.map((entry) => '<div class="chain-row"><span class="seq">' + entry.seq + '</span><span class="what"><b>' + esc(entry.action) + '</b><br>' + esc(entry.detail) + '</span><span class="when">' + entry.time + '</span><span class="hash">sha256: ' + esc((entry.seq * 2654435761 >>> 0).toString(16)) + 'c4e…</span></div>').join('') + '</div>' +
+        '<div class="audit-foot"><button class="btn btn-sm" type="button" id="verify-chain">Verify chain</button><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">last checked 09:42:11</span></div>';
+    } else if (kind === 'usage') {
+      el.drawerTitle.textContent = 'Usage';
+      el.drawerSub.textContent = 'today · orbit-api';
+      el.drawerBody.innerHTML = '<div class="context-block"><h3>Budget</h3><div class="kv"><span>Spent today</span><b>$3.84</b></div><div class="kv"><span>Daily cap</span><b>$12.00</b></div><div class="usage-bar"><i style="width:32%"></i></div><div class="kv"><span>Remaining</span><b>$8.16</b></div></div>' +
+        '<div class="context-block"><h3>Runs</h3><div class="kv"><span>Completed</span><b>3</b></div><div class="kv"><span>Awaiting approval</span><b>1</b></div><div class="kv"><span>Queued</span><b>1</b></div></div>' +
+        '<div class="context-block"><h3>Providers</h3><div class="kv"><span>anthropic · sonnet-4</span><b>$2.91</b></div><div class="kv"><span>anthropic · opus-4</span><b>$0.93</b></div></div>' +
+        '<div class="context-block"><h3>Limits</h3><div class="kv"><span>Max spend per run</span><b>$2.00</b></div><div class="kv"><span>Max steps per run</span><b>30</b></div></div>';
+    } else if (kind === 'context') {
+      el.drawerTitle.textContent = 'Context';
+      el.drawerSub.textContent = run.id + ' · ' + run.tier;
+      el.drawerBody.innerHTML = '<div class="context-block"><h3>Workspace</h3><div class="kv"><span>Project</span><b>orbit-api</b></div><div class="kv"><span>Path</span><b>~/work/orbit-api</b></div><div class="kv"><span>Daemon</span><b>127.0.0.1:8765</b></div></div>' +
+        '<div class="context-block"><h3>Clearance</h3><div class="kv"><span>Tier</span><b>' + run.tier + '</b></div><div class="kv"><span>Image</span><b>' + (run.tier === 'restricted' ? 'a91c4e' : run.tier === 'elevated' ? '02b7f1' : '7ce0aa') + '</b></div><div class="kv"><span>Network</span><b>' + (run.tier === 'restricted' ? 'none' : 'allowlisted') + '</b></div><div class="kv"><span>Model</span><b>' + run.model + '</b></div></div>' +
+        '<div class="context-block"><h3>Attachments</h3><div class="kv"><span>Uploads</span><b>~/.local/share/smolcode/uploads</b></div><div class="kv"><span>Files</span><b>none for this run</b></div></div>' +
+        '<div class="context-block"><h3>Subagents</h3><div class="subagent"><span class="dot"></span>No subagents running</div></div>' +
+        '<div class="context-block"><h3>Approval</h3><div class="kv"><span>Bound to</span><b>sha 9d07aa</b></div><div class="kv"><span>Audit entry</span><b>' + state.auditSeq.toLocaleString() + '</b></div></div>';
+    } else if (kind === 'project') {
+      el.drawerTitle.textContent = 'Projects';
+      el.drawerSub.textContent = 'local workspaces';
+      el.drawerBody.innerHTML = '<div class="context-block"><h3>Current</h3><div class="kv"><span>orbit-api</span><b>~/work/orbit-api</b></div></div>' +
+        '<div class="context-block"><h3>Recent</h3><div class="kv"><span>smolcode</span><b>~/work/smolcode</b></div><div class="kv"><span>design-lab</span><b>~/work/design-lab</b></div></div>' +
+        '<div class="context-block"><button class="btn btn-sm" type="button" data-toast="Project picker is outside this prototype.">Add project</button></div>';
+    } else {
+      el.drawerTitle.textContent = 'Shortcuts';
+      el.drawerSub.textContent = 'keyboard first';
+      el.drawerBody.innerHTML = '<div class="context-block"><h3>Navigate</h3><ul class="mini-list"><li><span>Command palette</span><span class="mono">⌘K</span></li><li><span>Runs</span><span class="mono">S</span></li><li><span>New run</span><span class="mono">N</span></li><li><span>Trace / changes / console / files</span><span class="mono">1–4</span></li><li><span>Queue</span><span class="mono">Q</span></li><li><span>Audit chain</span><span class="mono">G</span></li></ul></div>' +
+        '<div class="context-block"><h3>Act</h3><ul class="mini-list"><li><span>Review change</span><span class="mono">A</span></li><li><span>Start from composer</span><span class="mono">⌘↵</span></li><li><span>Close panel</span><span class="mono">Esc</span></li></ul></div>' +
+        '<div class="context-block"><h3>Safety</h3><p style="color:var(--muted);font-size:12px;line-height:1.5">Approval is bound to one diff. A new change needs a new signature. The queue never drains itself.</p></div>';
+    }
+  }
+
+  function applyHash() {
+    const kind = location.hash.replace(/^#/, '');
+    if (overlayKinds.includes(kind)) {
+      openOverlay(kind, false);
+      return;
+    }
+    closeAllOverlays(false);
+    const view = kind === 'review' ? 'changes' : views.includes(kind) ? kind : 'trace';
+    setView(view, false);
+  }
+
+  function updateLaunchTier(tier) {
+    selectedTier = tier;
+    $$('.tier-option').forEach((option) => {
+      const on = option.dataset.tierChoice === tier;
+      option.classList.toggle('on', on);
+      option.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    el.tierNote.innerHTML = icon('shield', 14) + '<span>' + tierNotes[tier] + '</span>';
+    el.composerTier.textContent = tier;
+  }
+
+  function startRun() {
+    const text = el.launchTask.value.trim();
+    if (!text) {
+      el.launchTask.focus();
+      toast('Name the outcome first. The run needs a target.');
+      return;
+    }
+    const model = el.launchModel.value;
+    closeAllOverlays();
+    el.composerTier.textContent = selectedTier;
+    el.composerModel.textContent = model.replace('claude-', '');
+    toast('<b>Queued</b> · run_1a2b · ' + selectedTier + ' · ' + model + ' — behind run_7f3a');
+  }
+
+  function toggleDrain() {
+    state.drainOn = !state.drainOn;
+    const button = $('#drain-btn');
+    if (button) button.textContent = state.drainOn ? 'Stop drain' : 'Drain queue';
+    el.queueBadge.hidden = state.drainOn;
+    toast(state.drainOn ? '<b>Draining</b> · queued runs will start one at a time.' : '<b>Drain off</b> · queued runs wait for you.');
+  }
+
+  // ---------- events ----------
+  document.addEventListener('click', (event) => {
+    const open = event.target.closest('[data-open]');
+    if (open) {
+      event.preventDefault();
+      openOverlay(open.dataset.open);
+      return;
+    }
+
+    const close = event.target.closest('[data-close]');
+    if (close) {
+      event.preventDefault();
+      closeAllOverlays();
+      return;
+    }
+
+    const runButton = event.target.closest('[data-run]');
+    if (runButton) {
+      event.preventDefault();
+      selectRun(runButton.dataset.run);
+      return;
+    }
+
+    const viewButton = event.target.closest('[data-view]');
+    if (viewButton) {
+      event.preventDefault();
+      setView(viewButton.dataset.view);
+      return;
+    }
+
+    const routeButton = event.target.closest('[data-route]');
+    if (routeButton) {
+      event.preventDefault();
+      setView(routeButton.dataset.route);
+      return;
+    }
+
+    const filter = event.target.closest('[data-filter]');
+    if (filter) {
+      state.sessionFilter = filter.dataset.filter;
+      $$('.filter', el.sessionFilters).forEach((button) => button.classList.toggle('on', button === filter));
+      renderSessions();
+      return;
+    }
+
+    const tier = event.target.closest('[data-tier-choice]');
+    if (tier) {
+      updateLaunchTier(tier.dataset.tierChoice);
+      return;
+    }
+
+    const commandButton = event.target.closest('[data-cmd-index]');
+    if (commandButton) {
+      const command = state.paletteCommands[Number(commandButton.dataset.cmdIndex)];
+      executeCommand(command);
+      return;
+    }
+
+    const toastButton = event.target.closest('[data-toast]');
+    if (toastButton) {
+      event.preventDefault();
+      toast(toastButton.dataset.toast);
+      return;
+    }
+
+    if (event.target.closest('#gate-approve')) {
+      event.preventDefault();
+      approveGate();
+      return;
+    }
+    if (event.target.closest('#gate-hold')) {
+      event.preventDefault();
+      toast('Held. The sandbox stays alive at 09:42:11.');
+      return;
+    }
+    if (event.target.closest('#gate-reject')) {
+      event.preventDefault();
+      rejectGate();
+      return;
+    }
+    if (event.target.closest('#run-btn')) {
+      event.preventDefault();
+      submitComposer();
+      return;
+    }
+    if (event.target.closest('#attach-btn')) {
+      event.preventDefault();
+      $('#file-input').click();
+      return;
+    }
+    if (event.target.closest('#drain-btn')) {
+      event.preventDefault();
+      toggleDrain();
+      return;
+    }
+    if (event.target.closest('#launch-start')) {
+      event.preventDefault();
+      startRun();
+      return;
+    }
+    if (event.target.closest('#verify-chain')) {
+      event.preventDefault();
+      toast('Chain verified. <b>' + state.auditSeq.toLocaleString() + '</b> entries, no gaps.');
+      return;
+    }
+    if (event.target === el.scrim) {
+      closeAllOverlays();
+    }
+  });
+
+  el.sessionSearch.addEventListener('input', (event) => {
+    state.sessionQuery = event.target.value;
+    renderSessions();
+  });
+
+  el.paletteSearch.addEventListener('input', (event) => {
+    state.paletteIndex = 0;
+    renderPalette(event.target.value);
+  });
+
+  $('#file-input').addEventListener('change', (event) => {
+    const count = event.target.files ? event.target.files.length : 0;
+    if (count) toast('<b>' + count + '</b> file' + (count === 1 ? '' : 's') + ' attached to the next run.');
+    event.target.value = '';
+  });
+
+  $('#auto-approve').addEventListener('change', (event) => {
+    if (event.target.checked) {
+      toast('Auto-approve only covers safe restricted diffs. Elevated and full access still gate every change.');
+    }
+  });
+
+  function submitComposer() {
+    const text = el.composerInput.value.trim();
+    if (!text) {
+      el.composerInput.focus();
+      toast('Describe the change first. A run needs an outcome.');
+      return;
+    }
+    el.composerInput.value = '';
+    toast('<b>Queued</b> · run_1a2b · ' + selectedTier + ' · behind run_7f3a');
+  }
+
+  el.composerInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      submitComposer();
+    }
+  });
+
+  el.paletteSearch.addEventListener('keydown', (event) => {
+    const list = state.paletteCommands || [];
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      state.paletteIndex = Math.min(list.length - 1, state.paletteIndex + 1);
+      renderPalette(el.paletteSearch.value);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      state.paletteIndex = Math.max(0, state.paletteIndex - 1);
+      renderPalette(el.paletteSearch.value);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      executeCommand(list[state.paletteIndex]);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    const anyOverlayOpen = !el.sessions.hidden || !el.launch.hidden || !el.palette.hidden || !el.drawer.hidden;
+    if (event.key === 'Escape' && anyOverlayOpen) {
+      event.preventDefault();
+      closeAllOverlays();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      if (el.palette.hidden) openOverlay('palette');
+      else closeAllOverlays();
+      return;
+    }
+    const target = event.target;
+    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+    if (typing || anyOverlayOpen) return;
+    const key = event.key.toLowerCase();
+    if (key === 's') { event.preventDefault(); openOverlay('sessions'); }
+    else if (key === 'n') { event.preventDefault(); openOverlay('launch'); }
+    else if (key === 'q') { event.preventDefault(); setView('queue'); }
+    else if (key === 'g') { event.preventDefault(); openOverlay('audit'); }
+    else if (key === 'f') { event.preventDefault(); setView('files'); }
+    else if (key === 'a') { event.preventDefault(); setView('changes'); }
+    else if (key === '?') { event.preventDefault(); openOverlay('help'); }
+    else if (key === '1') { event.preventDefault(); setView('trace'); }
+    else if (key === '2') { event.preventDefault(); setView('changes'); }
+    else if (key === '3') { event.preventDefault(); setView('console'); }
+    else if (key === '4') { event.preventDefault(); setView('files'); }
+  });
+
+  window.addEventListener('hashchange', applyHash);
+
+  // ---------- boot ----------
+  renderRail();
+  renderSessions();
+  applyRun(state.currentRun);
+  applyHash();
+  if (location.hash === '' || location.hash === '#') history.replaceState(null, '', '#trace');
+})();
+</script>
+</body>
+</html>

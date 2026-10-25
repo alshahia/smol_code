@@ -1,6 +1,8 @@
 # Frontend directions — round two decision brief
 
-**Status:** awaiting the operator's choice
+> **Superseded.** This brief describes the round-two directions that were rejected as structurally the same dashboard. It is kept as a record. The current direction is [WORKBENCH.md](WORKBENCH.md).
+
+**Status:** superseded by round three (Workbench)
 **Date:** 2026-10-25
 **Scope:** visual direction and interaction prototype for the smolcode web app
 **Files:** `design/prototypes/` (open `index.html` by double-click)

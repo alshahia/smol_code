@@ -1,0 +1,430 @@
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M8 10l4 4 4-4"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5h6l2 2h9v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M3.5 7.5v-1a2 2 0 0 1 2-2h4l2 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 20V5A1.5 1.5 0 0 1 6.5 3.5z"/><path d="M13 3.5V9h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.2-2.9 7.4-7 8.9-4.1-1.5-7-4.7-7-8.9V6.3z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-attach" viewBox="0 0 24 24"><path d="M8.5 12.5l6.6-6.6a3 3 0 0 1 4.2 4.2l-8.2 8.2a4.5 4.5 0 0 1-6.4-6.4l8-8"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/><path d="M18 15l2 2-2 2"/></symbol>
+  <symbol id="i-chain" viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M7.8 16.2l-1.2 1.2a3.8 3.8 0 0 1-5.4-5.4l2.4-2.4a3.8 3.8 0 0 1 5.4 0"/><path d="M16.2 7.8l1.2-1.2a3.8 3.8 0 0 1 5.4 5.4l-2.4 2.4a3.8 3.8 0 0 1-5.4 0"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M14.5 4.5v15"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.2a2.6 2.6 0 1 1 3.4 2.5c-.8.3-1 .8-1 1.6"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M6 15.5H5A1.5 1.5 0 0 1 3.5 14V5A1.5 1.5 0 0 1 5 3.5h9A1.5 1.5 0 0 1 15.5 5v1"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+</svg>
+
+<div class="app" data-app>
+  <header class="topbar">
+    <div class="brand"><b>smolcode</b><span>workbench</span></div>
+    <button class="project-btn" type="button" data-open="project" title="Switch project">
+      <svg width="14" height="14"><use href="#i-folder"/></svg>
+      <span>orbit-api</span>
+      <span class="path">~/work/orbit-api</span>
+      <svg width="12" height="12"><use href="#i-chevron"/></svg>
+    </button>
+    <div class="daemon"><span class="dot"></span>127.0.0.1:8765 <span class="local-tag">local</span></div>
+    <div class="top-actions">
+      <button class="needs" id="needs-btn" type="button" data-open="sessions" aria-live="polite">
+        <span class="dot"></span><b id="needs-count">1</b><span id="needs-label">needs you</span>
+      </button>
+      <button class="usage" type="button" data-open="usage" title="Cost and usage">
+        <span id="spend">$3.84</span><span class="cap">/ $12.00</span>
+        <span class="meter" aria-hidden="true"><i style="width:32%"></i></span>
+      </button>
+      <button class="kbd" type="button" data-open="palette" aria-label="Open command palette">⌘K</button>
+      <button class="avatar" type="button" data-open="palette" aria-label="Account and settings">AM</button>
+    </div>
+  </header>
+
+  <div class="frame">
+    <aside class="rail" aria-label="Run rail">
+      <button class="rail-menu" type="button" data-open="sessions" aria-label="All runs and sessions" title="All runs  S">
+        <svg width="18" height="18"><use href="#i-menu"/></svg>
+      </button>
+      <div class="rail-runs" id="rail-runs"></div>
+      <div class="rail-sep"></div>
+      <button class="rail-tool" type="button" data-route="queue" aria-label="Queue, 1 waiting" title="Queue">
+        <svg width="18" height="18"><use href="#i-queue"/></svg>
+        <span class="badge" id="queue-badge">1</span>
+      </button>
+      <div class="rail-foot">
+        <button class="rail-tool" type="button" data-open="audit" aria-label="Audit chain, 1204 entries" title="Audit chain">
+          <svg width="18" height="18"><use href="#i-chain"/></svg>
+          <span class="chain-count" id="rail-chain">1.2k</span>
+        </button>
+        <button class="rail-tool" type="button" data-open="help" aria-label="Help and shortcuts" title="Shortcuts  ?">
+          <svg width="17" height="17"><use href="#i-help"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="stage" id="stage">
+      <div class="run-shell" id="run-shell">
+        <section class="stage-head">
+          <div class="stage-crumb">
+            <span id="crumb-project">orbit-api</span><span class="slash">/</span>
+            <code id="crumb-run">run_7f3a</code>
+            <span class="status-pill awaiting" id="status-pill"><i></i><span id="status-text">Awaiting approval</span></span>
+          </div>
+          <h1 class="objective" id="objective">Stop duplicate webhook deliveries</h1>
+          <div class="meta-row">
+            <span class="tier-tag" id="tier-tag" data-tier="restricted">restricted</span>
+            <span id="model">claude-sonnet-4</span><span class="sep"></span>
+            <span id="workspace">~/work/orbit-api</span><span class="sep"></span>
+            <span><b id="elapsed">04:12</b> elapsed</span><span class="sep"></span>
+            <span><b id="cost">$0.38</b> spent</span>
+          </div>
+          <div class="stage-actions">
+            <button class="icon-btn" type="button" title="Pause run" aria-label="Pause run" data-toast="Run paused after the current step."><svg width="15" height="15"><use href="#i-pause"/></svg></button>
+            <button class="icon-btn" type="button" title="Stop run" aria-label="Stop run" data-toast="Stop requested; the sandbox will finish its current command."><svg width="15" height="15"><use href="#i-stop"/></svg></button>
+            <button class="icon-btn" type="button" title="More run actions" aria-label="More run actions" data-open="palette"><svg width="16" height="16"><use href="#i-dots"/></svg></button>
+          </div>
+        </section>
+
+        <nav class="stage-modes" aria-label="Run views">
+          <button type="button" data-view="trace" class="on">Trace <span class="count" id="trace-count">10</span></button>
+          <button type="button" data-view="changes">Changes <span class="count alert" id="changes-count">1</span></button>
+          <button type="button" data-view="console">Console</button>
+          <button type="button" data-view="files">Files</button>
+          <span class="modes-right"><button class="link-btn" type="button" data-open="context">Context</button></span>
+        </nav>
+
+        <div class="stage-body" id="stage-body">
+          <section class="view" data-view-panel="trace" id="view-trace">
+            <div class="trace">
+              <div class="trace-summary">
+                <span><b id="sum-events">10</b> events</span>
+                <span><b id="sum-tools">4</b> tools</span>
+                <span><b id="sum-approvals">1</b> approval</span>
+                <span class="tail" id="sum-started">started 09:41:02</span>
+              </div>
+              <ol class="trace-list" id="trace-list"></ol>
+              <div class="now-line" id="now-line"><span>waiting on you</span><span class="bar"></span><b>04:12</b></div>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="changes" id="view-changes" hidden>
+            <div class="changes">
+              <div class="changes-head">
+                <div>
+                  <h2>Changes</h2>
+                  <p>src/billing/webhook.py · +24 −3 · sha 9d07aa</p>
+                </div>
+                <div class="changes-actions">
+                  <button class="btn btn-sm" type="button" data-toast="Opening the workspace diff in your editor is not wired in this prototype.">Open in editor</button>
+                  <button class="btn btn-sm" type="button" data-toast="Patch copied to the clipboard.">Copy patch</button>
+                </div>
+              </div>
+              <div class="review-grid">
+                <nav class="file-list" aria-label="Changed files">
+                  <h3>1 changed file</h3>
+                  <button class="file on" type="button"><span>src/billing/webhook.py</span><span class="fstats"><span class="add">+24</span> <span class="del">−3</span></span></button>
+                  <p class="file-note">Only this file moved. The workspace tree is unchanged outside the patch.</p>
+                </nav>
+                <article class="diff-pane">
+                  <div class="diff-head">
+                    <b>src/billing/webhook.py</b>
+                    <span>unified</span>
+                    <span class="right"><span>sha 9d07aa</span><span>restricted</span></span>
+                  </div>
+                  <div class="diff" aria-label="Unified diff for src/billing/webhook.py">
+                    <div class="diff-hunk">@@ -41,7 +41,28 @@ def handle_event(event: dict) -&gt; Response:</div>
+                    <div class="diff-line"><span class="ln">41</span><span class="ln">41</span><span class="mark"> </span><span class="code">    signature = request.headers.get("stripe-signature")</span></div>
+                    <div class="diff-line"><span class="ln">42</span><span class="ln">42</span><span class="mark"> </span><span class="code">    if not _verify(signature, request.data):</span></div>
+                    <div class="diff-line"><span class="ln">43</span><span class="ln">43</span><span class="mark"> </span><span class="code">        return Response(status_code=400)</span></div>
+                    <div class="diff-line del"><span class="ln">44</span><span class="ln"></span><span class="mark">−</span><span class="code">    event = stripe.Event.construct_from(</span></div>
+                    <div class="diff-line del"><span class="ln">45</span><span class="ln"></span><span class="mark">−</span><span class="code">        request.data, stripe.api_key</span></div>
+                    <div class="diff-line del"><span class="ln">46</span><span class="ln"></span><span class="mark">−</span><span class="code">    )</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">44</span><span class="mark">+</span><span class="code">    event = _parse_event(request.data)</span></div>
+                    <div class="diff-line"><span class="ln">47</span><span class="ln">45</span><span class="mark"> </span><span class="code"> </span></div>
+                    <div class="diff-line"><span class="ln">48</span><span class="ln">46</span><span class="mark"> </span><span class="code">    if event["type"] == "invoice.paid":</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">47</span><span class="mark">+</span><span class="code">        key = _delivery_key(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">48</span><span class="mark">+</span><span class="code">        if _already_delivered(key):</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">49</span><span class="mark">+</span><span class="code">            audit("webhook.duplicate", key=key)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">50</span><span class="mark">+</span><span class="code">            return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">51</span><span class="mark">+</span><span class="code">        _send_receipt(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">52</span><span class="mark">+</span><span class="code">        _mark_delivered(key)</span></div>
+                    <div class="diff-line comment"><span class="ln"></span><span class="ln"></span><span class="mark"></span><span class="code comment-body"><b>Review note</b> · The early return happens before any side effect, so a duplicate delivery cannot send a second receipt. The same guard is repeated for payment failures below.</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">53</span><span class="mark">+</span><span class="code">    elif event["type"] == "invoice.payment_failed":</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">54</span><span class="mark">+</span><span class="code">        key = _delivery_key(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">55</span><span class="mark">+</span><span class="code">        if _already_delivered(key):</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">56</span><span class="mark">+</span><span class="code">            return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">57</span><span class="mark">+</span><span class="code">        _send_dunning(event)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">58</span><span class="mark">+</span><span class="code">        _mark_delivered(key)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">59</span><span class="mark">+</span><span class="code">    return Response(status_code=200)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">60</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">61</span><span class="mark">+</span><span class="code">def _delivery_key(event: dict) -&gt; str:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">62</span><span class="mark">+</span><span class="code">    payload = json.dumps(event, sort_keys=True)</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">63</span><span class="mark">+</span><span class="code">    return hashlib.sha256(payload.encode()).hexdigest()</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">64</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">65</span><span class="mark">+</span><span class="code">def _already_delivered(key: str) -&gt; bool:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">66</span><span class="mark">+</span><span class="code">    return _DELIVERY_KEYS.get(key) is not None</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">67</span><span class="mark">+</span><span class="code"> </span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">68</span><span class="mark">+</span><span class="code">def _mark_delivered(key: str) -&gt; None:</span></div>
+                    <div class="diff-line add"><span class="ln"></span><span class="ln">69</span><span class="mark">+</span><span class="code">    _DELIVERY_KEYS.set(key, time.time(), ttl=86400)</span></div>
+                  </div>
+                  <p class="risk-line"><svg width="14" height="14"><use href="#i-shield"/></svg>Writes inside the workspace. No network. Stays restricted.</p>
+                  <p class="patch-note">The run replaces a raw Stripe object with a parsed event, then checks an idempotency key before every receipt or dunning side effect.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="console" id="view-console" hidden>
+            <div class="console-wrap">
+              <div class="console-head">
+                <div><h2>Console</h2><p>run_7f3a · restricted image a91c4e · read-only capture</p></div>
+                <button class="btn btn-sm" type="button" data-toast="Console capture copied.">Copy output</button>
+              </div>
+              <pre class="console-box"><span class="dim">09:41:44</span>  <span class="warn">$</span> pytest -q tests/billing/test_webhook.py
+<span class="dim">09:41:45</span>  <span class="ok">12 passed</span> in 1.82s
+
+<span class="dim">09:41:46</span>  <span class="warn">$</span> python - &lt;&lt;'PY'
+<span class="dim">09:41:46</span>  from billing.webhook import _delivery_key
+<span class="dim">09:41:46</span>  key = _delivery_key({"id": "evt_1P", "type": "invoice.paid"})
+<span class="dim">09:41:46</span>  print(key)
+<span class="dim">09:41:46</span>  PY
+<span class="dim">09:41:46</span>  <span class="ok">7f3a9c0e5e4b2a18</span>
+
+<span class="dim">09:41:58</span>  git status --short
+<span class="dim">09:41:58</span>  <span class="path"> M src/billing/webhook.py</span>
+
+<span class="dim">09:42:07</span>  diff.proposed  1 file  +24 −3  sha 9d07aa
+<span class="dim">09:42:07</span>  <span class="warn">approval.requested  hold  src/billing/webhook.py</span>
+<span class="dim">09:42:11</span>  awaiting human signature; sandbox stays alive
+</pre>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="files" id="view-files" hidden>
+            <div class="files-wrap">
+              <div class="files-head">
+                <div><h2>Files</h2><p>orbit-api · ~/work/orbit-api · read-only preview</p></div>
+                <button class="btn btn-sm" type="button" data-toast="Workspace opened in the host editor.">Open workspace</button>
+              </div>
+              <div class="files-grid">
+                <nav class="tree" aria-label="Workspace tree">
+                  <div class="folder"><svg width="13" height="13"><use href="#i-folder"/></svg>orbit-api</div>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>src</div>
+                  <button type="button">billing/</button>
+                  <button type="button" class="on">billing/webhook.py</button>
+                  <button type="button">billing/receipts.py</button>
+                  <button type="button">session/store.py</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>tests</div>
+                  <button type="button">billing/test_webhook.py</button>
+                  <button type="button">session/test_store.py</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>docs</div>
+                  <button type="button">security.md</button>
+                  <button type="button">operations.md</button>
+                  <div class="folder" style="padding-left:16px"><svg width="13" height="13"><use href="#i-folder"/></svg>root</div>
+                  <button type="button">README.md</button>
+                  <button type="button">pyproject.toml</button>
+                  <p class="tree-note">Snapshot from the restricted sandbox at 09:42:11. Paths outside the workspace are never mounted.</p>
+                </nav>
+                <article class="preview">
+                  <div class="preview-head"><b>src/billing/webhook.py</b><span>148 lines · sha 9d07aa</span></div>
+                  <div class="preview-code" aria-label="File preview">
+                    <div class="pl"><span class="n">1</span><span class="c">import hashlib</span></div>
+                    <div class="pl"><span class="n">2</span><span class="c">import json</span></div>
+                    <div class="pl"><span class="n">3</span><span class="c">import time</span></div>
+                    <div class="pl"><span class="n">4</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">5</span><span class="c">from fastapi import Request, Response</span></div>
+                    <div class="pl"><span class="n">6</span><span class="c">from billing.audit import audit</span></div>
+                    <div class="pl"><span class="n">7</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">8</span><span class="c">_DELIVERY_KEYS = Store("webhook.delivery")</span></div>
+                    <div class="pl"><span class="n">9</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">10</span><span class="c">def _verify(signature: str | None, payload: bytes) -&gt; bool:</span></div>
+                    <div class="pl"><span class="n">11</span><span class="c">    if not signature:</span></div>
+                    <div class="pl"><span class="n">12</span><span class="c">        return False</span></div>
+                    <div class="pl"><span class="n">13</span><span class="c">    expected = hmac.new(</span></div>
+                    <div class="pl"><span class="n">14</span><span class="c">        settings.WEBHOOK_SECRET.encode(),</span></div>
+                    <div class="pl"><span class="n">15</span><span class="c">        payload,</span></div>
+                    <div class="pl"><span class="n">16</span><span class="c">        hashlib.sha256,</span></div>
+                    <div class="pl"><span class="n">17</span><span class="c">    ).hexdigest()</span></div>
+                    <div class="pl"><span class="n">18</span><span class="c">    return hmac.compare_digest(expected, signature)</span></div>
+                    <div class="pl"><span class="n">19</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">20</span><span class="c">def _parse_event(payload: bytes) -&gt; dict:</span></div>
+                    <div class="pl"><span class="n">21</span><span class="c">    return json.loads(payload.decode("utf-8"))</span></div>
+                    <div class="pl"><span class="n">22</span><span class="c"></span></div>
+                    <div class="pl hl"><span class="n">23</span><span class="c">def _delivery_key(event: dict) -&gt; str:</span></div>
+                    <div class="pl hl"><span class="n">24</span><span class="c">    payload = json.dumps(event, sort_keys=True)</span></div>
+                    <div class="pl hl"><span class="n">25</span><span class="c">    return hashlib.sha256(payload.encode()).hexdigest()</span></div>
+                    <div class="pl"><span class="n">26</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">27</span><span class="c">def _already_delivered(key: str) -&gt; bool:</span></div>
+                    <div class="pl"><span class="n">28</span><span class="c">    return _DELIVERY_KEYS.get(key) is not None</span></div>
+                    <div class="pl"><span class="n">29</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">30</span><span class="c">def _mark_delivered(key: str) -&gt; None:</span></div>
+                    <div class="pl"><span class="n">31</span><span class="c">    _DELIVERY_KEYS.set(key, time.time(), ttl=86400)</span></div>
+                    <div class="pl"><span class="n">32</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">33</span><span class="c">async def handle_event(request: Request) -&gt; Response:</span></div>
+                    <div class="pl"><span class="n">34</span><span class="c">    signature = request.headers.get("stripe-signature")</span></div>
+                    <div class="pl"><span class="n">35</span><span class="c">    if not _verify(signature, await request.body()):</span></div>
+                    <div class="pl"><span class="n">36</span><span class="c">        return Response(status_code=400)</span></div>
+                    <div class="pl"><span class="n">37</span><span class="c"></span></div>
+                    <div class="pl"><span class="n">38</span><span class="c">    event = _parse_event(await request.body())</span></div>
+                    <div class="pl"><span class="n">39</span><span class="c">    if event["type"] == "invoice.paid":</span></div>
+                    <div class="pl"><span class="n">40</span><span class="c">        key = _delivery_key(event)</span></div>
+                    <div class="pl"><span class="n">41</span><span class="c">        if _already_delivered(key):</span></div>
+                    <div class="pl"><span class="n">42</span><span class="c">            return Response(status_code=200)</span></div>
+                    <div class="pl"><span class="n">43</span><span class="c">        _send_receipt(event)</span></div>
+                    <div class="pl"><span class="n">44</span><span class="c">        _mark_delivered(key)</span></div>
+                    <div class="pl"><span class="n">45</span><span class="c">    return Response(status_code=200)</span></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="gate-dock" id="gate-dock">
+          <div class="gate-mark"><svg width="17" height="17"><use href="#i-shield"/></svg></div>
+          <div class="gate-copy">
+            <strong id="gate-title">One change is waiting for your signature.</strong>
+            <span id="gate-sub">src/billing/webhook.py · +24 −3 · sha 9d07aa · restricted image a91c4e</span>
+          </div>
+          <div class="gate-actions">
+            <span class="gate-note" id="gate-note">Approval releases this diff once.</span>
+            <button class="btn btn-sm" type="button" id="gate-hold">Hold</button>
+            <button class="btn btn-sm btn-danger" type="button" id="gate-reject">Reject</button>
+            <button class="btn btn-sm btn-primary" type="button" id="gate-approve">Approve change</button>
+          </div>
+        </div>
+      </div>
+
+      <section class="view" data-view-panel="queue" id="view-queue" hidden>
+        <div class="queue-view">
+          <div class="queue-head">
+            <div>
+              <h1>Queue</h1>
+              <p>One run is waiting. New directives join the end of the queue; they do not start until the gate is clear.</p>
+            </div>
+            <div class="queue-actions">
+              <button class="btn" type="button" id="drain-btn">Drain queue</button>
+              <button class="btn btn-primary" type="button" data-open="launch"><svg width="14" height="14"><use href="#i-plus"/></svg>New run</button>
+            </div>
+          </div>
+          <table class="queue-table">
+            <thead><tr><th>#</th><th>Directive</th><th>Tier</th><th>Waiting</th><th>Estimate</th><th></th></tr></thead>
+            <tbody id="queue-body">
+              <tr>
+                <td class="pos">1</td>
+                <td class="task">Migrate the audit chain to v2 with rotation<small>run_04aa · opus-4 · requested 09:38</small></td>
+                <td><span class="tier-tag" data-tier="full_access">full_access</span></td>
+                <td class="mono">02:14</td>
+                <td class="mono">~$0.60</td>
+                <td><div class="row-actions"><button class="btn btn-sm" type="button" data-toast="run_04aa moved to the front of the queue.">Move up</button><button class="btn btn-sm btn-ghost" type="button" data-toast="run_04aa removed from the queue.">Remove</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="queue-foot"><svg width="14" height="14"><use href="#i-shield"/></svg>Queue drain is off. Runs wait for a human; nothing starts silently.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="composer" aria-label="New run">
+    <div class="composer-main">
+      <div class="composer-top">
+        <span class="composer-label">New run</span>
+        <span class="composer-kbd">⌘↵ to start · ⌘K commands</span>
+      </div>
+      <input class="composer-input" id="composer-input" type="text" autocomplete="off" placeholder="Describe the change, or paste a failing test…" aria-label="Describe a new run">
+    </div>
+    <div class="composer-side">
+      <input type="file" id="file-input" multiple hidden>
+      <button class="attach" type="button" id="attach-btn" aria-label="Attach files" title="Attach files"><svg width="16" height="16"><use href="#i-attach"/></svg></button>
+      <button class="composer-chip" type="button" data-open="launch" title="Set tier, model, and workspace"><span id="composer-tier">restricted</span><svg width="11" height="11"><use href="#i-chevron"/></svg></button>
+      <button class="composer-chip" type="button" data-open="launch" title="Set model"><span id="composer-model">sonnet-4</span></button>
+      <button class="composer-run" type="button" id="run-btn"><svg width="13" height="13"><use href="#i-play"/></svg>Run</button>
+    </div>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="sheet" id="sessions" role="dialog" aria-modal="true" aria-labelledby="sessions-title" hidden>
+  <div class="sheet-head">
+    <div><h2 id="sessions-title">Runs</h2><p class="sub">orbit-api · 5 sessions · 1 needs you</p></div>
+    <button class="close" type="button" data-close aria-label="Close runs"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="sheet-search"><input type="search" id="session-search" placeholder="Filter by run, task, or model" aria-label="Filter runs"></div>
+  <div class="sheet-filters" id="session-filters">
+    <button class="filter on" type="button" data-filter="all">All</button>
+    <button class="filter" type="button" data-filter="awaiting">Needs you</button>
+    <button class="filter" type="button" data-filter="running">Running</button>
+    <button class="filter" type="button" data-filter="queued">Queued</button>
+    <button class="filter" type="button" data-filter="done">Done</button>
+  </div>
+  <div class="session-list" id="session-list"></div>
+  <div class="sheet-foot"><button class="btn" type="button" data-open="launch">New run</button><span class="hint">S closes</span></div>
+</aside>
+
+<aside class="launch" id="launch" role="dialog" aria-modal="true" aria-labelledby="launch-title" hidden>
+  <div class="launch-head">
+    <div><h2 id="launch-title">New run</h2><p>Name the outcome. smolcode stays in the tier you choose, and every diff returns here for review.</p></div>
+    <button class="close" type="button" data-close aria-label="Close new run"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <textarea class="launch-task" id="launch-task" placeholder="Describe the change, or paste a failing test…">Stop duplicate webhook deliveries in src/billing/webhook.py. Keep the retry behavior for genuine failures.</textarea>
+  <div class="launch-row">
+    <span class="field"><svg width="14" height="14"><use href="#i-folder"/></svg><b>~/work/orbit-api</b></span>
+    <span class="field">Provider <b>anthropic</b></span>
+    <span class="field">Model <select id="launch-model"><option>claude-sonnet-4</option><option>claude-opus-4</option><option>minimax-m2</option></select></span>
+    <span class="field">Attach <b>none</b></span>
+  </div>
+  <div class="tier-ladder">
+    <h3>Clearance</h3>
+    <button class="tier-option on" type="button" data-tier-choice="restricted" aria-pressed="true">
+      <span class="radio"></span>
+      <span><span class="tname">restricted</span><span class="tdesc">Workspace only. Allowlisted commands, no network, read-only mounts outside the project.</span></span>
+      <span class="tflag">default</span>
+    </button>
+    <button class="tier-option" type="button" data-tier-choice="elevated" aria-pressed="false">
+      <span class="radio"></span>
+      <span><span class="tname">elevated</span><span class="tdesc">Adds named paths and allowlisted hosts. Every extra mount is visible in the run.</span></span>
+      <span class="tflag">opt-in</span>
+    </button>
+    <button class="tier-option" type="button" data-tier-choice="full_access" aria-pressed="false">
+      <span class="radio"></span>
+      <span><span class="tname">full_access</span><span class="tdesc">Broader host access for specialist work. Still containerized, still audited, still gated.</span></span>
+      <span class="tflag">explicit</span>
+    </button>
+  </div>
+  <div class="launch-note" id="tier-note"><svg width="14" height="14"><use href="#i-shield"/></svg><span><b>Restricted is the default.</b> The run can read and write only inside ~/work/orbit-api. A tier change never happens mid-run.</span></div>
+  <div class="launch-foot">
+    <span class="launch-cost">Estimated ceiling <b>~$0.40</b></span>
+    <label class="checkline"><input type="checkbox" id="auto-approve"> Auto-approve safe diffs</label>
+    <button class="btn btn-primary primary" type="button" id="launch-start"><svg width="13" height="13"><use href="#i-play"/></svg>Start run</button>
+  </div>
+</aside>
+
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-labelledby="palette-title" hidden>
+  <div class="palette-input">
+    <svg width="17" height="17"><use href="#i-search"/></svg>
+    <input id="palette-search" type="text" placeholder="Type a command or a run id…" aria-labelledby="palette-title">
+    <span class="esc">esc</span>
+  </div>
+  <div class="palette-list" id="palette-list"></div>
+</div>
+
+<aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-title" hidden>
+  <div class="drawer-head">
+    <div><h2 id="drawer-title">Audit chain</h2><p id="drawer-sub">1,204 entries · verified</p></div>
+    <button class="close" type="button" data-close aria-label="Close panel"><svg width="16" height="16"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* __APP_JS__ */
+</script>
